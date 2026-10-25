@@ -4,6 +4,10 @@ A prototype for assessing and deciding cases in the ethics and behaviour teams o
 
 **Live prototype:** https://uripont.github.io/msf-case-desk/
 
+<p>
+<img src="docs/screenshots/desktop-home.png" alt="Case Desk on a computer" width="58.5%"> <img src="docs/screenshots/phone-home.png" alt="Case Desk on a phone" width="19%"> <img src="docs/screenshots/phone-case.png" alt="A case on a phone" width="19%">
+</p>
+
 Today a case can wait up to two weeks for the next meeting before anyone assesses it. Case Desk shows what needs attention first and why, so a case can go from received to decided without waiting. It is an internal tool for the people who assess and decide cases. It complements MSF's Integrity Line, which takes reports from people, and does not replace it ([context](docs/context.md)).
 
 > All cases are synthetic. No real case data is used or stored.
