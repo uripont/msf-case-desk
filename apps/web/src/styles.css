@@ -1,0 +1,136 @@
+@import '@fontsource-variable/hanken-grotesk';
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Atlas Grotesk', 'Hanken Grotesk Variable', 'Helvetica Neue', Arial,
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+
+  --color-msf-red: #d7211e;
+  --color-msf-black: #000000;
+  --color-msf-ink: #414141;
+  --color-msf-grey: #767676;
+  --color-msf-line: #dbdbdb;
+  --color-msf-mist: #f6f6f6;
+  --color-msf-paper: #fcfcfa;
+
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+}
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  @apply bg-white text-msf-ink;
+  font-family: var(--font-sans);
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  border-top: 6px solid var(--color-msf-red);
+}
+
+button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  @apply bg-msf-red text-white;
+}
+
+.time-axis-mark {
+  transition: left 1400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.time-axis-slide {
+  transition: top 1400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.time-axis-leader {
+  transition: d 1400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.time-axis-pulse {
+  animation: time-axis-pulse 2.4s ease-out infinite;
+}
+
+@keyframes time-axis-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(238 0 0 / 0.45);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 10px rgb(238 0 0 / 0);
+  }
+}
+
+::view-transition-group(*) {
+  animation-duration: 1300ms;
+  animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 900ms;
+  animation-timing-function: ease-in-out;
+}
+
+::view-transition-image-pair(.case-label),
+::view-transition-image-pair(.zone-count),
+::view-transition-image-pair(.now-label) {
+  isolation: auto;
+}
+
+::view-transition-old(.case-label),
+::view-transition-new(.case-label),
+::view-transition-old(.zone-count),
+::view-transition-new(.zone-count),
+::view-transition-old(.now-label),
+::view-transition-new(.now-label) {
+  width: auto;
+  height: auto;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(.case-label),
+::view-transition-old(.zone-count),
+::view-transition-old(.now-label) {
+  animation: 500ms ease-in both time-axis-fade-out;
+}
+
+::view-transition-new(.case-label),
+::view-transition-new(.zone-count),
+::view-transition-new(.now-label) {
+  animation: 700ms ease-out 450ms both time-axis-fade-in;
+}
+
+@keyframes time-axis-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes time-axis-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
