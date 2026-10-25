@@ -9,7 +9,7 @@ export const BRAND = {
   productName: 'Case Desk',
   organisation: 'Metges Sense Fronteres',
   maybeLogo: Option.some<BrandLogo>({
-    src: '/brand/msf-logo-positive-ca.svg',
+    src: `${import.meta.env.BASE_URL}brand/msf-logo-positive-ca.svg`,
     alt: 'Metges Sense Fronteres',
   }),
 }
