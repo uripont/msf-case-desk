@@ -88,4 +88,4 @@ The interface follows [MSF's branding guidelines](https://branding-guidelines.ms
 
 ## Licence
 
-Not chosen yet.
+MIT. See [LICENSE](LICENSE).
