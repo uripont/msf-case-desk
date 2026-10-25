@@ -10,10 +10,24 @@
   "scripts": {
     "dev": "pnpm --filter @case-desk/web dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc --noEmit -p tsconfig.json",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "infra:plan": "alchemy plan",
+    "infra:deploy": "alchemy deploy",
+    "infra:dev": "alchemy dev",
+    "infra:destroy": "alchemy destroy"
+  },
+  "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+    "@effect/platform-node": "4.0.6",
+    "@types/node": "^24.19.2",
+    "alchemy": "2.0.0-beta.84",
+    "effect": "4.0.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5"
   }
 }
