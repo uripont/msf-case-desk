@@ -2,6 +2,8 @@
 
 A prototype for assessing and deciding cases in the ethics and behaviour teams of Metges Sense Fronteres (MSF), across all its operational centres. Built at Universitat Pompeu Fabra for the Project Management course (team 101_E), together with MSF's Ethics & Behaviour Unit.
 
+**Live prototype:** https://uripont.github.io/msf-case-desk/
+
 Today a case can wait up to two weeks for the next meeting before anyone assesses it. Case Desk shows what needs attention first and why, so a case can go from received to decided without waiting. It is an internal tool for the people who assess and decide cases. It complements MSF's Integrity Line, which takes reports from people, and does not replace it ([context](docs/context.md)).
 
 > All cases are synthetic. No real case data is used or stored.
@@ -59,6 +61,8 @@ pnpm dev          # http://localhost:5173
 - **Scene tests** (Foldkit) render the real view and interact with it through accessible locators, with no browser.
 
 ## Deploying
+
+The web app is published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main`.
 
 The backend will run on Cloudflare in later increments. Its stack is declared in [`alchemy.run.ts`](alchemy.run.ts), typechecked but not deployed yet:
 
