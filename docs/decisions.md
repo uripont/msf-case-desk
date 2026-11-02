@@ -40,3 +40,21 @@ The footer shows the positive logo in Catalan, and the app uses the organisation
 ## Operational centre is part of the case from the start
 
 Making it a platform for the whole movement is much cheaper if every case carries its operational centre from the first version. Rules are not yet per centre, but the shape of the model already allows it.
+
+## One shared D1 database on the free plan
+
+All deployed versions use one D1 database. The Workers Free plan allows it without a payment card, and the limits are far above what a team prototype needs (checked in Cloudflare's documentation on 2 Nov 2026):
+
+| Limit | Workers Free |
+| --- | --- |
+| Databases per account | 10 |
+| Size of one database | 500 MB |
+| Storage per account | 5 GB |
+| Rows read per day | 5 million |
+| Rows written per day | 100,000 |
+| Queries per Worker request | 50 |
+| Point-in-time recovery (Time Travel) | 7 days |
+| Worker requests per day, whole account | 100,000 |
+| CPU time per request | 10 ms |
+
+When a daily limit is reached, queries or requests fail until 00:00 UTC. Nothing is charged. The 10 ms CPU limit is why password hashing uses PBKDF2 from Web Crypto, which runs natively, with an iteration count that fits inside one request.
