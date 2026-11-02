@@ -29,6 +29,7 @@ const validEntry = {
   risk: 'Medium',
   urgency: 'Elevated',
   fastTrackSignals: [],
+  channel: 'IntegrityLine',
 }
 
 describe('case entry', () => {
@@ -39,7 +40,6 @@ describe('case entry', () => {
   test('optional fields are accepted', () => {
     const entry = decodeCaseEntry({
       ...validEntry,
-      channel: 'Email',
       details: 'More synthetic detail.',
       location: 'Synthetic project',
       reference: 'IL-0001',
@@ -53,6 +53,7 @@ describe('case entry', () => {
       { ...validEntry, summary: '  padded  ' },
       { ...validEntry, centre: 'OCZ' },
       { ...validEntry, risk: 'Critical' },
+      { ...validEntry, channel: 'Fax' },
       { ...validEntry, receivedAt: -1 },
       { ...validEntry, fastTrackSignals: ['Retaliation', 'Retaliation'] },
       { ...validEntry, summary: 'x'.repeat(501) },
