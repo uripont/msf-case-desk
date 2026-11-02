@@ -39,6 +39,8 @@ export default Alchemy.Stack(
     const app = yield* Cloudflare.Website.Foldkit("App", {
       name: "app",
       rootDir: path.resolve(root, "apps/web"),
+      main: path.resolve(root, "apps/api/src/worker.ts"),
+      assets: { runWorkerFirst: ["/api/*"] },
     });
 
     return {
