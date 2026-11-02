@@ -11,6 +11,8 @@ The repository therefore uses two:
 
 This is safe because the infrastructure file does not import the domain package. If that changes, one of the two pins must move first. Re-check this whenever Foldkit or Alchemy is upgraded.
 
+The API Worker in `apps/api` follows the same rule. It depends on `effect@4.0.0` and the domain package, like the web app. `alchemy.run.ts` only passes the path of its entry file to the Foldkit resource, and Vite bundles it from `apps/api`, so the bundle resolves `effect@4.0.0` and never meets the root copy. The same bundle answers `/api/health` under `alchemy dev` and under plain `workerd`.
+
 ## The root uses TypeScript 6, the packages use TypeScript 7
 
 A transitive dependency of Alchemy (`capnp-es`) declares a peer on TypeScript 5.7 or 6. The root only typechecks one file, so it stays on 6. The packages use 7, as the Foldkit scaffold does.
