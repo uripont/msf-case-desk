@@ -19,7 +19,8 @@
     "infra:plan": "alchemy plan",
     "infra:deploy": "alchemy deploy",
     "infra:dev": "alchemy dev",
-    "infra:destroy": "alchemy destroy"
+    "infra:destroy": "alchemy destroy",
+    "snapshots:prepare": "sh scripts/prepare-snapshots.sh iter1"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
