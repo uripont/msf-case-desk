@@ -1,4 +1,5 @@
 export * from './case'
+export * from './compat'
 export * from './queue'
 export * from './rules'
 export * from './seed'
