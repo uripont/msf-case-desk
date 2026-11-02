@@ -31,7 +31,7 @@ export const CaseEntry = Schema.Struct({
   risk: Risk,
   urgency: Urgency,
   fastTrackSignals: Schema.Array(FastTrackSignal).check(Schema.isUnique()),
-  channel: Schema.optionalKey(Channel),
+  channel: Channel,
   details: Schema.optionalKey(Text(DETAILS_MAX_LENGTH)),
   location: Schema.optionalKey(Text(SHORT_TEXT_MAX_LENGTH)),
   reference: Schema.optionalKey(Text(SHORT_TEXT_MAX_LENGTH)),
