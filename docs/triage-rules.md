@@ -31,6 +31,14 @@ Fast-track signals: `ImmediatePhysicalSafety`, `Exploitation`, `Retaliation`.
 
 The charter sets the goal of getting the average time from intake to triage under 48 to 72 hours, down from up to 14 days. The simulation planned for increment 3 is how the project will measure that.
 
+## Values the engine does not recognise
+
+All deployed versions share one database, so an older version can read a case that a newer version wrote with a value it has never seen (a new risk level, a new channel). The engine never fails and never hides the case:
+
+- An unrecognised risk or urgency counts as the middle level (medium risk, elevated urgency, 2 points).
+- An unrecognised scope, centre, channel or fast-track signal adds no points.
+- Each one adds a reason that says the value was not recognised.
+
 ## Properties the tests enforce
 
 - A fast-track signal always gives P1 with the fast-track clock.
@@ -38,6 +46,7 @@ The charter sets the goal of getting the average time from intake to triage unde
 - The score is always between 0 and 10.
 - The same case and rules always give the same result.
 - Every result carries at least four reasons, and each one can be described in words.
+- A case with any unrecognised values is still scored, within range and with its reasons.
 
 ## Open questions for the unit
 

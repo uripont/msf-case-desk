@@ -1,5 +1,7 @@
 import { Schema } from 'effect'
 
+import { Tolerant } from './compat'
+
 export const CaseId = Schema.NonEmptyString.pipe(Schema.brand('CaseId'))
 export type CaseId = typeof CaseId.Type
 
@@ -36,16 +38,18 @@ export const FastTrackSignal = Schema.Literals([
 ])
 export type FastTrackSignal = typeof FastTrackSignal.Type
 
+// NOTE: Case is the reader for stored cases. Its enums are tolerant, so a
+// value added by a newer version decodes as 'Unknown' instead of failing.
 export const Case = Schema.Struct({
   id: CaseId,
   summary: Schema.NonEmptyString,
-  centre: OperationalCentre,
-  channel: Channel,
+  centre: Tolerant(OperationalCentre),
+  channel: Tolerant(Channel),
   receivedAt: Schema.Int,
-  scope: Scope,
-  risk: Risk,
-  urgency: Urgency,
-  fastTrackSignals: Schema.Array(FastTrackSignal),
+  scope: Tolerant(Scope),
+  risk: Tolerant(Risk),
+  urgency: Tolerant(Urgency),
+  fastTrackSignals: Schema.Array(Tolerant(FastTrackSignal)),
 })
 export type Case = typeof Case.Type
 

@@ -1,4 +1,4 @@
-import { Array, Match, Schema, pipe } from 'effect'
+import { Array, Match, Result, Schema, pipe } from 'effect'
 
 import {
   type Case,
@@ -7,12 +7,23 @@ import {
   type Scope,
   type Urgency,
 } from './case'
+import { UNKNOWN, type Unknown } from './compat'
 import { type Priority, type TriageRules, priorityLabel } from './rules'
 
 const HOUR_MS = 3_600_000
 
 export const Factor = Schema.Literals(['Scope', 'Risk', 'Urgency'])
 export type Factor = typeof Factor.Type
+
+export const CaseField = Schema.Literals([
+  'Centre',
+  'Channel',
+  'Scope',
+  'Risk',
+  'Urgency',
+  'FastTrackSignal',
+])
+export type CaseField = typeof CaseField.Type
 
 export const Reason = Schema.Union([
   Schema.TaggedStruct('FastTrackSignal', {
@@ -33,6 +44,10 @@ export const Reason = Schema.Union([
     score: Schema.Int,
   }),
   Schema.TaggedStruct('BelowThresholds', { score: Schema.Int }),
+  Schema.TaggedStruct('Unrecognised', {
+    field: CaseField,
+    points: Schema.Int,
+  }),
 ])
 export type Reason = typeof Reason.Type
 
@@ -45,27 +60,30 @@ export type TriageResult = {
   readonly reasons: ReadonlyArray<Reason>
 }
 
-export const scopePoints = (scope: Scope): number =>
+export const scopePoints = (scope: Scope | Unknown): number =>
   Match.value(scope).pipe(
     Match.when('Individual', () => 0),
     Match.when('Team', () => 1),
     Match.when('Systemic', () => 2),
+    Match.when(UNKNOWN, () => 0),
     Match.exhaustive,
   )
 
-export const riskPoints = (risk: Risk): number =>
+export const riskPoints = (risk: Risk | Unknown): number =>
   Match.value(risk).pipe(
     Match.when('Low', () => 0),
     Match.when('Medium', () => 2),
     Match.when('High', () => 4),
+    Match.when(UNKNOWN, () => riskPoints('Medium')),
     Match.exhaustive,
   )
 
-export const urgencyPoints = (urgency: Urgency): number =>
+export const urgencyPoints = (urgency: Urgency | Unknown): number =>
   Match.value(urgency).pipe(
     Match.when('Routine', () => 0),
     Match.when('Elevated', () => 2),
     Match.when('Immediate', () => 4),
+    Match.when(UNKNOWN, () => urgencyPoints('Elevated')),
     Match.exhaustive,
   )
 
@@ -92,13 +110,57 @@ const scoredReasons = (triageCase: Case): ReadonlyArray<Reason> => [
   },
 ]
 
+const isKnownSignal = (
+  signal: FastTrackSignal | Unknown,
+): signal is FastTrackSignal => signal !== UNKNOWN
+
 const fastTrackReasons = (
-  signals: ReadonlyArray<FastTrackSignal>,
+  signals: ReadonlyArray<FastTrackSignal | Unknown>,
 ): ReadonlyArray<Reason> =>
-  Array.map(Array.dedupe(signals), (signal): Reason => ({
-    _tag: 'FastTrackSignal',
-    signal,
-  }))
+  Array.map(
+    Array.dedupe(Array.filter(signals, isKnownSignal)),
+    (signal): Reason => ({ _tag: 'FastTrackSignal', signal }),
+  )
+
+const unrecognisedReasons = (triageCase: Case): ReadonlyArray<Reason> =>
+  Array.filterMap(
+    [
+      { field: 'Centre', isUnknown: triageCase.centre === UNKNOWN, points: 0 },
+      {
+        field: 'Channel',
+        isUnknown: triageCase.channel === UNKNOWN,
+        points: 0,
+      },
+      {
+        field: 'Scope',
+        isUnknown: triageCase.scope === UNKNOWN,
+        points: scopePoints(UNKNOWN),
+      },
+      {
+        field: 'Risk',
+        isUnknown: triageCase.risk === UNKNOWN,
+        points: riskPoints(UNKNOWN),
+      },
+      {
+        field: 'Urgency',
+        isUnknown: triageCase.urgency === UNKNOWN,
+        points: urgencyPoints(UNKNOWN),
+      },
+      {
+        field: 'FastTrackSignal',
+        isUnknown: triageCase.fastTrackSignals.includes(UNKNOWN),
+        points: 0,
+      },
+    ] satisfies ReadonlyArray<{
+      field: CaseField
+      isUnknown: boolean
+      points: number
+    }>,
+    ({ field, isUnknown, points }): Result.Result<Reason, void> =>
+      isUnknown
+        ? Result.succeed({ _tag: 'Unrecognised', field, points })
+        : Result.failVoid,
+  )
 
 const priorityForScore = (
   rules: TriageRules,
@@ -151,7 +213,12 @@ export const triage = (rules: TriageRules, triageCase: Case): TriageResult => {
     isFastTrack,
     targetHours,
     dueAt: triageCase.receivedAt + targetHours * HOUR_MS,
-    reasons: [...fastTrack, ...scored, byScore.reason],
+    reasons: [
+      ...fastTrack,
+      ...scored,
+      byScore.reason,
+      ...unrecognisedReasons(triageCase),
+    ],
   }
 }
 
@@ -160,6 +227,17 @@ const signalLabel = (signal: FastTrackSignal): string =>
     Match.when('ImmediatePhysicalSafety', () => 'immediate physical safety'),
     Match.when('Exploitation', () => 'exploitation'),
     Match.when('Retaliation', () => 'retaliation'),
+    Match.exhaustive,
+  )
+
+const fieldLabel = (field: CaseField): string =>
+  Match.value(field).pipe(
+    Match.when('Centre', () => 'Operational centre'),
+    Match.when('Channel', () => 'Channel'),
+    Match.when('Scope', () => 'Scope'),
+    Match.when('Risk', () => 'Risk'),
+    Match.when('Urgency', () => 'Urgency'),
+    Match.when('FastTrackSignal', () => 'Fast-track signal'),
     Match.exhaustive,
   )
 
@@ -174,5 +252,7 @@ export const describeReason = (reason: Reason): string =>
         `${score} out of ${MAX_SCORE} points reaches the ${priorityLabel(priority)} level, which starts at ${minScore}`,
       BelowThresholds: ({ score }) =>
         `${score} out of ${MAX_SCORE} points is below the medium level, so this is standard`,
+      Unrecognised: ({ field, points }) =>
+        `${fieldLabel(field)}: unrecognised value, ${points === 0 ? 'no points' : `counted as medium, ${points} points`}. A newer version of Case Desk may have added it.`,
     }),
   )
