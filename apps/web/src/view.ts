@@ -13,6 +13,7 @@ import {
 
 import { type ApiFailure } from './api'
 import { BRAND } from './brand'
+import { entryPage } from './entryView'
 import { formatInstant, formatSla, formatSlaShort, humanise } from './format'
 import { loginPage } from './loginView'
 import {
@@ -21,6 +22,7 @@ import {
   DeskLoad,
   Message,
   type Model,
+  type Page,
   Session,
   dueSoonCountOf,
   maybeSelectedOf,
@@ -28,7 +30,7 @@ import {
   rulesOf,
   visibleQueueOf,
 } from './main'
-import { outlineButtonClassName, textButtonClassName } from './style'
+import { focusRing, outlineButtonClassName, textButtonClassName } from './style'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
 
 // COPY
@@ -135,6 +137,36 @@ const wordmark = (h: HtmlBuilder<Message>): Html =>
     [BRAND.productName],
   )
 
+const PAGE_LINKS: ReadonlyArray<{ page: Page; label: string }> = [
+  { page: 'Desk', label: 'Cases' },
+  { page: 'NewCase', label: 'New case' },
+]
+
+const pageLink = (
+  model: Model,
+  page: Page,
+  label: string,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isCurrent = model.page === page
+  return h.button(
+    [
+      h.Class(
+        clsx(
+          'cursor-pointer text-base transition-colors',
+          focusRing,
+          isCurrent
+            ? 'font-medium text-msf-black underline decoration-msf-red decoration-2 underline-offset-[6px]'
+            : 'text-msf-grey hover:text-msf-ink',
+        ),
+      ),
+      ...(isCurrent ? [h.AriaCurrent('page')] : []),
+      h.OnClick(Message.ClickedPage({ page })),
+    ],
+    [label],
+  )
+}
+
 const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
   Session.match(model.session, {
     Checking: () => h.empty,
@@ -143,14 +175,28 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.div(
         [
           h.Class(
-            'flex items-baseline justify-end gap-x-4 pt-4 text-sm text-msf-grey',
+            'flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pt-4 text-sm text-msf-grey',
           ),
         ],
         [
-          h.span([], [user.name]),
-          h.button(
-            [h.Class(textButtonClassName), h.OnClick(Message.ClickedSignOut())],
-            ['Sign out'],
+          h.nav(
+            [h.AriaLabel('Pages'), h.Class('flex gap-x-6')],
+            Array.map(PAGE_LINKS, ({ page, label }) =>
+              pageLink(model, page, label, h),
+            ),
+          ),
+          h.div(
+            [h.Class('flex items-baseline gap-x-4')],
+            [
+              h.span([], [user.name]),
+              h.button(
+                [
+                  h.Class(textButtonClassName),
+                  h.OnClick(Message.ClickedSignOut()),
+                ],
+                ['Sign out'],
+              ),
+            ],
           ),
         ],
       ),
@@ -160,7 +206,7 @@ const centreNav = (model: Model, h: HtmlBuilder<Message>): Html =>
   Session.match(model.session, {
     Checking: () => h.empty,
     SignedOut: () => h.empty,
-    SignedIn: () => centreTabs(model, h),
+    SignedIn: () => (model.page === 'Desk' ? centreTabs(model, h) : h.empty),
   })
 
 const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -487,6 +533,24 @@ const detailPanel = (
         [h.Class('max-w-prose text-[17px] leading-relaxed text-msf-ink')],
         [detailSentence(triaged)],
       ),
+      triageCase.details === ''
+        ? h.empty
+        : h.p(
+            [
+              h.Class(
+                'max-w-prose whitespace-pre-line border-l-2 border-msf-line pl-4 text-base leading-relaxed text-msf-ink',
+              ),
+            ],
+            [triageCase.details],
+          ),
+      triageCase.enteredByName === ''
+        ? h.empty
+        : h.p(
+            [h.Class('text-sm text-msf-grey')],
+            [
+              `Entered by ${triageCase.enteredByName} on ${formatInstant(triageCase.enteredAt)}.`,
+            ],
+          ),
       h.div(
         [h.Class('flex flex-col gap-2')],
         [
@@ -705,6 +769,14 @@ const loadedDesk = (
   ),
 ]
 
+const pageView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
+  Match.value(model.page).pipe(
+    Match.when('Desk', () => loadedDesk(model, h)),
+    Match.when('NewCase', () => [entryPage(model, h)]),
+    Match.when('Rules', () => loadedDesk(model, h)),
+    Match.exhaustive,
+  )
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: BRAND.productName,
   body: h.div(
@@ -720,7 +792,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
             DeskLoad.match(model.deskLoad, {
               Loading: () => [loadingDesk(h)],
               Failed: ({ failure }) => [failedDesk(failure, h)],
-              Loaded: () => loadedDesk(model, h),
+              Loaded: () => pageView(model, h),
             }),
         }),
       ),

@@ -62,6 +62,7 @@ export type Case = typeof Case.Type
 
 export const CENTRES: ReadonlyArray<OperationalCentre> =
   OperationalCentre.literals
+export const CHANNELS: ReadonlyArray<Channel> = Channel.literals
 export const SCOPES: ReadonlyArray<Scope> = Scope.literals
 export const RISKS: ReadonlyArray<Risk> = Risk.literals
 export const URGENCIES: ReadonlyArray<Urgency> = Urgency.literals
