@@ -63,6 +63,18 @@ export default Alchemy.Stack(
       ],
     });
 
+    // Increment 2, frozen: its own web app and API, on the shared database.
+    const iter2Dir = snapshotDir(root, "iter2");
+    const iter2 = yield* Cloudflare.Website.Foldkit("Iter2", {
+      name: workerName("iter2"),
+      rootDir: path.resolve(iter2Dir, "apps/web"),
+      main: path.resolve(iter2Dir, "apps/api/src/worker.ts"),
+      memo: snapshotMemo,
+      assets: { runWorkerFirst: ["/api/*"] },
+      env: { DB: database },
+      observability,
+    });
+
     const app = yield* Cloudflare.Website.Foldkit("App", {
       name: workerName("app"),
       rootDir: path.resolve(root, "apps/web"),
@@ -74,6 +86,7 @@ export default Alchemy.Stack(
 
     return {
       iter1: iter1.url.as<string>(),
+      iter2: iter2.url.as<string>(),
       app: app.url.as<string>(),
     };
   }),

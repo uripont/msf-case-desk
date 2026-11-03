@@ -20,7 +20,7 @@
     "infra:deploy": "alchemy deploy",
     "infra:dev": "alchemy dev",
     "infra:destroy": "alchemy destroy",
-    "snapshots:prepare": "sh scripts/prepare-snapshots.sh iter1",
+    "snapshots:prepare": "sh scripts/prepare-snapshots.sh iter1 iter2",
     "migrations:check": "node scripts/check-migrations.mjs",
     "users:add": "pnpm --filter @case-desk/api users:add",
     "compat:check": "sh scripts/compat-check.sh",
