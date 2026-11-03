@@ -1,4 +1,5 @@
 import {
+  Command,
   click,
   expect,
   given,
@@ -10,8 +11,8 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { loadedModel } from './fixtures'
-import { update } from './main'
+import { loadedModel, signedInModel } from './fixtures'
+import { LoadDesk, Message, initialModel, update } from './main'
 import { view } from './view'
 
 describe('scene', () => {
@@ -130,6 +131,54 @@ describe('scene', () => {
       expect(
         text('developed at Universitat Pompeu Fabra', { exact: false }),
       ).toExist(),
+    )
+  })
+})
+
+const emptyModel = update(
+  signedInModel,
+  Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
+).model
+
+const failedModel = update(
+  signedInModel,
+  Message.FailedLoadDesk({ failure: 'Unavailable' }),
+).model
+
+describe('desk states', () => {
+  test('a desk with no cases invites the first entry', () => {
+    scene(
+      { update, view },
+      given(emptyModel),
+      expect(role('heading', { name: 'Everything is on track' })).toExist(),
+      expect(text('No cases yet.')).toExist(),
+      click(role('button', { name: 'Enter a case' })),
+      expect(role('heading', { name: 'New case' })).toExist(),
+    )
+  })
+
+  test('a desk that cannot load offers to try again', () => {
+    scene(
+      { update, view },
+      given(failedModel),
+      expect(
+        role('heading', { name: 'The cases could not be loaded' }),
+      ).toExist(),
+      click(role('button', { name: 'Try again' })),
+      Command.resolve(
+        LoadDesk,
+        Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
+      ),
+      expect(text('No cases yet.')).toExist(),
+    )
+  })
+
+  test('the session check shows a quiet opening state', () => {
+    scene(
+      { update, view },
+      given(initialModel),
+      expect(role('heading', { name: 'Opening Case Desk' })).toExist(),
+      expect(role('heading', { name: 'Sign in' })).toBeAbsent(),
     )
   })
 })
