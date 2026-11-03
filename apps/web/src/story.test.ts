@@ -2,12 +2,17 @@ import { Option } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
-import { CaseId, DEMO_START } from '@case-desk/domain'
+import { CaseId, DEMO_START, SEED_CASES } from '@case-desk/domain'
 
+import { loadedModel } from './fixtures'
 import {
+  CheckSession,
   FocusCaseMark,
+  GetCurrentTime,
+  LoadDesk,
   Message,
   heroLayoutTransition,
+  init,
   initialModel,
   overdueCountOf,
   update,
@@ -20,7 +25,7 @@ describe('update', () => {
 
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.ClickedCase({ caseId })),
       model(next => {
         expect(next.maybeSelectedCaseId).toEqual(Option.some(caseId))
@@ -35,13 +40,13 @@ describe('update', () => {
   test('advancing the clock creates overdue cases and reset restores it', () => {
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.ClickedAdvanceClock({ hours: 24 })),
       message(Message.ClickedAdvanceClock({ hours: 24 })),
       model(next => {
         expect(next.now).toBe(DEMO_START + 48 * 3_600_000)
         expect(overdueCountOf(next)).toBeGreaterThan(
-          overdueCountOf(initialModel),
+          overdueCountOf(loadedModel),
         )
       }),
       message(Message.ClickedResetClock()),
@@ -54,7 +59,7 @@ describe('update', () => {
   test('the centre filter narrows the queue to one operational centre', () => {
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.SelectedCentreFilter({ centreFilter: 'OCG' })),
       model(next => {
         const rows = visibleQueueOf(next)
@@ -75,7 +80,7 @@ describe('update', () => {
 
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       model(next => {
         expect(next.isDetailSheetOpen).toBe(false)
       }),
@@ -96,7 +101,7 @@ describe('update', () => {
 
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.EnteredCase({ caseId })),
       model(next => {
         expect(next.maybeHighlightedCaseId).toEqual(Option.some(caseId))
@@ -111,7 +116,7 @@ describe('update', () => {
   test('demo controls start hidden and can be toggled', () => {
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       model(next => {
         expect(next.isDemoControlsOpen).toBe(false)
       }),
@@ -129,12 +134,12 @@ describe('update', () => {
   test('the first layout reading is not animated, later changes are', () => {
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.UpdatedHeroLayout({ layout: 'Timeline' })),
       model(next => {
         expect(next.heroLayout).toBe('Timeline')
         expect(
-          heroLayoutTransition({ previousModel: initialModel, model: next }),
+          heroLayoutTransition({ previousModel: loadedModel, model: next }),
         ).toBe(false)
         const wide = update(next, Message.UpdatedHeroLayout({ layout: 'Axis' }))
         expect(
@@ -157,14 +162,14 @@ describe('update', () => {
 
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.UpdatedHeroLayout({ layout: 'Axis' })),
       message(Message.FocusedCaseMark({ caseId })),
       message(Message.UpdatedHeroLayout({ layout: 'Timeline' })),
       model(next => {
         expect(next.maybeHighlightedCaseId).toEqual(Option.some(caseId))
         expect(next.maybeSelectedCaseId).toEqual(
-          initialModel.maybeSelectedCaseId,
+          loadedModel.maybeSelectedCaseId,
         )
       }),
       Command.expectHas(FocusCaseMark({ selector: '#timeline-case-SYN-003' })),
@@ -175,11 +180,62 @@ describe('update', () => {
   test('without a focused mark the layout change moves no focus', () => {
     story(
       update,
-      given(initialModel),
+      given(loadedModel),
       message(Message.UpdatedHeroLayout({ layout: 'Axis' })),
       message(Message.EnteredCase({ caseId: CaseId.make('SYN-003') })),
       message(Message.UpdatedHeroLayout({ layout: 'Timeline' })),
       Command.expectNone(),
+    )
+  })
+})
+
+describe('loading the desk', () => {
+  test('starting the app reads the clock and checks the session', () => {
+    const started = init()
+    expect(started.model.deskLoad._tag).toBe('Loading')
+    expect(started.commands?.map(command => command.name)).toEqual([
+      GetCurrentTime.name,
+      CheckSession.name,
+    ])
+  })
+
+  test('loaded cases fill the queue and select the most urgent', () => {
+    story(
+      update,
+      given(initialModel),
+      message(Message.CompletedGetCurrentTime({ now: DEMO_START })),
+      message(Message.SucceededLoadDesk({ cases: SEED_CASES, ruleSets: [] })),
+      model(next => {
+        expect(next.deskLoad._tag).toBe('Loaded')
+        expect(visibleQueueOf(next).length).toBe(SEED_CASES.length)
+        expect(Option.isSome(next.maybeSelectedCaseId)).toBe(true)
+      }),
+    )
+  })
+
+  test('a failed load can be retried', () => {
+    story(
+      update,
+      given(initialModel),
+      message(Message.FailedLoadDesk({ failure: 'Unavailable' })),
+      model(next => {
+        expect(next.deskLoad).toEqual({
+          _tag: 'Failed',
+          failure: 'Unavailable',
+        })
+      }),
+      message(Message.ClickedRetryLoad()),
+      model(next => {
+        expect(next.deskLoad._tag).toBe('Loading')
+      }),
+      Command.expectHas(LoadDesk()),
+      Command.resolve(
+        LoadDesk,
+        Message.SucceededLoadDesk({ cases: SEED_CASES, ruleSets: [] }),
+      ),
+      model(next => {
+        expect(next.deskLoad._tag).toBe('Loaded')
+      }),
     )
   })
 })

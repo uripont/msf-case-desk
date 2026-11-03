@@ -1,5 +1,7 @@
 import { Schema } from 'effect'
 
+import { Col, Tolerant, UNKNOWN } from './compat'
+
 export const CaseId = Schema.NonEmptyString.pipe(Schema.brand('CaseId'))
 export type CaseId = typeof CaseId.Type
 
@@ -36,21 +38,31 @@ export const FastTrackSignal = Schema.Literals([
 ])
 export type FastTrackSignal = typeof FastTrackSignal.Type
 
+// NOTE: Case is the reader for stored cases. Its enums are tolerant, so a
+// value added by a newer version decodes as 'Unknown' instead of failing,
+// and every field after the triage factors may be missing or NULL.
 export const Case = Schema.Struct({
   id: CaseId,
   summary: Schema.NonEmptyString,
-  centre: OperationalCentre,
-  channel: Channel,
+  centre: Tolerant(OperationalCentre),
   receivedAt: Schema.Int,
-  scope: Scope,
-  risk: Risk,
-  urgency: Urgency,
-  fastTrackSignals: Schema.Array(FastTrackSignal),
+  scope: Tolerant(Scope),
+  risk: Tolerant(Risk),
+  urgency: Tolerant(Urgency),
+  fastTrackSignals: Schema.Array(Tolerant(FastTrackSignal)),
+  channel: Col(Tolerant(Channel), UNKNOWN),
+  details: Col(Schema.String, ''),
+  location: Col(Schema.String, ''),
+  reference: Col(Schema.String, ''),
+  enteredAt: Col(Schema.Int, 0),
+  enteredByName: Col(Schema.String, ''),
+  schemaVersion: Col(Schema.Int, 1),
 })
 export type Case = typeof Case.Type
 
 export const CENTRES: ReadonlyArray<OperationalCentre> =
   OperationalCentre.literals
+export const CHANNELS: ReadonlyArray<Channel> = Channel.literals
 export const SCOPES: ReadonlyArray<Scope> = Scope.literals
 export const RISKS: ReadonlyArray<Risk> = Risk.literals
 export const URGENCIES: ReadonlyArray<Urgency> = Urgency.literals

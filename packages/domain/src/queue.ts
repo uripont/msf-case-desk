@@ -1,7 +1,12 @@
 import { Array, Match, Order, pipe } from 'effect'
 
 import { type Case } from './case'
-import { type Priority, type TriageRules } from './rules'
+import {
+  type Priority,
+  type RuleSet,
+  type TriageRules,
+  rulesFor,
+} from './rules'
 import { type TriageResult, triage } from './triage'
 
 const HOUR_MS = 3_600_000
@@ -55,11 +60,28 @@ export const prioritise = (
   rules: TriageRules,
   cases: ReadonlyArray<Case>,
   now: number,
+): ReadonlyArray<TriagedCase> => prioritiseWith(() => rules, cases, now)
+
+export const prioritiseByCentre = (
+  ruleSets: ReadonlyArray<RuleSet>,
+  cases: ReadonlyArray<Case>,
+  now: number,
+): ReadonlyArray<TriagedCase> =>
+  prioritiseWith(
+    triageCase => rulesFor(ruleSets, triageCase.centre),
+    cases,
+    now,
+  )
+
+const prioritiseWith = (
+  rulesOf: (triageCase: Case) => TriageRules,
+  cases: ReadonlyArray<Case>,
+  now: number,
 ): ReadonlyArray<TriagedCase> =>
   pipe(
     cases,
     Array.map((triageCase): TriagedCase => {
-      const result = triage(rules, triageCase)
+      const result = triage(rulesOf(triageCase), triageCase)
       return { triageCase, result, sla: slaStatus(result.dueAt, now) }
     }),
     Array.sort(Order.combineAll([byPriority, byDueAt, byCaseId])),
