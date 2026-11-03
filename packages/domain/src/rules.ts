@@ -46,6 +46,43 @@ const Hours = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: MAX_TARGET_HOURS }),
 )
 
+export type RulesProblem = Readonly<{
+  path: ReadonlyArray<string>
+  issue: string
+}>
+
+// NOTE: the consistency checks between fields, shared by the schema below
+// and the rules editor, so both explain a problem in the same words.
+export const rulesProblemsOf = (
+  rules: TriageRules,
+): ReadonlyArray<RulesProblem> =>
+  Array.filterMap(
+    [
+      {
+        isBroken: rules.p2MinScore >= rules.p1MinScore,
+        path: ['p2MinScore'],
+        issue: 'The medium level must start below the urgent level',
+      },
+      {
+        isBroken: rules.fastTrackHours > rules.targetHours.P1,
+        path: ['fastTrackHours'],
+        issue: 'The fast-track target cannot be longer than the urgent target',
+      },
+      {
+        isBroken: rules.targetHours.P1 > rules.targetHours.P2,
+        path: ['targetHours', 'P2'],
+        issue: 'The medium target cannot be shorter than the urgent target',
+      },
+      {
+        isBroken: rules.targetHours.P2 > rules.targetHours.P3,
+        path: ['targetHours', 'P3'],
+        issue: 'The standard target cannot be shorter than the medium target',
+      },
+    ],
+    ({ isBroken, path, issue }): Result.Result<RulesProblem, void> =>
+      isBroken ? Result.succeed({ path, issue }) : Result.failVoid,
+  )
+
 export const ValidTriageRules = Schema.Struct({
   version: Schema.Trimmed.check(Schema.isNonEmpty(), Schema.isMaxLength(40)),
   p1MinScore: Schema.Int.check(
@@ -58,33 +95,10 @@ export const ValidTriageRules = Schema.Struct({
   targetHours: Schema.Struct({ P1: Hours, P2: Hours, P3: Hours }),
 }).check(
   Schema.makeFilter(rules =>
-    Array.filterMap(
-      [
-        {
-          isBroken: rules.p2MinScore >= rules.p1MinScore,
-          path: ['p2MinScore'],
-          issue: 'The medium level must start below the urgent level',
-        },
-        {
-          isBroken: rules.fastTrackHours > rules.targetHours.P1,
-          path: ['fastTrackHours'],
-          issue:
-            'The fast-track target cannot be longer than the urgent target',
-        },
-        {
-          isBroken: rules.targetHours.P1 > rules.targetHours.P2,
-          path: ['targetHours', 'P2'],
-          issue: 'The medium target cannot be shorter than the urgent target',
-        },
-        {
-          isBroken: rules.targetHours.P2 > rules.targetHours.P3,
-          path: ['targetHours', 'P3'],
-          issue: 'The standard target cannot be shorter than the medium target',
-        },
-      ],
-      ({ isBroken, path, issue }) =>
-        isBroken ? Result.succeed({ path, issue }) : Result.failVoid,
-    ),
+    rulesProblemsOf(rules).map(({ path, issue }) => ({
+      path: [...path],
+      issue,
+    })),
   ),
 )
 

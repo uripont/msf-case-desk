@@ -30,6 +30,7 @@ import {
   rulesOf,
   visibleQueueOf,
 } from './main'
+import { rulesPage } from './rulesView'
 import { focusRing, outlineButtonClassName, textButtonClassName } from './style'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
 
@@ -140,6 +141,7 @@ const wordmark = (h: HtmlBuilder<Message>): Html =>
 const PAGE_LINKS: ReadonlyArray<{ page: Page; label: string }> = [
   { page: 'Desk', label: 'Cases' },
   { page: 'NewCase', label: 'New case' },
+  { page: 'Rules', label: 'Rules' },
 ]
 
 const pageLink = (
@@ -773,7 +775,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
   Match.value(model.page).pipe(
     Match.when('Desk', () => loadedDesk(model, h)),
     Match.when('NewCase', () => [entryPage(model, h)]),
-    Match.when('Rules', () => loadedDesk(model, h)),
+    Match.when('Rules', () => [rulesPage(model, h)]),
     Match.exhaustive,
   )
 
