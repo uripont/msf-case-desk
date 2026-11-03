@@ -11,16 +11,19 @@ import {
   priorityLabel,
 } from '@case-desk/domain'
 
+import { type ApiFailure } from './api'
 import { BRAND } from './brand'
 import { formatInstant, formatSla, formatSlaShort, humanise } from './format'
 import {
   CENTRE_FILTERS,
   type CentreFilter,
+  DeskLoad,
   Message,
   type Model,
   dueSoonCountOf,
   maybeSelectedOf,
   overdueCountOf,
+  rulesOf,
   visibleQueueOf,
 } from './main'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
@@ -313,7 +316,7 @@ const prioritySection = (
           h.p(
             [h.Class('text-base tabular-nums text-msf-grey')],
             [
-              `${rows.length} ${plural(rows.length, 'case', 'cases')}, assess within ${model.rules.targetHours[priority]} hours`,
+              `${rows.length} ${plural(rows.length, 'case', 'cases')}, assess within ${rulesOf(model).targetHours[priority]} hours`,
             ],
           ),
         ],
@@ -596,6 +599,88 @@ const footer = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
+const deskMessage = (
+  title: string,
+  body: string,
+  h: HtmlBuilder<Message>,
+  maybeAction: Option.Option<Html> = Option.none(),
+): Html =>
+  h.section(
+    [
+      h.AriaLabel('Case desk status'),
+      h.Class('flex flex-col items-start gap-4 pb-14 pt-12 md:pb-20 md:pt-16'),
+    ],
+    [
+      h.h1(
+        [
+          h.Class(
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+          ),
+        ],
+        [title],
+      ),
+      h.p(
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [body],
+      ),
+      Option.getOrElse(maybeAction, () => h.empty),
+    ],
+  )
+
+const loadingDesk = (h: HtmlBuilder<Message>): Html =>
+  deskMessage('Loading cases', 'Getting the latest cases and rules.', h)
+
+const failedDesk = (failure: ApiFailure, h: HtmlBuilder<Message>): Html =>
+  Match.value(failure).pipe(
+    Match.when('SignInRequired', () =>
+      deskMessage('Sign in to see the cases', 'Your session has ended.', h),
+    ),
+    Match.when('Unavailable', () =>
+      deskMessage(
+        'The cases could not be loaded',
+        'The case desk did not answer. Check your connection and try again.',
+        h,
+        Option.some(
+          h.button(
+            [
+              h.Class(outlineButtonClassName),
+              h.OnClick(Message.ClickedRetryLoad()),
+            ],
+            ['Try again'],
+          ),
+        ),
+      ),
+    ),
+    Match.exhaustive,
+  )
+
+const loadedDesk = (
+  model: Model,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> => [
+  intro(model, h),
+  h.div(
+    [
+      h.Class(
+        'grid gap-16 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:gap-20',
+      ),
+    ],
+    [
+      queueList(model, h),
+      Option.match(maybeSelectedOf(model), {
+        onNone: () => emptyDetail(movingBlockStyle(model, 'case-detail'), h),
+        onSome: triaged =>
+          detailPanel(
+            triaged,
+            model.isDetailSheetOpen,
+            movingBlockStyle(model, 'case-detail'),
+            h,
+          ),
+      }),
+    ],
+  ),
+]
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: BRAND.productName,
   body: h.div(
@@ -604,30 +689,11 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
       topBar(model, h),
       h.main(
         [],
-        [
-          intro(model, h),
-          h.div(
-            [
-              h.Class(
-                'grid gap-16 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:gap-20',
-              ),
-            ],
-            [
-              queueList(model, h),
-              Option.match(maybeSelectedOf(model), {
-                onNone: () =>
-                  emptyDetail(movingBlockStyle(model, 'case-detail'), h),
-                onSome: triaged =>
-                  detailPanel(
-                    triaged,
-                    model.isDetailSheetOpen,
-                    movingBlockStyle(model, 'case-detail'),
-                    h,
-                  ),
-              }),
-            ],
-          ),
-        ],
+        DeskLoad.match(model.deskLoad, {
+          Loading: () => [loadingDesk(h)],
+          Failed: ({ failure }) => [failedDesk(failure, h)],
+          Loaded: () => loadedDesk(model, h),
+        }),
       ),
       footer(model, h),
     ],

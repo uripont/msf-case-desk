@@ -1,19 +1,30 @@
-import { Array, Duration, Effect, Option, Schema, Stream, pipe } from 'effect'
+import {
+  Array,
+  Clock,
+  Duration,
+  Effect,
+  Option,
+  Schema,
+  Stream,
+  pipe,
+} from 'effect'
 import { Command, Dom, Runtime, Subscription, Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
+import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
 import {
   Case,
   CaseId,
-  DEFAULT_RULES,
   DEMO_START,
-  SEED_CASES,
-  TriageRules,
+  RuleSet,
+  type TriageRules,
   type TriagedCase,
-  prioritise,
+  prioritiseByCentre,
+  rulesFor,
 } from '@case-desk/domain'
 
+import { ApiFailure, failureOf, withApi } from './api'
 import {
   HeroLayout,
   LAYOUT_SETTLE_MS,
@@ -38,9 +49,18 @@ export type CentreFilter = typeof CentreFilter.Type
 
 export const CENTRE_FILTERS: ReadonlyArray<CentreFilter> = CentreFilter.literals
 
+export const DeskLoad = defineTaggedUnion({
+  Loading: {},
+  Loaded: {},
+  Failed: { failure: ApiFailure },
+})
+export type DeskLoad = typeof DeskLoad.Type
+
 export const Model = Schema.Struct({
-  rules: TriageRules,
+  deskLoad: DeskLoad,
+  ruleSets: Schema.Array(RuleSet),
   cases: Schema.Array(Case),
+  startedAt: Schema.Int,
   now: Schema.Int,
   maybeSelectedCaseId: Schema.Option(CaseId),
   maybeHighlightedCaseId: Schema.Option(CaseId),
@@ -67,13 +87,26 @@ export const Message = defineMessageUnion({
   ClickedResetClock: {},
   ClickedToggleDemoControls: {},
   SelectedCentreFilter: { centreFilter: CentreFilter },
+  CompletedGetCurrentTime: { now: Schema.Int },
+  SucceededLoadDesk: {
+    cases: Schema.Array(Case),
+    ruleSets: Schema.Array(RuleSet),
+  },
+  FailedLoadDesk: { failure: ApiFailure },
+  ClickedRetryLoad: {},
 })
 export type Message = typeof Message.Type
 
 // QUERIES
 
 export const queueOf = (model: Model): ReadonlyArray<TriagedCase> =>
-  prioritise(model.rules, model.cases, model.now)
+  prioritiseByCentre(model.ruleSets, model.cases, model.now)
+
+export const rulesOf = (model: Model): TriageRules =>
+  rulesFor(
+    model.ruleSets,
+    model.centreFilter === 'All' ? 'Default' : model.centreFilter,
+  )
 
 export const visibleQueueOf = (model: Model): ReadonlyArray<TriagedCase> =>
   pipe(
@@ -106,20 +139,20 @@ export const dueSoonCountOf = (model: Model): number =>
 
 // INIT
 
-const firstCaseId = (
-  cases: ReadonlyArray<Case>,
-): Option.Option<typeof CaseId.Type> =>
+const firstCaseIdOf = (model: Model): Option.Option<typeof CaseId.Type> =>
   pipe(
-    prioritise(DEFAULT_RULES, cases, DEMO_START),
+    queueOf(model),
     Array.head,
     Option.map(triaged => triaged.triageCase.id),
   )
 
 export const initialModel = Model.make({
-  rules: DEFAULT_RULES,
-  cases: SEED_CASES,
+  deskLoad: DeskLoad.Loading(),
+  ruleSets: [],
+  cases: [],
+  startedAt: DEMO_START,
   now: DEMO_START,
-  maybeSelectedCaseId: firstCaseId(SEED_CASES),
+  maybeSelectedCaseId: Option.none(),
   maybeHighlightedCaseId: Option.none(),
   maybeFocusedMarkId: Option.none(),
   heroLayout: 'Responsive',
@@ -130,6 +163,7 @@ export const initialModel = Model.make({
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   model: initialModel,
+  commands: [GetCurrentTime(), LoadDesk()],
 })
 
 // COMMAND
@@ -142,6 +176,30 @@ export const FocusCaseMark = Command.define('FocusCaseMark', {
       Effect.catch(() => Effect.void),
       Effect.as(Message.CompletedFocusCaseMark()),
     ),
+})
+
+export const GetCurrentTime = Command.define('GetCurrentTime', {
+  messages: [Message.CompletedGetCurrentTime],
+  execute: Effect.map(Clock.currentTimeMillis, now =>
+    Message.CompletedGetCurrentTime({ now }),
+  ),
+})
+
+export const LoadDesk = Command.define('LoadDesk', {
+  messages: [Message.SucceededLoadDesk, Message.FailedLoadDesk],
+  execute: withApi(client =>
+    Effect.all({
+      cases: client.ListCases(),
+      ruleSets: client.ListRuleSets(),
+    }),
+  ).pipe(
+    Effect.map(({ cases, ruleSets }) =>
+      Message.SucceededLoadDesk({ cases, ruleSets }),
+    ),
+    Effect.catch(error =>
+      Effect.succeed(Message.FailedLoadDesk({ failure: failureOf(error) })),
+    ),
+  ),
 })
 
 // UPDATE
@@ -208,10 +266,35 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     ClickedResetClock: () => ({
-      model: modifyFields(model, { now: () => DEMO_START }),
+      model: modifyFields(model, { now: () => model.startedAt }),
     }),
     SelectedCentreFilter: ({ centreFilter }) => ({
       model: modifyFields(model, { centreFilter: () => centreFilter }),
+    }),
+    CompletedGetCurrentTime: ({ now }) => ({
+      model: modifyFields(model, { startedAt: () => now, now: () => now }),
+    }),
+    SucceededLoadDesk: ({ cases, ruleSets }) => {
+      const loaded = modifyFields(model, {
+        deskLoad: () => DeskLoad.Loaded(),
+        cases: () => cases,
+        ruleSets: () => ruleSets,
+      })
+      return {
+        model: modifyFields(loaded, {
+          maybeSelectedCaseId: maybeSelected =>
+            Option.orElse(maybeSelected, () => firstCaseIdOf(loaded)),
+        }),
+      }
+    },
+    FailedLoadDesk: ({ failure }) => ({
+      model: modifyFields(model, {
+        deskLoad: () => DeskLoad.Failed({ failure }),
+      }),
+    }),
+    ClickedRetryLoad: () => ({
+      model: modifyFields(model, { deskLoad: () => DeskLoad.Loading() }),
+      commands: [LoadDesk()],
     }),
   })
 
