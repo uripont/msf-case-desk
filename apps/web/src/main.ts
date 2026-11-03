@@ -26,8 +26,10 @@ import {
   FastTrackSignal,
   RISKS,
   RuleSet,
+  RuleSetScope,
   SCOPES,
   type TriageRules,
+  TriageRules as TriageRulesSchema,
   type TriagedCase,
   URGENCIES,
   User,
@@ -61,6 +63,13 @@ import {
   toggleSignal,
 } from './entryForm'
 import { hoursToMs } from './format'
+import {
+  RulesField,
+  RulesForm,
+  RulesSubmission,
+  rulesFormFor,
+  rulesOfForm,
+} from './rulesForm'
 
 // MODEL
 
@@ -110,6 +119,7 @@ export type Page = typeof Page.Type
 export const Model = Schema.Struct({
   page: Page,
   entryForm: EntryForm,
+  rulesForm: RulesForm,
   session: Session,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
@@ -164,6 +174,12 @@ export const Message = defineMessageUnion({
   SubmittedEntry: {},
   SucceededCreateCase: { created: Case },
   FailedCreateCase: { failure: ApiFailure },
+  SelectedRulesScope: { scope: RuleSetScope },
+  UpdatedRulesField: { field: RulesField, value: Schema.String },
+  SubmittedRules: {},
+  ClickedDiscardRules: {},
+  SucceededPutRuleSet: { ruleSet: RuleSet },
+  FailedPutRuleSet: { failure: ApiFailure },
 })
 export type Message = typeof Message.Type
 
@@ -225,6 +241,7 @@ const emptyLoginForm = LoginForm.make({
 export const initialModel = Model.make({
   page: 'Desk',
   entryForm: emptyEntryForm(DEMO_START),
+  rulesForm: rulesFormFor([], 'Default'),
   session: Session.Checking(),
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
@@ -323,6 +340,65 @@ export const CreateCase = Command.define('CreateCase', {
       ),
     ),
 })
+
+export const PutRuleSet = Command.define('PutRuleSet', {
+  args: { scope: RuleSetScope, rules: TriageRulesSchema },
+  messages: [Message.SucceededPutRuleSet, Message.FailedPutRuleSet],
+  execute: ({ scope, rules }) =>
+    withApi(client => client.PutRuleSet({ scope, rules })).pipe(
+      Effect.map(ruleSet => Message.SucceededPutRuleSet({ ruleSet })),
+      Effect.catch(error =>
+        Effect.succeed(Message.FailedPutRuleSet({ failure: failureOf(error) })),
+      ),
+    ),
+})
+
+const withRulesField = (
+  form: RulesForm,
+  field: RulesField,
+  value: string,
+): RulesForm =>
+  modifyFields(
+    Match.value(field).pipe(
+      Match.when('version', () => modifyFields(form, { version: () => value })),
+      Match.when('p1MinScore', () =>
+        modifyFields(form, { p1MinScore: () => value }),
+      ),
+      Match.when('p2MinScore', () =>
+        modifyFields(form, { p2MinScore: () => value }),
+      ),
+      Match.when('fastTrackHours', () =>
+        modifyFields(form, { fastTrackHours: () => value }),
+      ),
+      Match.when('targetP1', () =>
+        modifyFields(form, { targetP1: () => value }),
+      ),
+      Match.when('targetP2', () =>
+        modifyFields(form, { targetP2: () => value }),
+      ),
+      Match.when('targetP3', () =>
+        modifyFields(form, { targetP3: () => value }),
+      ),
+      Match.exhaustive,
+    ),
+    { submission: () => RulesSubmission.Editing() },
+  )
+
+const submitRules = (model: Model): Update.Return<Model, Message> =>
+  Result.match(rulesOfForm(model.rulesForm), {
+    onFailure: () => ({
+      model: modifyFields(model, {
+        rulesForm: form => modifyFields(form, { isShowingErrors: () => true }),
+      }),
+    }),
+    onSuccess: rules => ({
+      model: modifyFields(model, {
+        rulesForm: form =>
+          modifyFields(form, { submission: () => RulesSubmission.Saving() }),
+      }),
+      commands: [PutRuleSet({ scope: model.rulesForm.scope, rules })],
+    }),
+  })
 
 const isOneOf =
   <A extends string>(choices: ReadonlyArray<A>) =>
@@ -552,7 +628,62 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, {
         page: () => page,
         isDetailSheetOpen: () => false,
+        rulesForm: form =>
+          page === 'Rules' && !RulesSubmission.guards.Saving(form.submission)
+            ? rulesFormFor(model.ruleSets, form.scope)
+            : form,
       }),
+    }),
+    SelectedRulesScope: ({ scope }) => ({
+      model: modifyFields(model, {
+        rulesForm: () => rulesFormFor(model.ruleSets, scope),
+      }),
+    }),
+    UpdatedRulesField: ({ field, value }) => ({
+      model: modifyFields(model, {
+        rulesForm: form => withRulesField(form, field, value),
+      }),
+    }),
+    SubmittedRules: () =>
+      RulesSubmission.match(model.rulesForm.submission, {
+        Saving: () => ({ model }),
+        Editing: () => submitRules(model),
+        Saved: () => submitRules(model),
+        Failed: () => submitRules(model),
+      }),
+    ClickedDiscardRules: () => ({
+      model: modifyFields(model, {
+        rulesForm: form => rulesFormFor(model.ruleSets, form.scope),
+      }),
+    }),
+    SucceededPutRuleSet: ({ ruleSet }) => {
+      const ruleSets = Array.append(
+        Array.filter(
+          model.ruleSets,
+          existing => existing.scope !== ruleSet.scope,
+        ),
+        ruleSet,
+      )
+      return {
+        model: modifyFields(model, {
+          ruleSets: () => ruleSets,
+          rulesForm: form =>
+            modifyFields(rulesFormFor(ruleSets, form.scope), {
+              submission: () => RulesSubmission.Saved(),
+            }),
+        }),
+      }
+    },
+    FailedPutRuleSet: ({ failure }) => ({
+      model:
+        failure === 'SignInRequired'
+          ? signedOut(model)
+          : modifyFields(model, {
+              rulesForm: form =>
+                modifyFields(form, {
+                  submission: () => RulesSubmission.Failed({ failure }),
+                }),
+            }),
     }),
     UpdatedEntryField: ({ field, value }) => ({
       model: modifyFields(model, {
