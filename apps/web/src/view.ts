@@ -11,18 +11,28 @@ import {
   priorityLabel,
 } from '@case-desk/domain'
 
+import { type ApiFailure } from './api'
 import { BRAND } from './brand'
+import { entryPage } from './entryView'
 import { formatInstant, formatSla, formatSlaShort, humanise } from './format'
+import { loginPage } from './loginView'
 import {
   CENTRE_FILTERS,
   type CentreFilter,
+  DeskLoad,
   Message,
   type Model,
+  PAGE_HEADING_ID,
+  type Page,
+  Session,
   dueSoonCountOf,
   maybeSelectedOf,
   overdueCountOf,
+  rulesOf,
   visibleQueueOf,
 } from './main'
+import { rulesPage } from './rulesView'
+import { focusRing, outlineButtonClassName, textButtonClassName } from './style'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
 
 // COPY
@@ -64,9 +74,6 @@ const lede = (
 
 // STYLE
 
-const focusRing =
-  'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-msf-ink'
-
 const sectionRuleClassName = (priority: Priority): string =>
   Match.value(priority).pipe(
     Match.when('P1', () => 'border-msf-red'),
@@ -91,16 +98,6 @@ const slaClassName = (sla: SlaStatus): string =>
       Overdue: () => 'font-medium text-msf-red',
     }),
   )
-
-const textButtonClassName = clsx(
-  'cursor-pointer text-msf-ink underline decoration-msf-line decoration-1 underline-offset-[6px] transition-colors hover:decoration-msf-red',
-  focusRing,
-)
-
-const outlineButtonClassName = clsx(
-  'inline-flex h-10 min-w-14 cursor-pointer items-center justify-center border border-msf-line px-3 tabular-nums text-msf-ink transition-colors hover:border-msf-red hover:text-msf-red active:bg-msf-mist',
-  focusRing,
-)
 
 // VIEW
 
@@ -142,27 +139,106 @@ const wordmark = (h: HtmlBuilder<Message>): Html =>
     [BRAND.productName],
   )
 
-const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.header(
+const PAGE_LINKS: ReadonlyArray<{ page: Page; label: string }> = [
+  { page: 'Desk', label: 'Cases' },
+  { page: 'NewCase', label: 'New case' },
+  { page: 'Rules', label: 'Rules' },
+]
+
+const pageLink = (
+  model: Model,
+  page: Page,
+  label: string,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const isCurrent = model.page === page
+  return h.button(
     [
       h.Class(
-        'flex flex-col gap-x-12 border-b border-msf-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
-      ),
-    ],
-    [
-      wordmark(h),
-      h.nav(
-        [
-          h.AriaLabel('Operational centre'),
-          h.Class(
-            '-mx-5 flex gap-x-6 overflow-x-auto px-5 [scrollbar-width:none] sm:-mx-10 sm:px-10 md:mx-0 md:gap-x-7 md:overflow-visible md:px-0',
-          ),
-        ],
-        Array.map(CENTRE_FILTERS, centreFilter =>
-          centreTab(model, centreFilter, h),
+        clsx(
+          'cursor-pointer text-base transition-colors',
+          focusRing,
+          isCurrent
+            ? 'font-medium text-msf-black underline decoration-msf-red decoration-2 underline-offset-[6px]'
+            : 'text-msf-grey hover:text-msf-ink',
         ),
       ),
+      ...(isCurrent ? [h.AriaCurrent('page')] : []),
+      h.OnClick(Message.ClickedPage({ page })),
     ],
+    [label],
+  )
+}
+
+const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
+  Session.match(model.session, {
+    Checking: () => h.empty,
+    SignedOut: () => h.empty,
+    SignedIn: ({ user }) =>
+      h.div(
+        [
+          h.Class(
+            'flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pt-4 text-sm text-msf-grey',
+          ),
+        ],
+        [
+          h.nav(
+            [h.AriaLabel('Pages'), h.Class('flex gap-x-6')],
+            Array.map(PAGE_LINKS, ({ page, label }) =>
+              pageLink(model, page, label, h),
+            ),
+          ),
+          h.div(
+            [h.Class('flex items-baseline gap-x-4')],
+            [
+              h.span([], [user.name]),
+              h.button(
+                [
+                  h.Class(textButtonClassName),
+                  h.OnClick(Message.ClickedSignOut()),
+                ],
+                ['Sign out'],
+              ),
+            ],
+          ),
+        ],
+      ),
+  })
+
+const centreNav = (model: Model, h: HtmlBuilder<Message>): Html =>
+  Session.match(model.session, {
+    Checking: () => h.empty,
+    SignedOut: () => h.empty,
+    SignedIn: () => (model.page === 'Desk' ? centreTabs(model, h) : h.empty),
+  })
+
+const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.header(
+    [],
+    [
+      accountBar(model, h),
+      h.div(
+        [
+          h.Class(
+            'flex flex-col gap-x-12 border-b border-msf-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
+          ),
+        ],
+        [wordmark(h), centreNav(model, h)],
+      ),
+    ],
+  )
+
+const centreTabs = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.nav(
+    [
+      h.AriaLabel('Operational centre'),
+      h.Class(
+        '-mx-5 flex gap-x-6 overflow-x-auto px-5 [scrollbar-width:none] sm:-mx-10 sm:px-10 md:mx-0 md:gap-x-7 md:overflow-visible md:px-0',
+      ),
+    ],
+    Array.map(CENTRE_FILTERS, centreFilter =>
+      centreTab(model, centreFilter, h),
+    ),
   )
 
 const intro = (model: Model, h: HtmlBuilder<Message>): Html => {
@@ -180,6 +256,7 @@ const intro = (model: Model, h: HtmlBuilder<Message>): Html => {
     [
       h.h1(
         [
+          h.Id(PAGE_HEADING_ID),
           h.Class(
             'max-w-4xl text-balance text-[2.75rem] font-black text-msf-black leading-[1.02] tracking-[-0.025em] sm:text-6xl md:text-7xl',
           ),
@@ -313,7 +390,7 @@ const prioritySection = (
           h.p(
             [h.Class('text-base tabular-nums text-msf-grey')],
             [
-              `${rows.length} ${plural(rows.length, 'case', 'cases')}, assess within ${model.rules.targetHours[priority]} hours`,
+              `${rows.length} ${plural(rows.length, 'case', 'cases')}, assess within ${rulesOf(model).targetHours[priority]} hours`,
             ],
           ),
         ],
@@ -340,13 +417,29 @@ const queueList = (model: Model, h: HtmlBuilder<Message>): Html => {
     ],
     Array.match(queue, {
       onEmpty: () => [
-        h.p(
+        h.div(
           [
             h.Class(
-              'border-t-2 border-msf-ink pt-5 text-2xl font-light text-msf-grey',
+              'flex flex-col items-start gap-5 border-t-2 border-msf-ink pt-5',
             ),
           ],
-          ['No cases for this centre.'],
+          [
+            h.p(
+              [h.Class('text-2xl font-light text-msf-grey')],
+              [
+                Array.isReadonlyArrayEmpty(model.cases)
+                  ? 'No cases yet.'
+                  : 'No cases for this centre.',
+              ],
+            ),
+            h.button(
+              [
+                h.Class(outlineButtonClassName),
+                h.OnClick(Message.ClickedPage({ page: 'NewCase' })),
+              ],
+              ['Enter a case'],
+            ),
+          ],
         ),
       ],
       onNonEmpty: () =>
@@ -460,6 +553,24 @@ const detailPanel = (
         [h.Class('max-w-prose text-[17px] leading-relaxed text-msf-ink')],
         [detailSentence(triaged)],
       ),
+      triageCase.details === ''
+        ? h.empty
+        : h.p(
+            [
+              h.Class(
+                'max-w-prose whitespace-pre-line border-l-2 border-msf-line pl-4 text-base leading-relaxed text-msf-ink',
+              ),
+            ],
+            [triageCase.details],
+          ),
+      triageCase.enteredByName === ''
+        ? h.empty
+        : h.p(
+            [h.Class('text-sm text-msf-grey')],
+            [
+              `Entered by ${triageCase.enteredByName} on ${formatInstant(triageCase.enteredAt)}.`,
+            ],
+          ),
       h.div(
         [h.Class('flex flex-col gap-2')],
         [
@@ -596,6 +707,96 @@ const footer = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
+const deskMessage = (
+  title: string,
+  body: string,
+  h: HtmlBuilder<Message>,
+  maybeAction: Option.Option<Html> = Option.none(),
+): Html =>
+  h.section(
+    [
+      h.AriaLabel('Case desk status'),
+      h.Class('flex flex-col items-start gap-4 pb-14 pt-12 md:pb-20 md:pt-16'),
+    ],
+    [
+      h.h1(
+        [
+          h.Class(
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+          ),
+        ],
+        [title],
+      ),
+      h.p(
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [body],
+      ),
+      Option.getOrElse(maybeAction, () => h.empty),
+    ],
+  )
+
+const loadingDesk = (h: HtmlBuilder<Message>): Html =>
+  deskMessage('Loading cases', 'Getting the latest cases and rules.', h)
+
+const failedDesk = (failure: ApiFailure, h: HtmlBuilder<Message>): Html =>
+  Match.value(failure).pipe(
+    Match.when('SignInRequired', () =>
+      deskMessage('Sign in to see the cases', 'Your session has ended.', h),
+    ),
+    Match.when('Unavailable', () =>
+      deskMessage(
+        'The cases could not be loaded',
+        'The case desk did not answer. Check your connection and try again.',
+        h,
+        Option.some(
+          h.button(
+            [
+              h.Class(outlineButtonClassName),
+              h.OnClick(Message.ClickedRetryLoad()),
+            ],
+            ['Try again'],
+          ),
+        ),
+      ),
+    ),
+    Match.exhaustive,
+  )
+
+const loadedDesk = (
+  model: Model,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> => [
+  intro(model, h),
+  h.div(
+    [
+      h.Class(
+        'grid gap-16 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:gap-20',
+      ),
+    ],
+    [
+      queueList(model, h),
+      Option.match(maybeSelectedOf(model), {
+        onNone: () => emptyDetail(movingBlockStyle(model, 'case-detail'), h),
+        onSome: triaged =>
+          detailPanel(
+            triaged,
+            model.isDetailSheetOpen,
+            movingBlockStyle(model, 'case-detail'),
+            h,
+          ),
+      }),
+    ],
+  ),
+]
+
+const pageView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
+  Match.value(model.page).pipe(
+    Match.when('Desk', () => loadedDesk(model, h)),
+    Match.when('NewCase', () => [entryPage(model, h)]),
+    Match.when('Rules', () => [rulesPage(model, h)]),
+    Match.exhaustive,
+  )
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: BRAND.productName,
   body: h.div(
@@ -604,30 +805,18 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
       topBar(model, h),
       h.main(
         [],
-        [
-          intro(model, h),
-          h.div(
-            [
-              h.Class(
-                'grid gap-16 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:gap-20',
-              ),
-            ],
-            [
-              queueList(model, h),
-              Option.match(maybeSelectedOf(model), {
-                onNone: () =>
-                  emptyDetail(movingBlockStyle(model, 'case-detail'), h),
-                onSome: triaged =>
-                  detailPanel(
-                    triaged,
-                    model.isDetailSheetOpen,
-                    movingBlockStyle(model, 'case-detail'),
-                    h,
-                  ),
-              }),
-            ],
-          ),
-        ],
+        Session.match(model.session, {
+          Checking: () => [
+            deskMessage('Opening Case Desk', 'Checking your session.', h),
+          ],
+          SignedOut: () => [loginPage(model, h)],
+          SignedIn: () =>
+            DeskLoad.match(model.deskLoad, {
+              Loading: () => [loadingDesk(h)],
+              Failed: ({ failure }) => [failedDesk(failure, h)],
+              Loaded: () => pageView(model, h),
+            }),
+        }),
       ),
       footer(model, h),
     ],

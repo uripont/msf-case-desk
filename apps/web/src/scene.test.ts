@@ -1,4 +1,5 @@
 import {
+  Command,
   click,
   expect,
   given,
@@ -10,14 +11,15 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { initialModel, update } from './main'
+import { loadedModel, signedInModel } from './fixtures'
+import { FocusElement, LoadDesk, Message, initialModel, update } from './main'
 import { view } from './view'
 
 describe('scene', () => {
   test('the home screen leads with what needs attention', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       expect(role('heading', { name: '1 case is due soon' })).toExist(),
       expect(role('region', { name: 'Urgent' })).toExist(),
       expect(role('region', { name: 'Standard' })).toExist(),
@@ -28,7 +30,7 @@ describe('scene', () => {
   test('picking another case explains its priority', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       click(role('button', { name: /Question about whether a gift/ })),
       expect(role('heading', { name: 'Why this is standard' })).toExist(),
     )
@@ -37,7 +39,7 @@ describe('scene', () => {
   test('choosing an operational centre narrows the queue', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       click(role('button', { name: 'OCG' })),
       expect(text('SYN-001', { exact: false })).toExist(),
       expect(text('SYN-002', { exact: false })).toBeAbsent(),
@@ -47,7 +49,7 @@ describe('scene', () => {
   test('advancing the clock turns due cases into overdue ones', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       expect(text('Mon 2 Nov, 09:00 UTC', { exact: false })).toBeAbsent(),
       click(role('button', { name: 'Demo controls' })),
       expect(text('Mon 2 Nov, 09:00 UTC', { exact: false })).toExist(),
@@ -61,7 +63,7 @@ describe('scene', () => {
   test('every case on the time axis is a named button', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       inside(
         role('group', { name: 'Cases on the time axis' }),
         expect(
@@ -84,7 +86,7 @@ describe('scene', () => {
   test('tapping a case on the timeline opens it', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       inside(
         role('group', { name: 'Cases on the timeline' }),
         click(role('button', { name: /^SYN-005,/ })),
@@ -97,7 +99,7 @@ describe('scene', () => {
   test('the axis is one tab stop and arrow keys move between cases', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       inside(
         role('group', { name: 'Cases on the timeline' }),
         expect(role('button', { name: /^SYN-001,/ })).toHaveAttr(
@@ -124,11 +126,60 @@ describe('scene', () => {
   test('the footer shows the MSF logo and where the prototype comes from', () => {
     scene(
       { update, view },
-      given(initialModel),
+      given(loadedModel),
       expect(role('img', { name: 'Metges Sense Fronteres' })).toExist(),
       expect(
         text('developed at Universitat Pompeu Fabra', { exact: false }),
       ).toExist(),
+    )
+  })
+})
+
+const emptyModel = update(
+  signedInModel,
+  Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
+).model
+
+const failedModel = update(
+  signedInModel,
+  Message.FailedLoadDesk({ failure: 'Unavailable' }),
+).model
+
+describe('desk states', () => {
+  test('a desk with no cases invites the first entry', () => {
+    scene(
+      { update, view },
+      given(emptyModel),
+      expect(role('heading', { name: 'Everything is on track' })).toExist(),
+      expect(text('No cases yet.')).toExist(),
+      click(role('button', { name: 'Enter a case' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
+      expect(role('heading', { name: 'New case' })).toExist(),
+    )
+  })
+
+  test('a desk that cannot load offers to try again', () => {
+    scene(
+      { update, view },
+      given(failedModel),
+      expect(
+        role('heading', { name: 'The cases could not be loaded' }),
+      ).toExist(),
+      click(role('button', { name: 'Try again' })),
+      Command.resolve(
+        LoadDesk,
+        Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
+      ),
+      expect(text('No cases yet.')).toExist(),
+    )
+  })
+
+  test('the session check shows a quiet opening state', () => {
+    scene(
+      { update, view },
+      given(initialModel),
+      expect(role('heading', { name: 'Opening Case Desk' })).toExist(),
+      expect(role('heading', { name: 'Sign in' })).toBeAbsent(),
     )
   })
 })
