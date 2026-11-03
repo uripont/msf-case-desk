@@ -52,6 +52,9 @@ importers:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       fast-check:
         specifier: ^4.10.2
         version: 4.10.2
@@ -67,6 +70,9 @@ importers:
       vitest:
         specifier: ^5.0.2
         version: 5.0.5(@types/node@24.19.2)(happy-dom@21.0.4)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      workerd:
+        specifier: 1.20261012.1
+        version: 1.20261012.1
 
   apps/web:
     dependencies:
