@@ -415,13 +415,29 @@ const queueList = (model: Model, h: HtmlBuilder<Message>): Html => {
     ],
     Array.match(queue, {
       onEmpty: () => [
-        h.p(
+        h.div(
           [
             h.Class(
-              'border-t-2 border-msf-ink pt-5 text-2xl font-light text-msf-grey',
+              'flex flex-col items-start gap-5 border-t-2 border-msf-ink pt-5',
             ),
           ],
-          ['No cases for this centre.'],
+          [
+            h.p(
+              [h.Class('text-2xl font-light text-msf-grey')],
+              [
+                Array.isReadonlyArrayEmpty(model.cases)
+                  ? 'No cases yet.'
+                  : 'No cases for this centre.',
+              ],
+            ),
+            h.button(
+              [
+                h.Class(outlineButtonClassName),
+                h.OnClick(Message.ClickedPage({ page: 'NewCase' })),
+              ],
+              ['Enter a case'],
+            ),
+          ],
         ),
       ],
       onNonEmpty: () =>
@@ -788,7 +804,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
       h.main(
         [],
         Session.match(model.session, {
-          Checking: () => [loadingDesk(h)],
+          Checking: () => [
+            deskMessage('Opening Case Desk', 'Checking your session.', h),
+          ],
           SignedOut: () => [loginPage(model, h)],
           SignedIn: () =>
             DeskLoad.match(model.deskLoad, {
