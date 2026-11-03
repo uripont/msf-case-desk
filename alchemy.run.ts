@@ -20,6 +20,14 @@ const snapshotDir = (root: string, tag: string): string => {
 const workerName = (name: string): string =>
   `${process.env.CASE_DESK_WORKER_PREFIX ?? ""}${name}`;
 
+// Workers Logs and Issues are free; Issues feeds the error alert in
+// alchemy.alerts.run.ts.
+const observability = {
+  enabled: true,
+  logs: { enabled: true, invocationLogs: true },
+  issues: { enabled: true },
+};
+
 const snapshotMemo = {
   include: ["src/**", "public/**", "index.html", "vite.config.ts", "package.json"],
   lockfile: true,
@@ -61,6 +69,7 @@ export default Alchemy.Stack(
       main: path.resolve(root, "apps/api/src/worker.ts"),
       assets: { runWorkerFirst: ["/api/*"] },
       env: { DB: database },
+      observability,
     });
 
     return {

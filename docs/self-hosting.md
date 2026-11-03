@@ -109,13 +109,20 @@ Add or change accounts with `pnpm users:add`, refresh the demo cases with `pnpm 
 pnpm exec alchemy --no-input destroy --yes
 ```
 
-This deletes the Workers and the database with all its data. The usage alerts, if you created them, live in a separate stack and stay (see below).
+This deletes the Workers and the database with all its data. The error alert, if you created it, lives in a separate stack and stays (`pnpm alerts:destroy` removes it).
 
-### Usage alerts (optional)
+### Usage and error alerts
 
-[`alchemy.alerts.run.ts`](../alchemy.alerts.run.ts) is a separate stack for e-mail alerts about usage, so destroying the app never removes them. Set `ALERT_EMAIL` in your shell (the variables are listed in [`.env.example`](../.env.example)), then run `pnpm alerts:plan` and `pnpm alerts:deploy`. If your plan offers no usage alerts, the stack says so and the guide below applies.
+The Workers Free plan has no alerts based on usage (Cloudflare's usage-based billing alert needs a paid plan). What it does have:
 
-To check usage by hand: dashboard, *Workers & Pages*, *Overview* shows the requests of the day against the 100,000 daily limit, and *Storage & Databases*, *D1* shows rows read and written.
+- **Built-in usage notifications**, on by default for free Workers accounts: a weekly summary of requests and CPU time, and a usage report when a Worker's CPU time rises well above its weekly average. Check they are on in the dashboard under *Notifications*, and that they go to an address you read.
+- **An alert for new errors**, from [`alchemy.alerts.run.ts`](../alchemy.alerts.run.ts). It is a separate stack, so destroying the app never removes it. The `app` Worker has Workers Issues turned on, and the stack e-mails you when a new kind of error appears, for example after a deploy that broke the API:
+  ```sh
+  ALERT_EMAIL=you@example.org pnpm alerts:plan
+  ALERT_EMAIL=you@example.org pnpm alerts:deploy
+  ```
+  The variables are listed in [`.env.example`](../.env.example). Workers Issues is free while it is in beta; if Cloudflare refuses the policy on your plan, rely on the two notifications above.
+- **A manual check**: in the dashboard, *Workers & Pages*, *Overview* shows the requests of the day against the 100,000 daily limit, and *Storage & Databases*, *D1* shows rows read and written against 5 million and 100,000 a day.
 
 ## Pitfalls found while setting this up
 

@@ -26,7 +26,10 @@
     "compat:check": "sh scripts/compat-check.sh",
     "demo:refresh": "pnpm --filter @case-desk/api demo:seed",
     "workerd": "sh scripts/workerd.sh",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "alerts:plan": "alchemy plan alchemy.alerts.run.ts",
+    "alerts:deploy": "alchemy deploy alchemy.alerts.run.ts",
+    "alerts:destroy": "alchemy destroy alchemy.alerts.run.ts"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
