@@ -39,11 +39,15 @@ export default Alchemy.Stack(
     // One database shared by every version. Only this latest deployment
     // applies migrations, before its new code goes live.
     // Accounts come from `pnpm users:add`, which writes password hashes to a
-    // git-ignored file that is imported after the migrations.
+    // git-ignored file. The synthetic demo cases follow it, so they can name
+    // the demo account. Both are imported after the migrations.
     const usersSql = path.resolve(root, ".local/users.sql");
     const database = yield* Cloudflare.D1.Database("Database", {
       migrations: path.resolve(root, "apps/api/migrations"),
-      importFiles: existsSync(usersSql) ? [usersSql] : [],
+      importFiles: [
+        ...(existsSync(usersSql) ? [usersSql] : []),
+        path.resolve(root, "apps/api/seed/demo-cases.sql"),
+      ],
     });
 
     const app = yield* Cloudflare.Website.Foldkit("App", {

@@ -23,7 +23,8 @@
     "snapshots:prepare": "sh scripts/prepare-snapshots.sh iter1",
     "migrations:check": "node scripts/check-migrations.mjs",
     "users:add": "pnpm --filter @case-desk/api users:add",
-    "compat:check": "sh scripts/compat-check.sh"
+    "compat:check": "sh scripts/compat-check.sh",
+    "demo:refresh": "pnpm --filter @case-desk/api demo:seed"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
