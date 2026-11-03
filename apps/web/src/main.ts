@@ -4,6 +4,7 @@ import {
   Duration,
   Effect,
   Option,
+  Redacted,
   Schema,
   Stream,
   pipe,
@@ -20,11 +21,20 @@ import {
   RuleSet,
   type TriageRules,
   type TriagedCase,
+  User,
   prioritiseByCentre,
   rulesFor,
 } from '@case-desk/domain'
 
-import { ApiFailure, failureOf, withApi } from './api'
+import {
+  ApiFailure,
+  SignInRejection,
+  failureOf,
+  fetchSession,
+  postSignIn,
+  postSignOut,
+  withApi,
+} from './api'
 import {
   HeroLayout,
   LAYOUT_SETTLE_MS,
@@ -56,7 +66,30 @@ export const DeskLoad = defineTaggedUnion({
 })
 export type DeskLoad = typeof DeskLoad.Type
 
+export const Session = defineTaggedUnion({
+  Checking: {},
+  SignedOut: {},
+  SignedIn: { user: User },
+})
+export type Session = typeof Session.Type
+
+export const LoginSubmission = defineTaggedUnion({
+  NotSubmitted: {},
+  Submitting: {},
+  Rejected: { rejection: SignInRejection },
+})
+export type LoginSubmission = typeof LoginSubmission.Type
+
+export const LoginForm = Schema.Struct({
+  email: Schema.String,
+  password: Schema.Redacted(Schema.String),
+  submission: LoginSubmission,
+})
+export type LoginForm = typeof LoginForm.Type
+
 export const Model = Schema.Struct({
+  session: Session,
+  loginForm: LoginForm,
   deskLoad: DeskLoad,
   ruleSets: Schema.Array(RuleSet),
   cases: Schema.Array(Case),
@@ -94,6 +127,15 @@ export const Message = defineMessageUnion({
   },
   FailedLoadDesk: { failure: ApiFailure },
   ClickedRetryLoad: {},
+  SucceededCheckSession: { user: User },
+  FailedCheckSession: {},
+  UpdatedLoginEmail: { value: Schema.String },
+  UpdatedLoginPassword: { value: Schema.Redacted(Schema.String) },
+  SubmittedLogin: {},
+  SucceededSignIn: { user: User },
+  FailedSignIn: { rejection: SignInRejection },
+  ClickedSignOut: {},
+  CompletedSignOut: {},
 })
 export type Message = typeof Message.Type
 
@@ -146,7 +188,15 @@ const firstCaseIdOf = (model: Model): Option.Option<typeof CaseId.Type> =>
     Option.map(triaged => triaged.triageCase.id),
   )
 
+const emptyLoginForm = LoginForm.make({
+  email: '',
+  password: Redacted.make(''),
+  submission: LoginSubmission.NotSubmitted(),
+})
+
 export const initialModel = Model.make({
+  session: Session.Checking(),
+  loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
   ruleSets: [],
   cases: [],
@@ -163,7 +213,7 @@ export const initialModel = Model.make({
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   model: initialModel,
-  commands: [GetCurrentTime(), LoadDesk()],
+  commands: [GetCurrentTime(), CheckSession()],
 })
 
 // COMMAND
@@ -201,6 +251,54 @@ export const LoadDesk = Command.define('LoadDesk', {
     ),
   ),
 })
+
+export const CheckSession = Command.define('CheckSession', {
+  messages: [Message.SucceededCheckSession, Message.FailedCheckSession],
+  execute: fetchSession.pipe(
+    Effect.map(maybeUser =>
+      Option.match(maybeUser, {
+        onNone: () => Message.FailedCheckSession(),
+        onSome: user => Message.SucceededCheckSession({ user }),
+      }),
+    ),
+    Effect.catch(() => Effect.succeed(Message.FailedCheckSession())),
+  ),
+})
+
+export const SignIn = Command.define('SignIn', {
+  args: { email: Schema.String, password: Schema.Redacted(Schema.String) },
+  messages: [Message.SucceededSignIn, Message.FailedSignIn],
+  execute: ({ email, password }) =>
+    postSignIn(email, password).pipe(
+      Effect.map(user => Message.SucceededSignIn({ user })),
+      Effect.catch(rejection =>
+        Effect.succeed(Message.FailedSignIn({ rejection })),
+      ),
+    ),
+})
+
+export const SignOut = Command.define('SignOut', {
+  messages: [Message.CompletedSignOut],
+  execute: Effect.as(postSignOut, Message.CompletedSignOut()),
+})
+
+const signedOut = (model: Model): Model =>
+  modifyFields(model, {
+    session: () => Session.SignedOut(),
+    deskLoad: () => DeskLoad.Loading(),
+    cases: () => [],
+    ruleSets: () => [],
+    maybeSelectedCaseId: () => Option.none(),
+    maybeHighlightedCaseId: () => Option.none(),
+    isDetailSheetOpen: () => false,
+  })
+
+const loadingDesk = (model: Model, user: User): Model =>
+  modifyFields(model, {
+    session: () => Session.SignedIn({ user }),
+    loginForm: () => emptyLoginForm,
+    deskLoad: () => DeskLoad.Loading(),
+  })
 
 // UPDATE
 
@@ -288,15 +386,70 @@ export const update = (model: Model, message: Message) =>
       }
     },
     FailedLoadDesk: ({ failure }) => ({
-      model: modifyFields(model, {
-        deskLoad: () => DeskLoad.Failed({ failure }),
-      }),
+      model:
+        failure === 'SignInRequired'
+          ? signedOut(model)
+          : modifyFields(model, {
+              deskLoad: () => DeskLoad.Failed({ failure }),
+            }),
     }),
     ClickedRetryLoad: () => ({
       model: modifyFields(model, { deskLoad: () => DeskLoad.Loading() }),
       commands: [LoadDesk()],
     }),
+    SucceededCheckSession: ({ user }) => ({
+      model: loadingDesk(model, user),
+      commands: [LoadDesk()],
+    }),
+    FailedCheckSession: () => ({ model: signedOut(model) }),
+    UpdatedLoginEmail: ({ value }) => ({
+      model: modifyFields(model, {
+        loginForm: form => modifyFields(form, { email: () => value }),
+      }),
+    }),
+    UpdatedLoginPassword: ({ value }) => ({
+      model: modifyFields(model, {
+        loginForm: form => modifyFields(form, { password: () => value }),
+      }),
+    }),
+    SubmittedLogin: () =>
+      LoginSubmission.match(model.loginForm.submission, {
+        Submitting: () => ({ model }),
+        NotSubmitted: () => submitLogin(model),
+        Rejected: () => submitLogin(model),
+      }),
+    SucceededSignIn: ({ user }) => ({
+      model: loadingDesk(model, user),
+      commands: [LoadDesk()],
+    }),
+    FailedSignIn: ({ rejection }) => ({
+      model: modifyFields(model, {
+        loginForm: form =>
+          modifyFields(form, {
+            password: () => Redacted.make(''),
+            submission: () => LoginSubmission.Rejected({ rejection }),
+          }),
+      }),
+    }),
+    ClickedSignOut: () => ({
+      model: signedOut(model),
+      commands: [SignOut()],
+    }),
+    CompletedSignOut: () => ({ model }),
   })
+
+const submitLogin = (model: Model) => ({
+  model: modifyFields(model, {
+    loginForm: form =>
+      modifyFields(form, { submission: () => LoginSubmission.Submitting() }),
+  }),
+  commands: [
+    SignIn({
+      email: model.loginForm.email,
+      password: model.loginForm.password,
+    }),
+  ],
+})
 
 // SUBSCRIPTION
 

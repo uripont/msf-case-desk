@@ -6,6 +6,7 @@ import { CaseId, DEMO_START, SEED_CASES } from '@case-desk/domain'
 
 import { loadedModel } from './fixtures'
 import {
+  CheckSession,
   FocusCaseMark,
   GetCurrentTime,
   LoadDesk,
@@ -189,12 +190,12 @@ describe('update', () => {
 })
 
 describe('loading the desk', () => {
-  test('starting the app reads the clock and loads the desk', () => {
+  test('starting the app reads the clock and checks the session', () => {
     const started = init()
     expect(started.model.deskLoad._tag).toBe('Loading')
     expect(started.commands?.map(command => command.name)).toEqual([
       GetCurrentTime.name,
-      LoadDesk.name,
+      CheckSession.name,
     ])
   })
 
