@@ -10,7 +10,7 @@ import {
 } from 'effect'
 
 import { Case, type CaseId } from './case'
-import { type CaseEntry, ENTRY_SCHEMA_VERSION } from './entry'
+import { type CaseEntry, type CasePatch, ENTRY_SCHEMA_VERSION } from './entry'
 import { type RuleSet, type RuleSetScope, type TriageRules } from './rules'
 import { type User, type UserId, type UserRecord, normaliseEmail } from './user'
 
@@ -23,25 +23,8 @@ export type NewCase = Readonly<{
   id: CaseId
   entry: CaseEntry
   enteredAt: number
-  enteredBy: UserId
+  enteredBy?: UserId
 }>
-
-// NOTE: a patch names only the fields it changes. Storage writes exactly
-// those columns, so a version never overwrites fields it does not know.
-export type CasePatch = Partial<
-  Pick<
-    CaseEntry,
-    | 'summary'
-    | 'scope'
-    | 'risk'
-    | 'urgency'
-    | 'fastTrackSignals'
-    | 'channel'
-    | 'details'
-    | 'location'
-    | 'reference'
-  >
->
 
 export type NewSession = Readonly<{
   tokenHash: string
@@ -67,7 +50,7 @@ export class Repository extends Context.Service<
       scope: RuleSetScope,
       rules: TriageRules,
       updatedAt: number,
-      updatedBy: UserId,
+      updatedBy?: UserId,
     ) => Result<RuleSet>
     readonly findUserByEmail: (
       email: string,
@@ -97,7 +80,7 @@ type StoredRuleSet = Readonly<{
   scope: RuleSetScope
   rules: TriageRules
   updatedAt: number
-  updatedBy: UserId
+  updatedBy: UserId | undefined
 }>
 
 type StoredSession = NewSession
@@ -122,7 +105,7 @@ export const makeMemoryRepository = (
       sessions: seed.sessions ?? [],
     })
 
-    const nameOf = (current: MemoryState, userId: UserId): string =>
+    const nameOf = (current: MemoryState, userId?: UserId): string =>
       pipe(
         Array.findFirst(current.users, user => user.id === userId),
         Option.match({ onNone: () => '', onSome: user => user.name }),

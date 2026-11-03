@@ -2,11 +2,16 @@ import { describe, expect, test } from 'vitest'
 
 import { DEFAULT_RULES } from '@case-desk/domain'
 
-import { handleApi } from './worker'
+import { type Env, handleApi } from './worker'
+
+const env = {} as Env
 
 describe('handleApi', () => {
   test('the health check answers with the rules version', async () => {
-    const response = handleApi(new Request('https://desk.test/api/health'))
+    const response = await handleApi(
+      new Request('https://desk.test/api/health'),
+      env,
+    )
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       status: 'ok',
@@ -14,8 +19,11 @@ describe('handleApi', () => {
     })
   })
 
-  test('unknown API paths answer 404', () => {
-    const response = handleApi(new Request('https://desk.test/api/nothing'))
+  test('unknown API paths answer 404', async () => {
+    const response = await handleApi(
+      new Request('https://desk.test/api/nothing'),
+      env,
+    )
     expect(response.status).toBe(404)
   })
 })

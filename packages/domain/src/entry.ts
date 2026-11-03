@@ -39,3 +39,18 @@ export const CaseEntry = Schema.Struct({
 export type CaseEntry = typeof CaseEntry.Type
 
 export const decodeCaseEntry = Schema.decodeUnknownResult(CaseEntry)
+
+// NOTE: a patch names only the fields it changes. Storage writes exactly
+// those columns, so a version never overwrites fields it does not know.
+export const CasePatch = Schema.Struct({
+  summary: Schema.optionalKey(CaseEntry.fields.summary),
+  scope: Schema.optionalKey(CaseEntry.fields.scope),
+  risk: Schema.optionalKey(CaseEntry.fields.risk),
+  urgency: Schema.optionalKey(CaseEntry.fields.urgency),
+  fastTrackSignals: Schema.optionalKey(CaseEntry.fields.fastTrackSignals),
+  channel: Schema.optionalKey(CaseEntry.fields.channel),
+  details: CaseEntry.fields.details,
+  location: CaseEntry.fields.location,
+  reference: CaseEntry.fields.reference,
+})
+export type CasePatch = typeof CasePatch.Type
