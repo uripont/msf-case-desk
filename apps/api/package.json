@@ -8,7 +8,8 @@
     "test": "vitest run",
     "lint": "oxlint src",
     "format": "oxfmt",
-    "users:add": "node scripts/add-user.ts"
+    "users:add": "node scripts/add-user.ts",
+    "demo:seed": "UPDATE_DEMO_SEED=1 vitest run src/demoSeed.test.ts"
   },
   "dependencies": {
     "@case-desk/domain": "workspace:*",
