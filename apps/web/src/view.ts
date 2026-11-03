@@ -22,6 +22,7 @@ import {
   DeskLoad,
   Message,
   type Model,
+  PAGE_HEADING_ID,
   type Page,
   Session,
   dueSoonCountOf,
@@ -255,6 +256,7 @@ const intro = (model: Model, h: HtmlBuilder<Message>): Html => {
     [
       h.h1(
         [
+          h.Id(PAGE_HEADING_ID),
           h.Class(
             'max-w-4xl text-balance text-[2.75rem] font-black text-msf-black leading-[1.02] tracking-[-0.025em] sm:text-6xl md:text-7xl',
           ),

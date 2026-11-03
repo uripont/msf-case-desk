@@ -11,7 +11,7 @@ import {
   toDateTimeInput,
 } from './entryForm'
 import { loadedModel } from './fixtures'
-import { CreateCase, Message, update } from './main'
+import { CreateCase, FocusElement, Message, update } from './main'
 
 const created: Case = {
   id: CaseId.make('CD-NEW00001'),
@@ -47,12 +47,14 @@ describe('case entry form', () => {
       update,
       given(loadedModel),
       message(Message.ClickedPage({ page: 'NewCase' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.SubmittedEntry()),
       model(next => {
         expect(next.entryForm.isShowingErrors).toBe(true)
         expect(next.entryForm.submission._tag).toBe('Editing')
       }),
-      Command.expectNone(),
+      Command.expectHas(FocusElement({ selector: '#entry-summary' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
     )
   })
 
@@ -61,6 +63,7 @@ describe('case entry form', () => {
       update,
       given(loadedModel),
       message(Message.ClickedPage({ page: 'NewCase' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(
         Message.UpdatedEntryField({
           field: 'summary',
@@ -96,8 +99,10 @@ describe('case entry form', () => {
         }),
       ),
       Command.resolve(CreateCase, Message.SucceededCreateCase({ created })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       model(next => {
         expect(next.page).toBe('Desk')
+        expect(next.isDetailSheetOpen).toBe(true)
         expect(next.cases).toContainEqual(created)
         expect(next.maybeSelectedCaseId).toEqual(
           expect.objectContaining({ value: created.id }),

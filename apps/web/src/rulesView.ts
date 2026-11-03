@@ -10,7 +10,7 @@ import {
 
 import { type ApiFailure } from './api'
 import { formatInstant } from './format'
-import { Message, type Model } from './main'
+import { Message, type Model, PAGE_HEADING_ID } from './main'
 import {
   type RulesErrors,
   type RulesField,
@@ -226,6 +226,7 @@ export const rulesPage = (model: Model, h: HtmlBuilder<Message>): Html => {
         [
           h.h1(
             [
+              h.Id(PAGE_HEADING_ID),
               h.Class(
                 'text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
               ),

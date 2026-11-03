@@ -12,7 +12,7 @@ import {
 import { describe, test } from 'vitest'
 
 import { loadedModel, signedInModel } from './fixtures'
-import { LoadDesk, Message, initialModel, update } from './main'
+import { FocusElement, LoadDesk, Message, initialModel, update } from './main'
 import { view } from './view'
 
 describe('scene', () => {
@@ -153,6 +153,7 @@ describe('desk states', () => {
       expect(role('heading', { name: 'Everything is on track' })).toExist(),
       expect(text('No cases yet.')).toExist(),
       click(role('button', { name: 'Enter a case' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('heading', { name: 'New case' })).toExist(),
     )
   })
