@@ -3,8 +3,10 @@ import {
   Clock,
   Duration,
   Effect,
+  Match,
   Option,
   Redacted,
+  Result,
   Schema,
   Stream,
   pipe,
@@ -15,12 +17,19 @@ import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
 import {
+  CENTRES,
+  CHANNELS,
   Case,
+  CaseEntry,
   CaseId,
   DEMO_START,
+  FastTrackSignal,
+  RISKS,
   RuleSet,
+  SCOPES,
   type TriageRules,
   type TriagedCase,
+  URGENCIES,
   User,
   prioritiseByCentre,
   rulesFor,
@@ -43,6 +52,14 @@ import {
   isAnimatedLayoutChange,
   markDomId,
 } from './axisLayout'
+import {
+  EntryField,
+  EntryForm,
+  EntrySubmission,
+  emptyEntryForm,
+  entryOf,
+  toggleSignal,
+} from './entryForm'
 import { hoursToMs } from './format'
 
 // MODEL
@@ -87,7 +104,12 @@ export const LoginForm = Schema.Struct({
 })
 export type LoginForm = typeof LoginForm.Type
 
+export const Page = Schema.Literals(['Desk', 'NewCase', 'Rules'])
+export type Page = typeof Page.Type
+
 export const Model = Schema.Struct({
+  page: Page,
+  entryForm: EntryForm,
   session: Session,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
@@ -136,6 +158,12 @@ export const Message = defineMessageUnion({
   FailedSignIn: { rejection: SignInRejection },
   ClickedSignOut: {},
   CompletedSignOut: {},
+  ClickedPage: { page: Page },
+  UpdatedEntryField: { field: EntryField, value: Schema.String },
+  ToggledEntrySignal: { signal: FastTrackSignal },
+  SubmittedEntry: {},
+  SucceededCreateCase: { created: Case },
+  FailedCreateCase: { failure: ApiFailure },
 })
 export type Message = typeof Message.Type
 
@@ -195,6 +223,8 @@ const emptyLoginForm = LoginForm.make({
 })
 
 export const initialModel = Model.make({
+  page: 'Desk',
+  entryForm: emptyEntryForm(DEMO_START),
   session: Session.Checking(),
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
@@ -282,8 +312,86 @@ export const SignOut = Command.define('SignOut', {
   execute: Effect.as(postSignOut, Message.CompletedSignOut()),
 })
 
+export const CreateCase = Command.define('CreateCase', {
+  args: { entry: CaseEntry },
+  messages: [Message.SucceededCreateCase, Message.FailedCreateCase],
+  execute: ({ entry }) =>
+    withApi(client => client.CreateCase({ entry })).pipe(
+      Effect.map(created => Message.SucceededCreateCase({ created })),
+      Effect.catch(error =>
+        Effect.succeed(Message.FailedCreateCase({ failure: failureOf(error) })),
+      ),
+    ),
+})
+
+const isOneOf =
+  <A extends string>(choices: ReadonlyArray<A>) =>
+  (value: string): value is A =>
+    choices.some(choice => choice === value)
+
+const withEntryField = (
+  form: EntryForm,
+  field: EntryField,
+  value: string,
+): EntryForm =>
+  Match.value(field).pipe(
+    Match.when('centre', () =>
+      isOneOf(CENTRES)(value)
+        ? modifyFields(form, { centre: () => value })
+        : form,
+    ),
+    Match.when('channel', () =>
+      isOneOf(CHANNELS)(value)
+        ? modifyFields(form, { channel: () => value })
+        : form,
+    ),
+    Match.when('scope', () =>
+      isOneOf(SCOPES)(value)
+        ? modifyFields(form, { scope: () => value })
+        : form,
+    ),
+    Match.when('risk', () =>
+      isOneOf(RISKS)(value) ? modifyFields(form, { risk: () => value }) : form,
+    ),
+    Match.when('urgency', () =>
+      isOneOf(URGENCIES)(value)
+        ? modifyFields(form, { urgency: () => value })
+        : form,
+    ),
+    Match.when('receivedAt', () =>
+      modifyFields(form, { receivedAt: () => value }),
+    ),
+    Match.when('summary', () => modifyFields(form, { summary: () => value })),
+    Match.when('details', () => modifyFields(form, { details: () => value })),
+    Match.when('location', () => modifyFields(form, { location: () => value })),
+    Match.when('reference', () =>
+      modifyFields(form, { reference: () => value }),
+    ),
+    Match.when('fastTrackSignals', () => form),
+    Match.exhaustive,
+  )
+
+const submitEntry = (model: Model): Update.Return<Model, Message> =>
+  Result.match(entryOf(model.entryForm, model.now), {
+    onFailure: () => ({
+      model: modifyFields(model, {
+        entryForm: form => modifyFields(form, { isShowingErrors: () => true }),
+      }),
+    }),
+    onSuccess: entry => ({
+      model: modifyFields(model, {
+        entryForm: form =>
+          modifyFields(form, {
+            submission: () => EntrySubmission.Submitting(),
+          }),
+      }),
+      commands: [CreateCase({ entry })],
+    }),
+  })
+
 const signedOut = (model: Model): Model =>
   modifyFields(model, {
+    page: () => 'Desk',
     session: () => Session.SignedOut(),
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
@@ -370,7 +478,11 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, { centreFilter: () => centreFilter }),
     }),
     CompletedGetCurrentTime: ({ now }) => ({
-      model: modifyFields(model, { startedAt: () => now, now: () => now }),
+      model: modifyFields(model, {
+        startedAt: () => now,
+        now: () => now,
+        entryForm: () => emptyEntryForm(now),
+      }),
     }),
     SucceededLoadDesk: ({ cases, ruleSets }) => {
       const loaded = modifyFields(model, {
@@ -436,6 +548,48 @@ export const update = (model: Model, message: Message) =>
       commands: [SignOut()],
     }),
     CompletedSignOut: () => ({ model }),
+    ClickedPage: ({ page }) => ({
+      model: modifyFields(model, {
+        page: () => page,
+        isDetailSheetOpen: () => false,
+      }),
+    }),
+    UpdatedEntryField: ({ field, value }) => ({
+      model: modifyFields(model, {
+        entryForm: form => withEntryField(form, field, value),
+      }),
+    }),
+    ToggledEntrySignal: ({ signal }) => ({
+      model: modifyFields(model, {
+        entryForm: form => toggleSignal(form, signal),
+      }),
+    }),
+    SubmittedEntry: () =>
+      EntrySubmission.match(model.entryForm.submission, {
+        Submitting: () => ({ model }),
+        Editing: () => submitEntry(model),
+        Failed: () => submitEntry(model),
+      }),
+    SucceededCreateCase: ({ created }) => ({
+      model: modifyFields(model, {
+        cases: cases => Array.append(cases, created),
+        entryForm: () => emptyEntryForm(model.now),
+        page: () => 'Desk',
+        centreFilter: () => 'All',
+        maybeSelectedCaseId: () => Option.some(created.id),
+      }),
+    }),
+    FailedCreateCase: ({ failure }) => ({
+      model:
+        failure === 'SignInRequired'
+          ? signedOut(model)
+          : modifyFields(model, {
+              entryForm: form =>
+                modifyFields(form, {
+                  submission: () => EntrySubmission.Failed({ failure }),
+                }),
+            }),
+    }),
   })
 
 const submitLogin = (model: Model) => ({
