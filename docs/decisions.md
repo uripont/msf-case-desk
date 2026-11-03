@@ -58,3 +58,21 @@ All deployed versions use one D1 database. The Workers Free plan allows it witho
 | CPU time per request | 10 ms |
 
 When a daily limit is reached, queries or requests fail until 00:00 UTC. Nothing is charged. The 10 ms CPU limit is why password hashing uses PBKDF2 from Web Crypto, which runs natively, with an iteration count that fits inside one request.
+
+## Frozen iterations are built from their git tag
+
+Each delivered iteration keeps its own address (`iter1`, `iter2`, ...). `pnpm snapshots:prepare` extracts each tag into `.snapshots/<tag>` (git-ignored) and installs its dependencies there, and `alchemy.run.ts` builds the snapshot Workers from those folders. Later commits therefore never change what a snapshot serves. Only `app`, built from the working tree, owns the database migrations.
+
+## One Worker per version, the API built per request
+
+Each version is one Worker: static assets for the web app, and `/api/*` for the API, so the browser talks to its own origin and a plain `HttpOnly` cookie is enough. The RPC server is built for each request and disposed after it. Workers do not allow one request's I/O to run inside fibers started by another request, and a shared server hung on the second request.
+
+## Sign-in with sessions in the shared database
+
+Passwords are hashed with PBKDF2-SHA256 from Web Crypto, 100,000 iterations (the most Workers allow), in the format `pbkdf2-sha256$<iterations>$<salt>$<hash>`. The format and a frozen test vector must stay valid in every later version, because all versions share the accounts. Sessions store only the SHA-256 of a random token; the cookie is `HttpOnly`, `Secure`, `SameSite=Strict` and limited to `/api`, and sign-in only accepts a JSON body.
+
+There is no sign-up page. `pnpm users:add` writes password hashes to `.local/users.sql`, which is git-ignored and imported into D1 after the migrations on each deploy (and into the local database by `pnpm infra:dev`). Roles stay in increment 3.
+
+## Plain Commands instead of KeyedQuery
+
+The web app loads and saves through ordinary Foldkit Commands that call the Effect RPC client. Foldkit's `KeyedQuery` is still experimental, and the desk loads one list of cases and one of rule sets, so caching by key adds nothing yet.
