@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest'
 import { DEFAULT_RULES, type RuleSet, SEED_CASES } from '@case-desk/domain'
 
 import { loadedModel } from './fixtures'
-import { Message, PutRuleSet, queueOf, update } from './main'
+import { FocusElement, Message, PutRuleSet, queueOf, update } from './main'
 import { previewOfRules, rulesFormFor } from './rulesForm'
 
 const savedOcg: RuleSet = {
@@ -44,13 +44,15 @@ describe('rules editor', () => {
       update,
       given(loadedModel),
       message(Message.ClickedPage({ page: 'Rules' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.UpdatedRulesField({ field: 'p2MinScore', value: '9' })),
       message(Message.SubmittedRules()),
       model(next => {
         expect(next.rulesForm.isShowingErrors).toBe(true)
         expect(next.rulesForm.submission._tag).toBe('Editing')
       }),
-      Command.expectNone(),
+      Command.expectHas(FocusElement({ selector: '#rules-p2MinScore' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
     )
   })
 
@@ -59,6 +61,7 @@ describe('rules editor', () => {
       update,
       given(loadedModel),
       message(Message.ClickedPage({ page: 'Rules' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.SelectedRulesScope({ scope: 'OCG' })),
       message(Message.UpdatedRulesField({ field: 'p1MinScore', value: '5' })),
       message(
@@ -98,6 +101,7 @@ describe('rules editor', () => {
       update,
       given(loadedModel),
       message(Message.ClickedPage({ page: 'Rules' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.UpdatedRulesField({ field: 'targetP3', value: '120' })),
       message(Message.SubmittedRules()),
       Command.resolve(

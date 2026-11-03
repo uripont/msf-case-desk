@@ -31,6 +31,9 @@ export const failureOf = (error: unknown): ApiFailure =>
 
 const SessionBody = Schema.Struct({ user: User })
 const decodeSessionBody = Schema.decodeUnknownEffect(SessionBody)
+const decodeMaybeSessionBody = Schema.decodeUnknownEffect(
+  Schema.Struct({ user: Schema.NullOr(User) }),
+)
 
 export const SignInRejection = Schema.Literals([
   'InvalidCredentials',
@@ -44,11 +47,8 @@ export const fetchSession: Effect.Effect<
 > = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient
   const response = yield* client.get('/api/session')
-  if (response.status === 401) {
-    return Option.none()
-  }
-  const body = yield* decodeSessionBody(yield* response.json)
-  return Option.some(body.user)
+  const body = yield* decodeMaybeSessionBody(yield* response.json)
+  return Option.fromNullishOr(body.user)
 }).pipe(
   Effect.mapError((): ApiFailure => 'Unavailable'),
   Effect.provide(Http.layer),

@@ -14,7 +14,7 @@ import { describe, test } from 'vitest'
 import { CaseId } from '@case-desk/domain'
 
 import { loadedModel } from './fixtures'
-import { CreateCase, Message, update } from './main'
+import { CreateCase, FocusElement, Message, update } from './main'
 import { view } from './view'
 
 describe('case entry scene', () => {
@@ -23,6 +23,7 @@ describe('case entry scene', () => {
       { update, view },
       given(loadedModel),
       click(role('button', { name: 'New case' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('heading', { name: 'New case' })).toExist(),
       expect(role('complementary', { name: 'Priority preview' })).toContainText(
         'standard',
@@ -39,7 +40,9 @@ describe('case entry scene', () => {
       { update, view },
       given(loadedModel),
       click(role('button', { name: 'New case' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       click(role('button', { name: 'Save case' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('textbox', { name: 'Summary' })).toHaveAttr(
         'aria-invalid',
         'true',
@@ -53,6 +56,7 @@ describe('case entry scene', () => {
       { update, view },
       given(loadedModel),
       click(role('button', { name: 'New case' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       type(role('textbox', { name: 'Summary' }), 'Synthetic scene case.'),
       change(role('combobox', { name: 'Operational centre' }), 'OCA'),
       click(role('button', { name: 'Save case' })),
@@ -78,6 +82,7 @@ describe('case entry scene', () => {
           },
         }),
       ),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('heading', { name: 'Synthetic scene case.' })).toExist(),
     )
   })

@@ -154,7 +154,11 @@ describe('sign-in', () => {
     const cookie = cookieFrom(login)
     const logout = await app.handle(post('/api/logout', {}, cookie))
     expect(logout.headers.get('set-cookie')).toContain('Max-Age=0')
-    expect((await app.handle(get('/api/session', cookie))).status).toBe(401)
+    expect(
+      await (await app.handle(get('/api/session', cookie))).json(),
+    ).toEqual({
+      user: null,
+    })
   })
 
   test('a made-up session token is refused', async () => {
@@ -162,6 +166,7 @@ describe('sign-in', () => {
     const response = await app.handle(
       get('/api/session', `${SESSION_COOKIE}=${'a'.repeat(64)}`),
     )
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ user: null })
   })
 })

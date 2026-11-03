@@ -1,8 +1,17 @@
-import { click, expect, given, role, scene, text, type } from 'foldkit/scene'
+import {
+  Command,
+  click,
+  expect,
+  given,
+  role,
+  scene,
+  text,
+  type,
+} from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
 import { loadedModel } from './fixtures'
-import { update } from './main'
+import { FocusElement, Message, update } from './main'
 import { view } from './view'
 
 describe('rules editor scene', () => {
@@ -11,6 +20,7 @@ describe('rules editor scene', () => {
       { update, view },
       given(loadedModel),
       click(role('button', { name: 'Rules' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('heading', { name: 'Triage rules' })).toExist(),
       click(role('button', { name: 'OCG' })),
       expect(text('OCG uses the default rules', { exact: false })).toExist(),
@@ -28,6 +38,7 @@ describe('rules editor scene', () => {
       { update, view },
       given(loadedModel),
       click(role('button', { name: 'Rules' })),
+      Command.resolve(FocusElement, Message.CompletedFocusElement()),
       type(role('spinbutton', { name: 'Medium from' }), '8'),
       expect(
         text('The medium level must start below the urgent level.'),

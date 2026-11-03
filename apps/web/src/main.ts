@@ -148,6 +148,7 @@ export const Message = defineMessageUnion({
   BlurredCaseMark: {},
   UpdatedHeroLayout: { layout: Schema.Literals(['Axis', 'Timeline']) },
   CompletedFocusCaseMark: {},
+  CompletedFocusElement: {},
   ClickedAdvanceClock: { hours: Schema.Int },
   ClickedResetClock: {},
   ClickedToggleDemoControls: {},
@@ -264,6 +265,22 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
 })
 
 // COMMAND
+
+export const PAGE_HEADING_ID = 'page-heading'
+
+// NOTE: moving focus also scrolls the element into view, so a page change or
+// a refused form shows the reader where to look, on a phone too.
+export const FocusElement = Command.define('FocusElement', {
+  args: { selector: Schema.String },
+  messages: [Message.CompletedFocusElement],
+  execute: ({ selector }) =>
+    Dom.focus(selector, { makeFocusable: true }).pipe(
+      Effect.catch(() => Effect.void),
+      Effect.as(Message.CompletedFocusElement()),
+    ),
+})
+
+const focusPageHeading = () => FocusElement({ selector: `#${PAGE_HEADING_ID}` })
 
 export const FocusCaseMark = Command.define('FocusCaseMark', {
   args: { selector: Schema.String },
@@ -386,10 +403,15 @@ const withRulesField = (
 
 const submitRules = (model: Model): Update.Return<Model, Message> =>
   Result.match(rulesOfForm(model.rulesForm), {
-    onFailure: () => ({
+    onFailure: errors => ({
       model: modifyFields(model, {
         rulesForm: form => modifyFields(form, { isShowingErrors: () => true }),
       }),
+      commands: focusFirstInvalid(
+        RULES_FIELD_ORDER,
+        errors,
+        field => `rules-${field}`,
+      ),
     }),
     onSuccess: rules => ({
       model: modifyFields(model, {
@@ -447,12 +469,48 @@ const withEntryField = (
     Match.exhaustive,
   )
 
+const ENTRY_FIELD_ORDER: ReadonlyArray<EntryField> = [
+  'summary',
+  'receivedAt',
+  'details',
+  'location',
+  'reference',
+]
+
+const RULES_FIELD_ORDER: ReadonlyArray<RulesField> = [
+  'p1MinScore',
+  'p2MinScore',
+  'fastTrackHours',
+  'targetP1',
+  'targetP2',
+  'targetP3',
+  'version',
+]
+
+const focusFirstInvalid = <Field extends string>(
+  order: ReadonlyArray<Field>,
+  errors: Partial<Record<Field, string>>,
+  idOf: (field: Field) => string,
+) =>
+  Option.match(
+    Array.findFirst(order, field => errors[field] !== undefined),
+    {
+      onNone: () => [],
+      onSome: field => [FocusElement({ selector: `#${idOf(field)}` })],
+    },
+  )
+
 const submitEntry = (model: Model): Update.Return<Model, Message> =>
   Result.match(entryOf(model.entryForm, model.now), {
-    onFailure: () => ({
+    onFailure: errors => ({
       model: modifyFields(model, {
         entryForm: form => modifyFields(form, { isShowingErrors: () => true }),
       }),
+      commands: focusFirstInvalid(
+        ENTRY_FIELD_ORDER,
+        errors,
+        field => `entry-${field}`,
+      ),
     }),
     onSuccess: entry => ({
       model: modifyFields(model, {
@@ -539,6 +597,7 @@ export const update = (model: Model, message: Message) =>
       })
     },
     CompletedFocusCaseMark: () => ({ model }),
+    CompletedFocusElement: () => ({ model }),
     ClickedAdvanceClock: ({ hours }) => ({
       model: modifyFields(model, { now: now => now + hoursToMs(hours) }),
     }),
@@ -625,6 +684,7 @@ export const update = (model: Model, message: Message) =>
     }),
     CompletedSignOut: () => ({ model }),
     ClickedPage: ({ page }) => ({
+      commands: [focusPageHeading()],
       model: modifyFields(model, {
         page: () => page,
         isDetailSheetOpen: () => false,
@@ -708,7 +768,9 @@ export const update = (model: Model, message: Message) =>
         page: () => 'Desk',
         centreFilter: () => 'All',
         maybeSelectedCaseId: () => Option.some(created.id),
+        isDetailSheetOpen: () => true,
       }),
+      commands: [focusPageHeading()],
     }),
     FailedCreateCase: ({ failure }) => ({
       model:

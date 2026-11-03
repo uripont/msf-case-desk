@@ -52,9 +52,18 @@ await check('the API answers its health check', async () => {
   expect((await response.json()).status === 'ok', 'unexpected body')
 })
 
+// NOTE: older versions answer 401 when signed out, newer ones 200 with no user.
+const signedOut = async cookie => {
+  const response = await fetch(
+    `${base}/api/session`,
+    cookie ? { headers: { cookie } } : {},
+  )
+  const body = await response.json().catch(() => ({}))
+  return response.status === 401 || body.user === null
+}
+
 await check('there is no session without signing in', async () => {
-  const response = await fetch(`${base}/api/session`)
-  expect(response.status === 401, `status ${response.status}`)
+  expect(await signedOut(), 'a session was found')
 })
 
 await check('the API refuses requests without a session', async () => {
@@ -79,6 +88,7 @@ if (email && password) {
   await check('the session identifies the account', async () => {
     const response = await fetch(`${base}/api/session`, { headers: { cookie } })
     expect(response.status === 200, `status ${response.status}`)
+    expect((await response.json()).user?.email === email, 'another account')
   })
   await check('cases and rule sets can be read', async () => {
     for (const tag of ['ListCases', 'ListRuleSets']) {
@@ -92,8 +102,7 @@ if (email && password) {
       headers: { 'content-type': 'application/json', cookie },
       body: '{}',
     })
-    const response = await fetch(`${base}/api/session`, { headers: { cookie } })
-    expect(response.status === 401, `status ${response.status}`)
+    expect(await signedOut(cookie), 'the session is still active')
   })
 } else {
   console.log('skip signed-in checks (set SMOKE_EMAIL and SMOKE_PASSWORD)')

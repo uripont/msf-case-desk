@@ -76,14 +76,16 @@ export const makeApp = (repository: Layer.Layer<Repository>) => {
     })
   }
 
+  // NOTE: being signed out is a normal answer here, not an error, so the
+  // browser does not log a failed request on every visit.
   const session = (request: Request): Promise<Response> =>
     Option.match(tokenFromCookies(request.headers.get('cookie')), {
-      onNone: () => Promise.resolve(json({ user: null }, 401)),
+      onNone: () => Promise.resolve(json({ user: null })),
       onSome: token =>
         run(
           Effect.map(sessionUser(token), maybeUser =>
             Option.match(maybeUser, {
-              onNone: () => json({ user: null }, 401),
+              onNone: () => json({ user: null }),
               onSome: user => json({ user }),
             }),
           ),
