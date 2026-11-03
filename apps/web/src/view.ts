@@ -14,18 +14,21 @@ import {
 import { type ApiFailure } from './api'
 import { BRAND } from './brand'
 import { formatInstant, formatSla, formatSlaShort, humanise } from './format'
+import { loginPage } from './loginView'
 import {
   CENTRE_FILTERS,
   type CentreFilter,
   DeskLoad,
   Message,
   type Model,
+  Session,
   dueSoonCountOf,
   maybeSelectedOf,
   overdueCountOf,
   rulesOf,
   visibleQueueOf,
 } from './main'
+import { outlineButtonClassName, textButtonClassName } from './style'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
 
 // COPY
@@ -67,9 +70,6 @@ const lede = (
 
 // STYLE
 
-const focusRing =
-  'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-msf-ink'
-
 const sectionRuleClassName = (priority: Priority): string =>
   Match.value(priority).pipe(
     Match.when('P1', () => 'border-msf-red'),
@@ -94,16 +94,6 @@ const slaClassName = (sla: SlaStatus): string =>
       Overdue: () => 'font-medium text-msf-red',
     }),
   )
-
-const textButtonClassName = clsx(
-  'cursor-pointer text-msf-ink underline decoration-msf-line decoration-1 underline-offset-[6px] transition-colors hover:decoration-msf-red',
-  focusRing,
-)
-
-const outlineButtonClassName = clsx(
-  'inline-flex h-10 min-w-14 cursor-pointer items-center justify-center border border-msf-line px-3 tabular-nums text-msf-ink transition-colors hover:border-msf-red hover:text-msf-red active:bg-msf-mist',
-  focusRing,
-)
 
 // VIEW
 
@@ -145,27 +135,61 @@ const wordmark = (h: HtmlBuilder<Message>): Html =>
     [BRAND.productName],
   )
 
-const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.header(
-    [
-      h.Class(
-        'flex flex-col gap-x-12 border-b border-msf-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
-      ),
-    ],
-    [
-      wordmark(h),
-      h.nav(
+const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
+  Session.match(model.session, {
+    Checking: () => h.empty,
+    SignedOut: () => h.empty,
+    SignedIn: ({ user }) =>
+      h.div(
         [
-          h.AriaLabel('Operational centre'),
           h.Class(
-            '-mx-5 flex gap-x-6 overflow-x-auto px-5 [scrollbar-width:none] sm:-mx-10 sm:px-10 md:mx-0 md:gap-x-7 md:overflow-visible md:px-0',
+            'flex items-baseline justify-end gap-x-4 pt-4 text-sm text-msf-grey',
           ),
         ],
-        Array.map(CENTRE_FILTERS, centreFilter =>
-          centreTab(model, centreFilter, h),
-        ),
+        [
+          h.span([], [user.name]),
+          h.button(
+            [h.Class(textButtonClassName), h.OnClick(Message.ClickedSignOut())],
+            ['Sign out'],
+          ),
+        ],
+      ),
+  })
+
+const centreNav = (model: Model, h: HtmlBuilder<Message>): Html =>
+  Session.match(model.session, {
+    Checking: () => h.empty,
+    SignedOut: () => h.empty,
+    SignedIn: () => centreTabs(model, h),
+  })
+
+const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.header(
+    [],
+    [
+      accountBar(model, h),
+      h.div(
+        [
+          h.Class(
+            'flex flex-col gap-x-12 border-b border-msf-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
+          ),
+        ],
+        [wordmark(h), centreNav(model, h)],
       ),
     ],
+  )
+
+const centreTabs = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.nav(
+    [
+      h.AriaLabel('Operational centre'),
+      h.Class(
+        '-mx-5 flex gap-x-6 overflow-x-auto px-5 [scrollbar-width:none] sm:-mx-10 sm:px-10 md:mx-0 md:gap-x-7 md:overflow-visible md:px-0',
+      ),
+    ],
+    Array.map(CENTRE_FILTERS, centreFilter =>
+      centreTab(model, centreFilter, h),
+    ),
   )
 
 const intro = (model: Model, h: HtmlBuilder<Message>): Html => {
@@ -689,10 +713,15 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
       topBar(model, h),
       h.main(
         [],
-        DeskLoad.match(model.deskLoad, {
-          Loading: () => [loadingDesk(h)],
-          Failed: ({ failure }) => [failedDesk(failure, h)],
-          Loaded: () => loadedDesk(model, h),
+        Session.match(model.session, {
+          Checking: () => [loadingDesk(h)],
+          SignedOut: () => [loginPage(model, h)],
+          SignedIn: () =>
+            DeskLoad.match(model.deskLoad, {
+              Loading: () => [loadingDesk(h)],
+              Failed: ({ failure }) => [failedDesk(failure, h)],
+              Loaded: () => loadedDesk(model, h),
+            }),
         }),
       ),
       footer(model, h),
