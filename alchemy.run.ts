@@ -15,6 +15,11 @@ const snapshotDir = (root: string, tag: string): string => {
   return dir;
 };
 
+// Worker names are fixed, so the addresses stay stable. A second deployment
+// on the same Cloudflare account needs a prefix, for example `test-`.
+const workerName = (name: string): string =>
+  `${process.env.CASE_DESK_WORKER_PREFIX ?? ""}${name}`;
+
 const snapshotMemo = {
   include: ["src/**", "public/**", "index.html", "vite.config.ts", "package.json"],
   lockfile: true,
@@ -31,7 +36,7 @@ export default Alchemy.Stack(
     const root = import.meta.dirname;
 
     const iter1 = yield* Cloudflare.Website.Foldkit("Web", {
-      name: "iter1",
+      name: workerName("iter1"),
       rootDir: path.resolve(snapshotDir(root, "iter1"), "apps/web"),
       memo: snapshotMemo,
     });
@@ -51,7 +56,7 @@ export default Alchemy.Stack(
     });
 
     const app = yield* Cloudflare.Website.Foldkit("App", {
-      name: "app",
+      name: workerName("app"),
       rootDir: path.resolve(root, "apps/web"),
       main: path.resolve(root, "apps/api/src/worker.ts"),
       assets: { runWorkerFirst: ["/api/*"] },
