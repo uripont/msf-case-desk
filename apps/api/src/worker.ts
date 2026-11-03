@@ -8,18 +8,25 @@ export type Env = {
 
 const API_PREFIX = '/api/'
 
-// NOTE: bindings do not change within an isolate, so the API is built once
-// on the first request and reused.
-let app: ReturnType<typeof makeApp> | undefined
-
-const appFor = (env: Env) => {
-  app ??= makeApp(layerSql(env.DB))
-  return app
+// NOTE: the API is built for each request and disposed after it. Workers do
+// not let one request's I/O run inside fibers started by another request,
+// so the RPC server cannot be shared across requests.
+const handleApi = async (
+  request: Request,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> => {
+  const app = makeApp(layerSql(env.DB))
+  try {
+    return await app.handle(request)
+  } finally {
+    context.waitUntil(app.dispose())
+  }
 }
 
 export default {
-  fetch: (request, env) =>
+  fetch: (request, env, context) =>
     new URL(request.url).pathname.startsWith(API_PREFIX)
-      ? appFor(env).handle(request)
+      ? handleApi(request, env, context)
       : env.ASSETS.fetch(request),
 } satisfies ExportedHandler<Env>

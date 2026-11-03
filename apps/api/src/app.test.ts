@@ -60,6 +60,28 @@ describe('API routes', () => {
     })
   })
 
+  test('the RPC path answers with or without a trailing slash', async () => {
+    const app = await makeTestApp()
+    const bodies = await Promise.all(
+      ['/api/rpc', '/api/rpc/'].map(path =>
+        app
+          .handle(
+            post(path, {
+              _tag: 'Request',
+              id: '1',
+              tag: 'ListCases',
+              payload: null,
+              headers: [],
+            }),
+          )
+          .then(response => response.text()),
+      ),
+    )
+    bodies.forEach(body => {
+      expect(body).toContain('Unauthorised')
+    })
+  })
+
   test('unknown API paths answer 404', async () => {
     const app = await makeTestApp()
     expect((await app.handle(get('/api/nothing'))).status).toBe(404)

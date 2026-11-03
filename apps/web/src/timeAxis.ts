@@ -29,7 +29,7 @@ import {
   timelineYOf,
 } from './axisLayout'
 import { formatSlaCompact, formatSlaShort, formatSlaSpoken } from './format'
-import { Message, type Model, visibleQueueOf } from './main'
+import { Message, type Model, rulesOf, visibleQueueOf } from './main'
 
 // GEOMETRY
 
@@ -1028,7 +1028,7 @@ export const timeAxis = (model: Model, h: HtmlBuilder<Message>): Html => {
       dueSoon: countWhere(queue, 'DueSoon'),
       onTrack: countWhere(queue, 'OnTrack'),
     },
-    horizonHours: horizonHoursOf(model.rules),
+    horizonHours: horizonHoursOf(rulesOf(model)),
     isResponsive: model.heroLayout === 'Responsive',
   }
 

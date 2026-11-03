@@ -109,6 +109,11 @@ export const makeApp = (repository: Layer.Layer<Repository>) => {
     if (pathname === RPC_PATH) {
       return rpc.handler(request)
     }
+    if (pathname === `${RPC_PATH}/`) {
+      const url = new URL(request.url)
+      url.pathname = RPC_PATH
+      return rpc.handler(new Request(url, request))
+    }
     return Promise.resolve(json({ error: 'NotFound' }, 404))
   }
 
