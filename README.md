@@ -2,7 +2,7 @@
 
 A prototype for assessing and deciding cases in the ethics and behaviour teams of Metges Sense Fronteres (MSF), across all its operational centres. Built at Universitat Pompeu Fabra for the Project Management course (team 101_E), together with MSF's Ethics & Behaviour Unit.
 
-**Live prototype:** https://uripont.github.io/msf-case-desk/
+**Live prototype:** https://iter1.msf-case-desk.workers.dev
 
 <p>
 <img src="docs/screenshots/desktop-home.png" alt="Case Desk on a computer" width="58.5%"> <img src="docs/screenshots/phone-home.png" alt="Case Desk on a phone" width="19%"> <img src="docs/screenshots/phone-case.png" alt="A case on a phone" width="19%">
@@ -96,7 +96,7 @@ pnpm infra:plan                                   # preview changes
 pnpm infra:deploy                                 # deploy
 ```
 
-The step-by-step guide, for a local `workerd` run or your own Cloudflare account, is [`docs/self-hosting.md`](docs/self-hosting.md). Until the Cloudflare deployment is verified, the live link above still points at GitHub Pages, which serves the increment 1 prototype.
+The step-by-step guide, for a local `workerd` run or your own Cloudflare account, is [`docs/self-hosting.md`](docs/self-hosting.md).
 
 > [!NOTE]
 > Alchemy v2 and Foldkit are both in beta. Versions are pinned exactly, and the reason for the two Effect versions in this repository is explained in [`docs/decisions.md`](docs/decisions.md).
