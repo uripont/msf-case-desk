@@ -4,7 +4,7 @@ import { RpcSerialization, RpcServer } from 'effect/rpc'
 
 import { CaseDeskRpcs, RPC_PATH, type Repository } from '@case-desk/domain'
 
-import { CaseDeskHandlers } from './handlers'
+import { AuthenticationLive, CaseDeskHandlers } from './handlers'
 
 export const makeRpcHandler = (repository: Layer.Layer<Repository>) =>
   HttpRouter.toWebHandler(
@@ -14,6 +14,7 @@ export const makeRpcHandler = (repository: Layer.Layer<Repository>) =>
       protocol: 'http',
     }).pipe(
       Layer.provide(CaseDeskHandlers),
+      Layer.provide(AuthenticationLive),
       Layer.provide(repository),
       Layer.provide(RpcSerialization.layerJson),
     ),

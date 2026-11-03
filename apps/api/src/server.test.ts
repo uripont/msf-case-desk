@@ -8,11 +8,15 @@ import {
   CaseId,
   DEFAULT_RULES,
   RPC_PATH,
-  layerMemory,
+  Repository,
+  makeMemoryRepository,
 } from '@case-desk/domain'
-import { SYNTHETIC_ENTRY } from '@case-desk/domain/testing'
+import { SYNTHETIC_ENTRY, SYNTHETIC_USER } from '@case-desk/domain/testing'
 
 import { makeRpcHandler } from './server'
+import { SESSION_COOKIE, hashToken } from './session'
+
+const TOKEN = 'b'.repeat(64)
 
 const servers: Array<{ dispose: () => Promise<void> }> = []
 
@@ -23,11 +27,33 @@ afterEach(async () => {
 const makeClient = RpcClient.make(CaseDeskRpcs)
 type Client = Effect.Success<typeof makeClient>
 
-const withClient = <A, E>(program: (client: Client) => Effect.Effect<A, E>) => {
-  const server = makeRpcHandler(layerMemory())
+const signedInRepository = async () => {
+  const repository = await Effect.runPromise(makeMemoryRepository())
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      yield* repository.createUser(SYNTHETIC_USER)
+      yield* repository.createSession({
+        tokenHash: yield* Effect.promise(() => hashToken(TOKEN)),
+        userId: SYNTHETIC_USER.id,
+        createdAt: 0,
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      })
+    }),
+  )
+  return Layer.succeed(Repository, repository)
+}
+
+const withClient = async <A, E>(
+  program: (client: Client) => Effect.Effect<A, E>,
+  cookie: string = `${SESSION_COOKIE}=${TOKEN}`,
+) => {
+  const server = makeRpcHandler(await signedInRepository())
   servers.push(server)
-  const fetchThroughServer: typeof fetch = (input, init) =>
-    server.handler(new Request(input, init))
+  const fetchThroughServer: typeof fetch = (input, init) => {
+    const request = new Request(input, init)
+    request.headers.set('cookie', cookie)
+    return server.handler(request)
+  }
   return Effect.runPromiseExit(
     Effect.scoped(Effect.flatMap(makeClient, program)).pipe(
       Effect.provide(
@@ -60,6 +86,7 @@ describe('RPC over HTTP', () => {
       const { created, listed, read } = exit.value
       expect(created.id).toMatch(/^CD-[0-9A-F]{8}$/)
       expect(created).toMatchObject(SYNTHETIC_ENTRY)
+      expect(created.enteredByName).toBe(SYNTHETIC_USER.name)
       expect(listed).toEqual([created])
       expect(read).toEqual(created)
     }
@@ -109,6 +136,7 @@ describe('RPC over HTTP', () => {
         expect.objectContaining({
           scope: 'OCB',
           rules: { ...DEFAULT_RULES, version: 'ocb-1', p1MinScore: 6 },
+          updatedByName: SYNTHETIC_USER.name,
         }),
       ]),
     )
@@ -122,5 +150,29 @@ describe('RPC over HTTP', () => {
       }),
     )
     expect(Exit.isFailure(exit)).toBe(true)
+  })
+})
+
+describe('RPC without a session', () => {
+  test.each([
+    ['no cookie', ''],
+    ['an unknown session', `${SESSION_COOKIE}=${'c'.repeat(64)}`],
+  ])('every procedure is refused with %s', async (_label, cookie) => {
+    const exits: ReadonlyArray<Exit.Exit<unknown, unknown>> = [
+      await withClient(client => client.ListCases(), cookie),
+      await withClient(client => client.ListRuleSets(), cookie),
+      await withClient(
+        client => client.CreateCase({ entry: SYNTHETIC_ENTRY }),
+        cookie,
+      ),
+      await withClient(
+        client => client.PutRuleSet({ scope: 'OCB', rules: DEFAULT_RULES }),
+        cookie,
+      ),
+    ]
+    exits.forEach(exit => {
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(JSON.stringify(exit)).toContain('Unauthorised')
+    })
   })
 })
