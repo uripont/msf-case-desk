@@ -1,9 +1,10 @@
-import { Schema } from 'effect'
-import { Rpc, RpcGroup } from 'effect/rpc'
+import { Context, Schema } from 'effect'
+import { Rpc, RpcGroup, RpcMiddleware } from 'effect/rpc'
 
 import { Case, CaseId } from './case'
 import { CaseEntry, CasePatch } from './entry'
 import { RuleSet, RuleSetScope, ValidTriageRules } from './rules'
+import { type User } from './user'
 
 // NOTE: the API contract shared by the web app and the API Worker. Each
 // deployed version bundles both sides from the same commit.
@@ -19,6 +20,22 @@ export class StorageUnavailable extends Schema.TaggedError<StorageUnavailable>()
   'StorageUnavailable',
   { message: Schema.String },
 ) {}
+
+export class Unauthorised extends Schema.TaggedError<Unauthorised>()(
+  'Unauthorised',
+  {},
+) {}
+
+export class CurrentUser extends Context.Service<CurrentUser, User>()(
+  'CurrentUser',
+) {}
+
+// NOTE: every procedure needs a signed-in user. The server reads the session
+// cookie the browser sends with each request.
+export class Authentication extends RpcMiddleware.Service<
+  Authentication,
+  { provides: CurrentUser }
+>()('Authentication', { error: Unauthorised }) {}
 
 export class CaseDeskRpcs extends RpcGroup.make(
   Rpc.make('ListCases', {
@@ -49,4 +66,4 @@ export class CaseDeskRpcs extends RpcGroup.make(
     success: RuleSet,
     error: StorageUnavailable,
   }),
-) {}
+).middleware(Authentication) {}
