@@ -234,7 +234,7 @@ export const makeSqlRepository = (db: SqlDatabase): Repository['Service'] => {
             newCase.entry.location ?? null,
             newCase.entry.reference ?? null,
             newCase.enteredAt,
-            newCase.enteredBy,
+            newCase.enteredBy ?? null,
             1,
           )
           .run(),
@@ -268,7 +268,7 @@ export const makeSqlRepository = (db: SqlDatabase): Repository['Service'] => {
       query('Listing rule sets', () =>
         db.prepare(`${RULE_SET_SELECT} ORDER BY r.scope`).all<RuleSetRow>(),
       ).pipe(Effect.map(({ results }) => Array.map(results, ruleSetFromRow))),
-    putRuleSet: (scope, rules: TriageRules, updatedAt, updatedBy: UserId) =>
+    putRuleSet: (scope, rules: TriageRules, updatedAt, updatedBy?: UserId) =>
       query('Saving a rule set', () =>
         db
           .prepare(
@@ -297,7 +297,7 @@ export const makeSqlRepository = (db: SqlDatabase): Repository['Service'] => {
             rules.targetHours.P2,
             rules.targetHours.P3,
             updatedAt,
-            updatedBy,
+            updatedBy ?? null,
           )
           .run(),
       ).pipe(Effect.andThen(getRuleSet(scope))),

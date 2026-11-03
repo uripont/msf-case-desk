@@ -36,11 +36,18 @@ export default Alchemy.Stack(
       memo: snapshotMemo,
     });
 
+    // One database shared by every version. Only this latest deployment
+    // applies migrations, before its new code goes live.
+    const database = yield* Cloudflare.D1.Database("Database", {
+      migrations: path.resolve(root, "apps/api/migrations"),
+    });
+
     const app = yield* Cloudflare.Website.Foldkit("App", {
       name: "app",
       rootDir: path.resolve(root, "apps/web"),
       main: path.resolve(root, "apps/api/src/worker.ts"),
       assets: { runWorkerFirst: ["/api/*"] },
+      env: { DB: database },
     });
 
     return {
