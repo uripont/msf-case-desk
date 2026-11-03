@@ -22,6 +22,8 @@
     "oxlint": "1.85.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.2",
-    "fast-check": "^4.10.2"
+    "fast-check": "^4.10.2",
+    "esbuild": "0.28.2",
+    "workerd": "1.20261012.1"
   }
 }
