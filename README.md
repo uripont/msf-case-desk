@@ -2,7 +2,7 @@
 
 A prototype for assessing and deciding cases in the ethics and behaviour teams of Metges Sense Fronteres (MSF), across all its operational centres. Built at Universitat Pompeu Fabra for the Project Management course (team 101_E), together with MSF's Ethics & Behaviour Unit.
 
-**Live prototype:** https://iter1.msf-case-desk.workers.dev
+**Live prototype:** https://iter2.msf-case-desk.workers.dev (sign-in with an account from the team; the first iteration, without sign-in, stays at https://iter1.msf-case-desk.workers.dev)
 
 <p>
 <img src="docs/screenshots/desktop-home.png" alt="Case Desk on a computer" width="58.5%"> <img src="docs/screenshots/phone-home.png" alt="Case Desk on a phone" width="19%"> <img src="docs/screenshots/phone-case.png" alt="A case on a phone" width="19%">
