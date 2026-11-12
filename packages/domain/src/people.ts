@@ -42,10 +42,16 @@ export type PeopleProblemCode =
   | 'duplicate-label'
   | 'label-matches-alias'
 
+// NOTE: A problem names the position of the person in the list and the field,
+// never a label, a name or an alias: the message is fixed text, so a problem
+// can go to any caller (`Problem`, in the RPC contract) without repeating
+// what the list holds. `personId` is for the code that merges lists and is not
+// part of what is sent.
 export type PeopleProblem = Readonly<{
   code: PeopleProblemCode
-  // The person's ID and the field.
-  path: ReadonlyArray<string>
+  // The position in the list and the field.
+  path: readonly [number, 'id' | 'label']
+  personId: string
   message: string
 }>
 
@@ -61,12 +67,13 @@ export const peopleListProblems = (
   const ids = new Set<string>()
   const labels = new Map<string, string>()
   const matcher = makeMatcher(people)
-  for (const person of people) {
+  for (const [position, person] of people.entries()) {
     if (ids.has(person.id)) {
       out.push({
         code: 'duplicate-id',
-        path: [person.id],
-        message: `The person "${person.id}" is listed twice`,
+        path: [position, 'id'],
+        personId: person.id,
+        message: 'Two people have the same ID',
       })
     }
     ids.add(person.id)
@@ -74,18 +81,19 @@ export const peopleListProblems = (
     if (label === '' || label !== label.trim() || label.length > 200) {
       out.push({
         code: 'invalid-label',
-        path: [person.id, 'label'],
+        path: [position, 'label'],
+        personId: person.id,
         message: 'A label is 1 to 200 characters, with no space at either end',
       })
       continue
     }
     const key = foldedKey(label)
-    const other = labels.get(key)
-    if (other !== undefined) {
+    if (labels.has(key)) {
       out.push({
         code: 'duplicate-label',
-        path: [person.id, 'label'],
-        message: `"${label}" is already the label of "${other}"`,
+        path: [position, 'label'],
+        personId: person.id,
+        message: 'Two people have the same label',
       })
     } else {
       labels.set(key, person.id)
@@ -93,8 +101,9 @@ export const peopleListProblems = (
     if (matcher.matches(label).length > 0) {
       out.push({
         code: 'label-matches-alias',
-        path: [person.id, 'label'],
-        message: `"${label}" holds a name or alias of someone in the list`,
+        path: [position, 'label'],
+        personId: person.id,
+        message: 'A label holds a name or alias of someone in the list',
       })
     }
   }

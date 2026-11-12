@@ -9,7 +9,7 @@ import {
 } from './content'
 import { entryLabel, numberSections } from './numbering'
 import type { Person } from './people'
-import { IMAGE_WITHHELD_TEXT } from './redaction'
+import { IMAGE_WITHHELD_TEXT, redactorFor } from './redaction'
 import type {
   BlockNode,
   InlineNode,
@@ -38,10 +38,12 @@ import type { Theme } from './theme'
 //   (numbers never move). The content of such a section is not shown.
 // - The conclusion section is shown only if `includeConclusion` says so; by
 //   default if the content has anything in it (D23: hidden until concluding).
-// - Redaction is the caller's: content and people arrive redacted. As a second
-//   line of defence, when `version.redacted` is true a figure that is not
-//   marked safe is replaced by the withheld note, and people are shown by
-//   their label.
+// - The view is explicit: `original`, or `redacted` with the people list of
+//   the version (names and aliases). Content arrives redacted for a redacted
+//   view; as a second line of defence the description itself replaces every
+//   alias in the case file's reference, unit and title and in the version's
+//   metadata strings (report name, version label), replaces a figure that is
+//   not marked safe by the withheld note, and shows people by their label.
 // - Pages: the cover is its own part, then the contents with the front matter
 //   sections, then the body. With `continuous` numbering one group counts
 //   every page. With `restart_after_front_matter` the cover and the front
@@ -193,14 +195,25 @@ export type DocumentDescription = Readonly<{
   imageIds: ReadonlyArray<string>
 }>
 
-export type VersionMeta = Readonly<{
+export type VersionInput = Readonly<{
   reportName: string
   // NOTE: For example "Revision 2", "Draft 5" or "Revision 3 (closing)".
   versionLabel: string
   // NOTE: `YYYY-MM-DD`, chosen by the caller (the domain has no clock).
   date: string
-  redacted: boolean
 }>
+
+// NOTE: What the description records of the version: the metadata as it is
+// printed (redacted for a redacted view) and which view it is.
+export type VersionMeta = VersionInput & Readonly<{ redacted: boolean }>
+
+// NOTE: Which version of the report the document shows, and the people list of
+// that version (with aliases, as stored): the original is printed with names,
+// a redacted one with labels, and every string that is not content passes
+// through that list.
+export type DocumentView =
+  | Readonly<{ kind: 'original'; people: ReadonlyArray<Person> }>
+  | Readonly<{ kind: 'redacted'; people: ReadonlyArray<Person> }>
 
 export type CaseFileInfo = Readonly<{
   reference: string
@@ -211,12 +224,17 @@ export type CaseFileInfo = Readonly<{
 export type DocumentInput = Readonly<{
   template: Template
   content: ReportContent
-  people: ReadonlyArray<Person>
+  view: DocumentView
   caseFile: CaseFileInfo
   theme: Theme
-  version: VersionMeta
+  version: VersionInput
   includeConclusion?: boolean
 }>
+
+// NOTE: The input as the builders read it: case file and version already
+// redacted if the view is.
+type ResolvedInput = Omit<DocumentInput, 'version'> &
+  Readonly<{ version: VersionMeta }>
 
 // ---- Text helpers --------------------------------------------------------------------
 
@@ -305,7 +323,7 @@ const runsOf = (
 // ---- Building --------------------------------------------------------------------------
 
 type Context = Readonly<{
-  input: DocumentInput
+  input: ResolvedInput
   images: Set<string>
   names: ReadonlyMap<string, string>
 }>
@@ -754,14 +772,30 @@ const hasContent = (section: SectionContent | undefined): boolean =>
 export const documentDescription = (
   input: DocumentInput,
 ): DocumentDescription => {
-  const { template, content, people, theme, version, caseFile } = input
+  const { template, content, view, theme } = input
+  const redacted = view.kind === 'redacted'
+  const redactor = redacted ? redactorFor(view.people) : undefined
+  const safe = (text: string): string =>
+    redactor === undefined ? text : redactor.text(text)
+  const caseFile: CaseFileInfo = {
+    reference: safe(input.caseFile.reference),
+    unit: safe(input.caseFile.unit),
+    title: safe(input.caseFile.title),
+  }
+  const version: VersionMeta = {
+    reportName: safe(input.version.reportName),
+    versionLabel: safe(input.version.versionLabel),
+    date: input.version.date,
+    redacted,
+  }
   const names = new Map(
-    people.map(person => [
-      person.id,
-      version.redacted ? person.label : person.name,
-    ]),
+    view.people.map(person => [person.id, redacted ? person.label : person.name]),
   )
-  const context: Context = { input, images: new Set(), names }
+  const context: Context = {
+    input: { ...input, caseFile, version },
+    images: new Set(),
+    names,
+  }
   const numbers = new Map(
     numberSections(template, content).map(entry => [entry.key, entry]),
   )

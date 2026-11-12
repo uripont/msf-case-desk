@@ -107,6 +107,8 @@ const REPORT_ACTIONS: ReadonlyArray<Action> = [
   { type: 'extend_deadline' },
   { type: 'remove_reviewer' },
   { type: 'start_conclusion' },
+  { type: 'read_template_version' },
+  { type: 'read_template_version', revision: 1 },
   { type: 'read_revision', revision: 1 },
   { type: 'read_comments', revision: 1 },
   { type: 'write_comment', revision: 1 },
@@ -305,15 +307,16 @@ describe('what reviewers see', () => {
     expect(authorize(reviewer1, report, { type: 'view_report' }).allowed).toBe(
       true,
     )
-    const hidden = REPORT_ACTIONS.filter(
-      a =>
-        ![
-          'view_report',
-          'read_revision',
-          'read_comments',
-          'write_comment',
-          'submit_review',
-        ].includes(a.type),
+    const hidden = REPORT_ACTIONS.filter(a =>
+      a.type === 'read_template_version'
+        ? a.revision === undefined
+        : ![
+            'view_report',
+            'read_revision',
+            'read_comments',
+            'write_comment',
+            'submit_review',
+          ].includes(a.type),
     )
     for (const action of hidden) {
       expect(authorize(reviewer1, report, action)).toEqual(NOT_FOUND)
@@ -565,6 +568,50 @@ describe('a role without a permission is refused that action', () => {
         type: 'save_section',
         sectionId: 'nope',
       }).allowed,
+    ).toBe(true)
+  })
+})
+
+describe('regression: the template version of a report is readable by its members', () => {
+  test('authors read it, reviewers read it for a revision sent to them, nobody else', () => {
+    const report = intakeReport([
+      round(1, committee('r1'), 'superseded'),
+      round(2, committee('r2')),
+    ])
+    const read = (who: Account, revision?: number) =>
+      authorize(
+        who,
+        report,
+        revision === undefined
+          ? { type: 'read_template_version' }
+          : { type: 'read_template_version', revision },
+      )
+    expect(read(author1).allowed).toBe(true)
+    expect(read(author1, 2).allowed).toBe(true)
+    expect(read(account('r1'), 1).allowed).toBe(true)
+    expect(read(account('r2'), 2).allowed).toBe(true)
+    // Not the revision of another reviewer, not without a revision, not a stranger.
+    expect(read(account('r1'), 2)).toEqual(NOT_FOUND)
+    expect(read(account('r2'), 1)).toEqual(NOT_FOUND)
+    expect(read(account('r1'))).toEqual(NOT_FOUND)
+    expect(read(account('stranger'), 1)).toEqual(NOT_FOUND)
+    expect(read(account('admin-1', 'admin', 'template_editor'), 1)).toEqual(NOT_FOUND)
+    expect(
+      authorize(account('r1'), undefined, { type: 'read_template_version', revision: 1 }),
+    ).toEqual(NOT_FOUND)
+    // A removed reviewer reads nothing.
+    const removed = intakeReport([
+      { ...round(1, committee('r2')), removed: committee('r1') },
+    ])
+    expect(
+      authorize(account('r1'), removed, { type: 'read_template_version', revision: 1 }),
+    ).toEqual(NOT_FOUND)
+  })
+
+  test('it is a read: an archived report still allows it', () => {
+    const report = intakeReport([round(1, committee('r1'), 'decided')], 'archived')
+    expect(
+      authorize(author1, report, { type: 'read_template_version' }).allowed,
     ).toBe(true)
   })
 })

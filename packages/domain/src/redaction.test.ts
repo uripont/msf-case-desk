@@ -10,6 +10,7 @@ import {
   type ReportContent,
   type RichTextDoc,
   containsAlias,
+  canonicalRichText,
   decodeRichText,
   personLabel,
   redactContent,
@@ -128,7 +129,8 @@ describe('redactText: matching', () => {
     const greek = [person('g', 'Άννα')]
     expect(r('ΑΝΝΑ and Αννα', greek)).toBe('Person 1 and Person 1')
     const han = [person('h', '王明')]
-    expect(r('王明说', han)).toBe('王明说') // no boundary between Han letters
+    // Han has no word boundaries: a name inside a run of Han letters is found.
+    expect(r('王明说', han)).toBe('Person 1说')
   })
   test('white space runs and apostrophe variants are equal', () => {
     expect(r('Ana   \nGarcia')).toBe('Person 1')
@@ -140,6 +142,56 @@ describe('redactText: matching', () => {
   test('zero-width characters inside a name do not hide it', () => {
     expect(r('An​a', [ANA])).toBe('Person 1')
     expect(r('A­na', [ANA])).toBe('Person 1')
+  })
+  test('regression: names in scripts written without spaces are found', () => {
+    expect(r('田中さんは来た', [person('t', '田中')])).toBe('Person 1さんは来た')
+    expect(r('昨日、山田太郎が来た', [person('y', '山田太郎')])).toBe(
+      '昨日、Person 1が来た',
+    )
+    // Katakana, Thai, Khmer, Lao and Myanmar.
+    expect(r('これはタナカです', [person('k', 'タナカ')])).toBe(
+      'これはPerson 1です',
+    )
+    expect(r('วันนี้สมชายไปตลาด', [person('t', 'สมชาย')])).toBe(
+      'วันนี้Person 1ไปตลาด',
+    )
+    expect(r('សួស្តីសុខា។', [person('k', 'សុខា')])).toBe('សួស្តីPerson 1។')
+    expect(r('ສະບາຍດີສົມຊາຍ', [person('l', 'ສົມຊາຍ')])).toBe('ສະບາຍດີPerson 1')
+    expect(r('မင်္ဂလာပါမောင်မောင်', [person('m', 'မောင်မောင်')])).toBe(
+      'မင်္ဂလာပါPerson 1',
+    )
+    // A name in a spaced script next to one without spaces is still a name.
+    expect(r('Ana田中', [ANA, person('t', '田中', [], 'Person 2')])).toBe(
+      'Person 1Person 2',
+    )
+    // Spaced scripts keep their boundaries.
+    expect(r('Banana Anaé', [ANA])).toBe('Banana Anaé')
+  })
+  test('regression: format characters are separators, and offsets stay right', () => {
+    for (const cf of ['\u200b', '\u200c', '\u200d', '\u2060', '\u00ad', '\u200e', '\ufeff']) {
+      expect(r(`Ana${cf}Garcia`, [ANA])).toBe('Person 1')
+      expect(r(`x Ana${cf}Garcia y`, [ANA])).toBe('x Person 1 y')
+      expect(r(`Ana${cf}`, [ANA])).toBe('Person 1')
+      expect(r(`Anita${cf}Garcia`, [ANA])).toBe("Person 1Garcia")
+    }
+    // Inside a word they hide nothing either.
+    expect(r('A\u200bn\u200ba', [ANA])).toBe('Person 1')
+    // The text around the match is kept as it was, format characters too.
+    expect(r('a\u200b Ana\u200bGarcia \u200bb', [ANA])).toBe(
+      'a\u200b Person 1 \u200bb',
+    )
+    // Across text nodes.
+    const out = redactRichText(
+      [ANA],
+      doc({
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Ana\u200b', marks: [{ type: 'bold' }] },
+          { type: 'text', text: 'Garcia came' },
+        ],
+      }),
+    )
+    expect(JSON.stringify(out)).not.toMatch(/Ana|Garcia/)
   })
   test('two people with one alias: the earlier wins', () => {
     expect(
@@ -347,9 +399,9 @@ describe('redactRichText', () => {
       type: 'figure',
       attrs: { imageId: 'img-ok', alt: 'a chart', safeToShare: true },
     })
-    expect(redactRichText([ANA], input)).toBe(input)
+    expect(redactRichText([ANA], input)).toEqual(input)
   })
-  test('a document with no match is returned as it is, not canonicalised', () => {
+  test('a document with no match is rebuilt in canonical form, never returned as it came', () => {
     const noisy = doc({
       type: 'paragraph',
       content: [
@@ -357,7 +409,61 @@ describe('redactRichText', () => {
         { type: 'text', text: 'b' },
       ],
     })
-    expect(redactRichText([ANA], noisy)).toBe(noisy)
+    const out = redactRichText([ANA], noisy)
+    expect(out).not.toBe(noisy)
+    expect(out).toEqual(canonicalRichText(noisy))
+    expect(redactRichText([], noisy)).not.toBe(noisy)
+  })
+})
+
+describe('regression: link attributes carry no free text', () => {
+  const linkDoc = (attrs: Record<string, unknown>) => ({
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text: 'hello',
+            marks: [
+              { type: 'link', attrs: { href: 'https://example.org/a', ...attrs } },
+            ],
+          },
+        ],
+      },
+    ],
+  })
+  test('the schema refuses a class, and a rel or target that is free text', () => {
+    for (const attrs of [
+      { class: 'Ana Garcia' },
+      { rel: 'ana garcia' },
+      { target: 'Ana Garcia' },
+    ]) {
+      expect(Result.isFailure(decodeRichText(linkDoc(attrs)))).toBe(true)
+    }
+    for (const attrs of [
+      { class: null, rel: 'noopener noreferrer nofollow', target: '_blank' },
+      { rel: null, target: null },
+    ]) {
+      expect(Result.isSuccess(decodeRichText(linkDoc(attrs)))).toBe(true)
+    }
+  })
+  test('redaction rebuilds the document, so no attribute can get through', () => {
+    const hostile = linkDoc({
+      class: 'Ana Garcia',
+      rel: 'ana garcia',
+      target: 'Ana',
+      extra: 'Anita',
+    }) as unknown as RichTextDoc
+    const out = redactRichText([ANA], hostile)
+    expect(out).not.toBe(hostile)
+    expect(JSON.stringify(out)).not.toMatch(/ana|garcia|anita/i)
+    expect(out.content[0]).toMatchObject({
+      content: [
+        { text: 'hello', marks: [{ attrs: { href: 'https://example.org/a' } }] },
+      ],
+    })
   })
 })
 
@@ -538,6 +644,24 @@ const tokens = (text: string): ReadonlyArray<string> =>
     .split(/[^\p{L}\p{N}]+/u)
     .filter(token => token !== '')
 
+// NOTE: Written for this test and not shared with the production matcher. A
+// name leaks if, in either reading of the format characters (as nothing, or as
+// a space), its tokens appear as a run, or, for a script without spaces, its
+// letters appear as a substring.
+const NO_SPACES = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Khmer}\p{sc=Lao}\p{sc=Myanmar}]/u
+const FORMAT_CHARS = /\p{Cf}/gu
+const leaks = (text: string, alias: string): boolean => {
+  const readings = [text.replace(FORMAT_CHARS, ''), text.replace(FORMAT_CHARS, ' ')]
+  const name = alias.replace(FORMAT_CHARS, '')
+  return readings.some(reading =>
+    NO_SPACES.test(name)
+      ? stripAccents(reading.toLowerCase())
+          .replace(/\s+/g, '')
+          .includes(stripAccents(name.toLowerCase()).replace(/\s+/g, ''))
+      : hasRun(tokens(reading), tokens(name)),
+  )
+}
+
 const hasRun = (
   haystack: ReadonlyArray<string>,
   needle: ReadonlyArray<string>,
@@ -592,16 +716,47 @@ const allTextOf = (value: unknown): ReadonlyArray<string> => {
   return out
 }
 
+// NOTE: Redaction rebuilds every rich text in canonical form, so "unchanged"
+// means unchanged up to that.
+const canonicalContent = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(canonicalContent)
+  }
+  if (value !== null && typeof value === 'object') {
+    const node = value as { type?: unknown; content?: unknown }
+    if (node.type === 'doc') {
+      return canonicalRichText(value as RichTextDoc)
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, canonicalContent(v)]),
+    )
+  }
+  return value
+}
+
 const POOL: ReadonlyArray<Person> = [
   person('pa', 'Zorvak', ['Maëlle Quenta'], 'Person 1'),
   person('pb', 'José Quill', ["O'Rourke Vance", 'Xander'], 'Person 2'),
   person('pc', 'Ilka', [], 'Person 3'),
+  // Scripts written without spaces between words.
+  person('pd', '田中', ['山田太郎'], 'Person 4'),
+  person('pe', 'สมชาย', ['タナカ'], 'Person 5'),
+  person('pf', 'សុខា', ['ສົມຊາຍ', 'မောင်မောင်'], 'Person 6'),
 ]
 
 const aliasesOf = (people: ReadonlyArray<Person>) =>
   people.flatMap(p => [p.name, ...p.aliases])
 
 const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+
+const FORMATS: ReadonlyArray<string> = [
+  '\u200b',
+  '\u200c',
+  '\u200d',
+  '\u2060',
+  '\u00ad',
+  '\u200e',
+]
 
 const inject = (
   value: unknown,
@@ -614,7 +769,7 @@ const inject = (
       return value
     }
     const alias = aliases[counter.n % aliases.length] as string
-    const variant = counter.n % 6
+    const variant = counter.n % 9
     counter.n++
     if (key === 'href') {
       const slug = tokens(alias).join('-')
@@ -636,6 +791,11 @@ const inject = (
       `${stripAccents(alias)}'s ${value}`,
       `${value}, ${alias.toLowerCase()};`,
       `${value}-${alias}`,
+      // Without spaces around it, a space inside it replaced by a format
+      // character, and format characters between its letters.
+      `${value}${alias}${value}`,
+      `${value} ${alias.replace(/ /g, FORMATS[counter.n % FORMATS.length] as string)} ${value}`,
+      `${value} ${Array.from(alias).join(FORMATS[counter.n % FORMATS.length] as string)} ${value}`,
     ]
     const form = (forms[variant] as string).trim()
     // Text nodes sit next to each other: keep a name from touching a word of
@@ -710,12 +870,8 @@ describe('stage 1 done-when: no alias and no unmarked image', () => {
 
           // 1. No alias in any text of the output: the independent check.
           for (const text of allTextOf(out)) {
-            const found = tokens(text)
             for (const alias of aliases) {
-              expect(
-                hasRun(found, tokens(alias)),
-                `"${alias}" in "${text}"`,
-              ).toBe(false)
+              expect(leaks(text, alias), `"${alias}" in "${text}"`).toBe(false)
             }
           }
           // 2. No unmarked image, and no ID of one anywhere.
@@ -737,7 +893,7 @@ describe('stage 1 done-when: no alias and no unmarked image', () => {
           // 5. The draft's people list holds labels only.
           const draft = redactDraft({ content: prepared, people })
           expect(allTextOf(draft.people).join(' ')).not.toMatch(
-            /zorvak|quill|ilka|quenta|xander|rourke/i,
+            /zorvak|quill|ilka|quenta|xander|rourke|田中|山田|สมชาย|タナカ/i,
           )
         },
       ),
@@ -745,7 +901,73 @@ describe('stage 1 done-when: no alias and no unmarked image', () => {
     )
   })
 
+  test('property: a name split across text nodes, in any script, with format characters', () => {
+    const aliasArb = fc.constantFrom(...aliasesOf(POOL))
+    const splitArb = fc.array(fc.nat(50), { minLength: 1, maxLength: 4 })
+    const formatArb = fc.constantFrom('', ...FORMATS)
+    const markArb = fc.constantFrom<'bold' | 'italic' | 'underline' | undefined>(
+      undefined,
+      'bold',
+      'italic',
+      'underline',
+    )
+    fc.assert(
+      fc.property(
+        aliasArb,
+        splitArb,
+        formatArb,
+        fc.constantFrom('', ' ', ', ', '-'),
+        fc.constantFrom('', ' ', ' and '),
+        markArb,
+        fc.constantFrom(' ', ...FORMATS),
+        (alias, cuts, format, before, after, mark, gap) => {
+          const chars = Array.from(alias.replace(/ /g, gap))
+          const points = [...new Set(cuts.map(c => c % (chars.length + 1)))].sort(
+            (a, b) => a - b,
+          )
+          const pieces: Array<string> = []
+          let last = 0
+          for (const point of [...points, chars.length]) {
+            pieces.push(chars.slice(last, point).join(''))
+            last = point
+          }
+          const nodes = [
+            before,
+            ...pieces.map((piece, index) =>
+              index < pieces.length - 1 ? piece + format : piece,
+            ),
+            after,
+          ]
+            .filter(piece => piece !== '')
+            .map((text, index) => ({
+              type: 'text' as const,
+              text,
+              ...(mark !== undefined && index % 2 === 0
+                ? { marks: [{ type: mark }] }
+                : {}),
+            }))
+          const input = doc({ type: 'paragraph', content: nodes } as never)
+          const out = redactRichText(POOL, input)
+          const joined = (
+            out.content[0] as { content?: ReadonlyArray<{ text?: string }> }
+          ).content
+            ?.map(node => node.text ?? '')
+            .join('')
+          for (const name of aliasesOf(POOL)) {
+            expect(leaks(joined ?? '', name), `"${name}" in "${joined}"`).toBe(
+              false,
+            )
+          }
+        },
+      ),
+      { numRuns: 600 },
+    )
+  })
+
   test('the independent check catches a leak (it is not vacuous)', () => {
+    expect(leaks('Ana\u200bGarcia', 'Ana Garcia')).toBe(true)
+    expect(leaks('田中さんは来た', '田中')).toBe(true)
+    expect(leaks('Person 4さんは来た', '田中')).toBe(false)
     const leaked = tokens('Met maëlle  QUENTA.')
     expect(hasRun(leaked, tokens('Maëlle Quenta'))).toBe(true)
     expect(hasRun(tokens('Quentas'), tokens('Quenta'))).toBe(false)
@@ -760,7 +982,7 @@ describe('stage 1 done-when: no alias and no unmarked image', () => {
           'img-3': true,
         })
         expect(Result.isSuccess(validateContent(template, safe))).toBe(true)
-        expect(redactContent([], safe)).toEqual(safe)
+        expect(redactContent([], safe)).toEqual(canonicalContent(safe))
       }),
       { numRuns: 100 },
     )
@@ -775,7 +997,9 @@ describe('stage 1 done-when: no alias and no unmarked image', () => {
           'img-3': true,
         })
         // People whose names are not in the text: only canonical form may differ.
-        expect(redactContent([person('z', 'Qwertzuiop')], safe)).toEqual(safe)
+        expect(redactContent([person('z', 'Qwertzuiop')], safe)).toEqual(
+          canonicalContent(safe),
+        )
       }),
       { numRuns: 60 },
     )

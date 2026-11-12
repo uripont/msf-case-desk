@@ -12,11 +12,14 @@ import {
   type EventKind,
   type FlowEvent,
   type Participant,
+  type ReportContent,
   type ReportFlow,
   type ReportState,
   type Template,
   applyEvent,
+  checkClosingDraft,
   checkSave,
+  emptyContent,
   initialFlow,
   latestRound,
   nextDraftNumber,
@@ -34,6 +37,7 @@ import {
   AUTHOR_IDS,
   flowTemplateArbitrary,
   runScript,
+  satisfiableParticipants,
   scriptArbitrary,
 } from './testing/reports'
 import { PANEL_TEMPLATE } from './testing/templates'
@@ -103,8 +107,9 @@ const run = (
   return result.success
 }
 
-const approve = (reviewerId: string): FlowEvent => ({
+const approve = (reviewerId: string, revision = 1): FlowEvent => ({
   type: 'submit_review',
+  revision,
   reviewerId,
   decision: 'approve',
 })
@@ -254,6 +259,7 @@ describe('the pipeline of a template with a conclusion', () => {
     flow = run(t, flow, 3, approve('r1'))
     flow = run(t, flow, 4, {
       type: 'submit_review',
+      revision: 1,
       reviewerId: 'r2',
       decision: 'request_changes',
     })
@@ -264,9 +270,9 @@ describe('the pipeline of a template with a conclusion', () => {
     flow = run(t, flow, 6, { ...(publish(200) as any), draft: 2 })
     expect(flow.rounds.map(r => r.status)).toEqual(['superseded', 'open'])
     expect(flow.rounds[1]?.revision).toBe(2)
-    flow = run(t, flow, 7, approve('r1'))
+    flow = run(t, flow, 7, approve('r1', 2))
     expect(flow.state).toBe('in_review')
-    flow = run(t, flow, 8, approve('r2'))
+    flow = run(t, flow, 8, approve('r2', 2))
     expect(flow.state).toBe('decided')
     expect(latestRound(flow)).toMatchObject({
       status: 'decided',
@@ -279,9 +285,9 @@ describe('the pipeline of a template with a conclusion', () => {
     flow = run(t, flow, 11, { ...(closing(300) as any), draft: 3 })
     expect(flow.state).toBe('concluding')
     expect(latestRound(flow)).toMatchObject({ revision: 3, closing: true })
-    flow = run(t, flow, 12, approve('r1'))
+    flow = run(t, flow, 12, approve('r1', 3))
     expect(flow.state).toBe('concluding')
-    flow = run(t, flow, 13, approve('r2'))
+    flow = run(t, flow, 13, approve('r2', 3))
     expect(flow.state).toBe('archived')
     for (const event of eventsOfEveryKind(flow)) {
       expect(code(applyEvent(ctx(t, 14), flow, event))).toBe(
@@ -295,10 +301,25 @@ describe('the pipeline of a template with a conclusion', () => {
     let flow = run(t, run(t, initialFlow, 1, share), 2, publish(100))
     flow = run(t, flow, 3, approve('r1'))
     flow = run(t, flow, 4, publish(200))
-    flow = run(t, flow, 5, approve('r2'))
+    flow = run(t, flow, 5, approve('r2', 2))
     expect(flow.state).toBe('in_review')
     expect(tallyRound(t, flow.rounds[1]!).met).toBe(false)
     expect(tallyRound(t, flow.rounds[1]!).roles[0]?.approvals).toBe(1)
+  })
+
+  test('regression: a review written on Revision 1 is refused once Revision 2 is open', () => {
+    const t = INTAKE_TEMPLATE
+    let flow = run(t, run(t, initialFlow, 1, share), 2, publish(100))
+    flow = run(t, flow, 3, publish(200))
+    const stale = applyEvent(ctx(t, 4), flow, approve('r1', 1))
+    expect(code(stale)).toBe('round_not_open')
+    // Nothing landed on the new round, and a review of the open one works.
+    expect(flow.rounds[1]?.reviews).toEqual([])
+    expect(code(applyEvent(ctx(t, 4), flow, approve('r1', 2)))).toBe('ok')
+    // A revision that does not exist yet is refused too.
+    expect(code(applyEvent(ctx(t, 4), flow, approve('r1', 3)))).toBe(
+      'round_not_open',
+    )
   })
 
   test('start_conclusion fails in a template without one', () => {
@@ -391,7 +412,7 @@ describe('deadlines', () => {
   test('a closing round decided by its deadline leaves the report concluding', () => {
     const concluding = inState(t, 'concluding')!
     let flow = run(t, concluding, 6, closing(50))
-    flow = run(t, flow, 7, approve('r1'))
+    flow = run(t, flow, 7, approve('r1', 2))
     const settled = settle(ctx(t, 50), flow)
     expect(settled.state).toBe('concluding')
     expect(latestRound(settled)).toMatchObject({
@@ -417,7 +438,12 @@ describe('deadlines', () => {
       'decided',
       'open',
     ])
-    again = run(t, run(t, again, 61, approve('r1')), 62, approve('r2'))
+    again = run(
+      t,
+      run(t, again, 61, approve('r1', 3)),
+      62,
+      approve('r2', 3),
+    )
     expect(again.state).toBe('archived')
   })
 })
@@ -434,6 +460,36 @@ describe('publishing', () => {
         ),
       ).toBe('draft_not_shared')
     }
+  })
+
+  test('regression: only the latest shared draft can be published', () => {
+    const two = run(t, shared, 2, share)
+    expect(
+      code(applyEvent(ctx(t, 3), two, { ...(publish(100) as any), draft: 1 })),
+    ).toBe('not_latest')
+    expect(
+      code(applyEvent(ctx(t, 3), two, { ...(publish(100) as any), draft: 2 })),
+    ).toBe('ok')
+    // And for a closing revision.
+    const concluding = inState(t, 'concluding')!
+    const more = run(t, concluding, 40, share)
+    const latest = more.draftCount
+    expect(
+      code(
+        applyEvent(ctx(t, 41), more, {
+          ...(closing(500) as any),
+          draft: latest - 1,
+        }),
+      ),
+    ).toBe('not_latest')
+    expect(
+      code(
+        applyEvent(ctx(t, 41), more, {
+          ...(closing(500) as any),
+          draft: latest,
+        }),
+      ),
+    ).toBe('ok')
   })
 
   test('the deadline must be in the future', () => {
@@ -493,6 +549,7 @@ describe('reviews and reviewers', () => {
     let flow = run(t, reviewing, 3, approve('r1'))
     flow = run(t, flow, 4, {
       type: 'submit_review',
+      revision: 1,
       reviewerId: 'r1',
       decision: 'request_changes',
     })
@@ -502,6 +559,7 @@ describe('reviews and reviewers', () => {
     })
     flow = run(t, flow, 5, {
       type: 'submit_review',
+      revision: 1,
       reviewerId: 'r1',
       decision: 'comment',
     })
@@ -604,6 +662,7 @@ describe('reviews and reviewers', () => {
       code(
         applyEvent(ctx(p, 3), panel, {
           type: 'submit_review',
+          revision: 1,
           reviewerId: 'o',
           decision: 'comment',
         }),
@@ -716,6 +775,95 @@ describe('saving content', () => {
     expect(codeOf('archived', conclusion)).toBe('report_archived')
     expect(codeOf('in_review', first)).toBe('ok')
     expect(codeOf('drafting', 'no-such-section')).toBe('unknown_section')
+  })
+})
+
+describe('regression: sharing while concluding', () => {
+  const t = INTAKE_TEMPLATE
+  const first = t.sections[0]!.id
+  const second = t.sections[1]!.id
+  const conclusionId = t.conclusion!.id
+  const content = (sections: ReportContent['sections']): ReportContent => ({
+    ...emptyContent(t),
+    sections,
+  })
+  const text = (value: string) => ({
+    values: { x: { type: 'text' as const, text: value } },
+    sections: {},
+  })
+  const rich = (...nodes: ReadonlyArray<string>) => ({
+    values: {
+      r: {
+        type: 'rich_text' as const,
+        doc: {
+          type: 'doc' as const,
+          content: [
+            {
+              type: 'paragraph' as const,
+              content: nodes.map(value => ({ type: 'text' as const, text: value })),
+            },
+          ],
+        },
+      },
+    },
+    sections: {},
+  })
+  const base = content({ [first]: text('a'), [second]: rich('he', 'llo') })
+  const check = (draft: ReportContent, state: ReportState = 'concluding') => {
+    const result = checkClosingDraft(t, state, base, draft)
+    return Result.isFailure(result) ? result.failure.sectionIds : 'ok'
+  }
+
+  test('only the conclusion may differ from the revision being closed', () => {
+    expect(
+      check(content({ ...base.sections, [conclusionId]: text('closing words') })),
+    ).toBe('ok')
+    expect(check(content({ ...base.sections, [first]: text('b') }))).toEqual([first])
+    expect(
+      check(
+        content({
+          [first]: text('b'),
+          [second]: rich('hello'),
+          [conclusionId]: text('c'),
+          extra: text('new'),
+        }),
+      ),
+    ).toEqual([first, 'extra'])
+    // A section removed counts as a change too.
+    expect(check(content({ [first]: text('a') }))).toEqual([second])
+  })
+
+  test('editor normalisation is not a change', () => {
+    // The same rich text in other nodes, an empty section against an absent one.
+    expect(
+      check(
+        content({
+          [first]: text('a'),
+          [second]: rich('hello'),
+          extra: { values: {}, sections: {} },
+        }),
+      ),
+    ).toBe('ok')
+  })
+
+  test('in every other state the check accepts: drafting continues', () => {
+    for (const state of ['drafting', 'in_review', 'decided'] as const) {
+      expect(check(content({ [first]: text('changed') }), state)).toBe('ok')
+    }
+  })
+
+  test('property: any change outside the conclusion is found, any change inside it is not', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(first, second, conclusionId),
+        fc.string({ minLength: 1, maxLength: 12 }),
+        (id, value) => {
+          const draft = content({ ...base.sections, [id]: text(`#${value}`) })
+          expect(check(draft)).toEqual(id === conclusionId ? 'ok' : [id])
+        },
+      ),
+      { numRuns: 100 },
+    )
   })
 })
 
@@ -842,6 +990,142 @@ describe('generated event sequences', () => {
             const round = openRound(step.settledBefore)
             expect(round).toBeDefined()
             expect(round!.deadline).toBeGreaterThan(step.now)
+            // A review of any other revision never gets in.
+            expect(step.event.revision).toBe(round!.revision)
+          }
+        }
+      }),
+      { numRuns: 400 },
+    )
+  })
+
+  test('property: a stale review is refused, and an older approval never counts for the latest revision', () => {
+    let stale = 0
+    fc.assert(
+      fc.property(
+        flowTemplateArbitrary.chain(template =>
+          fc.tuple(fc.constant(template), scriptArbitrary(template, 60)),
+        ), ([template, script]) => {
+        for (const step of runScript(template, script).steps) {
+          if (step.event.type !== 'submit_review') continue
+          const latest = latestRound(step.settledBefore)
+          if (latest !== undefined && step.event.revision !== latest.revision) {
+            stale += 1
+            expect(Result.isFailure(step.result)).toBe(true)
+            if (ALLOWED_EVENTS[step.settledBefore.state].includes('submit_review')) {
+              expect(code(step.result)).toBe('round_not_open')
+            }
+          }
+        }
+        // Every review in every round was written on that round's revision,
+        // so tallying the latest round only ever counts its own approvals.
+        const { final } = runScript(template, script)
+        for (const round of final.rounds) {
+          expect(round.reviews.every(r => r.revision === round.revision)).toBe(
+            true,
+          )
+        }
+      }),
+      { numRuns: 1500, seed: 20261112 },
+    )
+    expect(stale).toBeGreaterThan(0)
+  })
+
+  test('property: approvals written on older revisions never count for the latest, through applyEvent', () => {
+    fc.assert(
+      fc.property(
+        flowTemplateArbitrary.chain(template =>
+          fc.tuple(
+            fc.constant(template),
+            satisfiableParticipants(template),
+            fc.integer({ min: 2, max: 4 }),
+            fc.array(fc.nat(100), { minLength: 1, maxLength: 12 }),
+          ),
+        ),
+        ([template, who, revisions, picks]) => {
+          const authors = AUTHOR_IDS
+          const voters = who.filter(person =>
+            template.roles
+              .find(role => role.id === person.roleId)
+              ?.permissions.includes('vote'),
+          )
+          fc.pre(voters.length > 0)
+          const step = (flow: ReportFlow, now: number, event: FlowEvent) => {
+            const result = applyEvent({ template, authors, now }, flow, event)
+            if (Result.isFailure(result)) {
+              throw new Error(JSON.stringify(result.failure))
+            }
+            return result.success
+          }
+          let flow = step(initialFlow, 1, { type: 'share_draft' })
+          for (let revision = 1; revision <= revisions; revision++) {
+            flow = step(flow, 1 + revision, {
+              type: 'publish_revision',
+              draft: 1,
+              deadline: 1_000_000,
+              participants: who,
+            })
+          }
+          // Everyone approves, on an older revision: every one is refused,
+          // nothing lands on the latest round.
+          for (const pick of picks) {
+            const voter = voters[pick % voters.length] as Participant
+            const result = applyEvent(
+              { template, authors, now: 100 },
+              flow,
+              {
+                type: 'submit_review',
+                revision: 1 + (pick % (revisions - 1)),
+                reviewerId: voter.accountId,
+                decision: 'approve',
+              },
+            )
+            expect(code(result)).toBe('round_not_open')
+          }
+          const latest = latestRound(flow)!
+          expect(latest.reviews).toEqual([])
+          expect(tallyRound(template, latest).met).toBe(false)
+          expect(flow.state).toBe('in_review')
+          // The same people approving on the latest revision decide it.
+          for (const voter of voters) {
+            if (openRound(flow) === undefined) break
+            flow = step(flow, 200, {
+              type: 'submit_review',
+              revision: revisions,
+              reviewerId: voter.accountId,
+              decision: 'approve',
+            })
+          }
+          expect(latestRound(flow)).toMatchObject({
+            status: 'decided',
+            decidedBy: 'rule_met',
+          })
+        },
+      ),
+      { numRuns: 200 },
+    )
+  })
+
+  test('property: only the latest shared draft is ever published', () => {
+    fc.assert(
+      fc.property(scripts, ([template, script]) => {
+        for (const step of runScript(template, script).steps) {
+          const { event } = step
+          if (
+            event.type !== 'publish_revision' &&
+            event.type !== 'publish_closing_revision'
+          ) {
+            continue
+          }
+          if (Result.isSuccess(step.result)) {
+            expect(event.draft).toBe(step.settledBefore.draftCount)
+            expect(latestRound(step.result.success)?.draft).toBe(event.draft)
+          } else if (
+            event.draft >= 1 &&
+            event.draft < step.settledBefore.draftCount &&
+            ALLOWED_EVENTS[step.settledBefore.state].includes(event.type)
+          ) {
+            expect(code(step.result)).toBe('not_latest')
           }
         }
       }),

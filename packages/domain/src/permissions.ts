@@ -99,6 +99,9 @@ export type Action =
   | Readonly<{ type: 'start_conclusion' }>
   // NOTE: the report, for authors and reviewers
   | Readonly<{ type: 'view_report' }>
+  // NOTE: The template version the report uses. An author reads it; a
+  // reviewer reads it for a revision that was sent to them.
+  | Readonly<{ type: 'read_template_version'; revision?: number }>
   | Readonly<{ type: 'read_revision'; revision: number }>
   | Readonly<{ type: 'read_comments'; revision: number }>
   | Readonly<{ type: 'write_comment'; revision: number }>
@@ -306,7 +309,14 @@ export const authorize = (
 
   const author = isAuthor(account, report)
   let result: Authorization
-  if (action.type === 'view_report') {
+  if (action.type === 'read_template_version') {
+    result = author
+      ? ALLOWED
+      : action.revision !== undefined &&
+          reviewerRoleFor(account, report, action.revision) !== undefined
+        ? ALLOWED
+        : NOT_FOUND
+  } else if (action.type === 'view_report') {
     result = author || isReviewer(account, report) ? ALLOWED : NOT_FOUND
   } else if (
     action.type === 'read_revision' ||

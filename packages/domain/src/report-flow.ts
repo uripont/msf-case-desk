@@ -9,6 +9,8 @@ import {
   tallyRound,
   voterProblems,
 } from './approval'
+import type { ReportContent, SectionContent } from './content'
+import { type RichTextDoc, canonicalRichText } from './richtext'
 import { type Template, templateNodes } from './template'
 
 // NOTE: The lifecycle of a report, D18 as code. Pure: time arrives as the
@@ -89,6 +91,10 @@ export type FlowEvent =
     }>
   | Readonly<{
       type: 'submit_review'
+      // NOTE: The revision the reviewer wrote the review on. It must be the
+      // open round's revision, so a review of Revision 1 never lands on
+      // Revision 2.
+      revision: number
       reviewerId: string
       decision: ReviewDecision
     }>
@@ -168,6 +174,9 @@ export type FlowErrorCode =
   | 'deadline_not_in_future'
   | 'deadline_not_extended'
   | 'draft_not_shared'
+  // NOTE: Only the latest shared draft can be published. The API answers the
+  // `not_latest` conflict.
+  | 'not_latest'
   | 'unpublishable'
   | 'removal_makes_rule_unmeetable'
   | 'cannot_archive'
@@ -256,6 +265,14 @@ const publish = (
       'Only a shared draft can be published; Draft 0 is the empty template.',
     )
   }
+  if (event.draft !== flow.draftCount) {
+    return fail(
+      'not_latest',
+      flow,
+      event,
+      'Only the latest shared draft can be published.',
+    )
+  }
   if (!(event.deadline > context.now)) {
     return fail(
       'deadline_not_in_future',
@@ -333,8 +350,13 @@ const handle = (
     }
     case 'submit_review': {
       const round = openRound(flow)
-      if (round === undefined) {
-        return fail('round_not_open', flow, event, 'The round is not open.')
+      if (round === undefined || round.revision !== event.revision) {
+        return fail(
+          'round_not_open',
+          flow,
+          event,
+          'That revision is not the open round.',
+        )
       }
       const participant = round.participants.find(
         p => p.accountId === event.reviewerId,
@@ -528,4 +550,96 @@ export const checkSave = (
     )
   }
   return Result.succeed(true)
+}
+
+// ---- Sharing while concluding -----------------------------------------------
+
+export type ClosingDraftError = Readonly<{
+  code: 'other_sections_changed'
+  // NOTE: The top-level sections, other than the conclusion, that differ from
+  // the revision being closed, in template order.
+  sectionIds: ReadonlyArray<string>
+  message: string
+}>
+
+const isEmptySection = (section: SectionContent): boolean =>
+  Object.keys(section.values).length === 0 &&
+  Object.keys(section.sections).length === 0 &&
+  (section.entries?.length ?? 0) === 0 &&
+  section.notApplicable === undefined
+
+// NOTE: A form of any content value in which two equal contents are equal
+// strings: object keys sorted, rich text canonical, answers of select and
+// people items as sets, empty sections absent (an empty section equals an
+// absent one, as in the comparison of drafts).
+const canonicalForm = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalForm)
+  if (value === null || typeof value !== 'object') return value
+  const node = value as Record<string, unknown>
+  if (node.type === 'rich_text' && node.doc !== undefined) {
+    return { type: 'rich_text', doc: canonicalRichText(node.doc as RichTextDoc) }
+  }
+  if (node.type === 'select' && Array.isArray(node.optionIds)) {
+    return { type: 'select', optionIds: [...node.optionIds].sort() }
+  }
+  if (node.type === 'people' && Array.isArray(node.personIds)) {
+    return { type: 'people', personIds: [...node.personIds].sort() }
+  }
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(node).sort()) {
+    const entry = node[key]
+    if (entry === undefined) continue
+    if (key === 'sections' && entry !== null && typeof entry === 'object') {
+      const kept = Object.fromEntries(
+        Object.entries(entry as Record<string, SectionContent>).filter(
+          ([, section]) => !isEmptySection(section),
+        ),
+      )
+      out[key] = canonicalForm(kept)
+    } else {
+      out[key] = canonicalForm(entry)
+    }
+  }
+  return out
+}
+
+const sectionForm = (content: ReportContent, id: string): string => {
+  const section = content.sections[id]
+  return JSON.stringify(
+    section === undefined || isEmptySection(section)
+      ? null
+      : canonicalForm(section),
+  )
+}
+
+// NOTE: The rule on sharing a draft while the report is `concluding` (D18):
+// only the conclusion may differ from the revision being closed, so an edit
+// made earlier in another section cannot ride into the closing revision. The
+// API calls it with the content of the draft being shared and the content of
+// the latest revision, after `checkSave` and before `share_draft`. Compared on
+// canonical forms, so editor normalisation never counts as a change. In any
+// other state it accepts: drafting continues there.
+export const checkClosingDraft = (
+  template: Template,
+  state: ReportState,
+  base: ReportContent,
+  draft: ReportContent,
+): Result.Result<true, ClosingDraftError> => {
+  if (state !== 'concluding') return Result.succeed(true)
+  const conclusionId = template.conclusion?.id
+  const ids = [
+    ...template.sections.map(section => section.id),
+    ...Object.keys({ ...base.sections, ...draft.sections }),
+  ]
+  const changed = [...new Set(ids)].filter(
+    id => id !== conclusionId && sectionForm(base, id) !== sectionForm(draft, id),
+  )
+  return changed.length === 0
+    ? Result.succeed(true)
+    : Result.fail({
+        code: 'other_sections_changed',
+        sectionIds: changed,
+        message:
+          'Only the conclusion can differ from the revision being closed.',
+      })
 }

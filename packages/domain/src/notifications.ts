@@ -43,6 +43,17 @@ import { type Template } from './template'
 //
 // `notificationJobs` returns only the jobs whose key is not in `existing`, so
 // running it twice, with the first result added to `existing`, gives nothing.
+//
+// Reminders are never created late. A reminder whose time is not after `now`
+// at the moment it would be written is skipped: after a deadline is extended
+// the new first reminder may already lie in the past, and writing it would
+// send it after a later reminder of the same round that was already sent.
+// The skip is in `notificationJobs` only (the jobs to write), not in
+// `desiredJobs` (the jobs the rules want), so a job written on time stays
+// needed when the pass claims it later. Writing happens in the batch of the
+// event (publishing, extending), so `now` is that event's time, and the
+// result is a function of `(state, now, config)`: asking again with the first
+// result in `existing` gives nothing, and asking later gives nothing new.
 
 export const HOUR = 3_600_000
 export const MINUTE = 60_000
@@ -89,6 +100,11 @@ export const SCHEDULED_KINDS: ReadonlyArray<NotificationKind> = [
   'reminder_final',
   'deadline',
   'revision_replaced',
+]
+
+const REMINDER_KINDS: ReadonlyArray<NotificationKind> = [
+  'reminder_first',
+  'reminder_final',
 ]
 
 export type NotificationChannel = 'inbox'
@@ -273,7 +289,9 @@ export const notificationJobs = (
 ): ReadonlyArray<NotificationJob> => {
   const existing = new Set(state.existing)
   return desiredJobs(state, now, config).filter(
-    entry => !existing.has(entry.key),
+    entry =>
+      !existing.has(entry.key) &&
+      !(REMINDER_KINDS.includes(entry.kind) && !(entry.dueAt > now)),
   )
 }
 

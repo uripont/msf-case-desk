@@ -898,7 +898,7 @@ const settleLabels = (
           problem.code === 'duplicate-label' ||
           problem.code === 'label-matches-alias',
       )
-      .map(problem => problem.path[0] as string),
+      .map(problem => problem.personId),
   )
   if (flagged.size === 0) {
     return merged

@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { Result, Schema } from 'effect'
 import { describe, expect, test } from 'vitest'
 
@@ -76,5 +77,50 @@ describe('people labels', () => {
     const reversed = [...list].reverse()
     expect(redactText(list, 'Ana met Bo')).toBe('Person 2 met Person 1')
     expect(redactText(reversed, 'Ana met Bo')).toBe('Person 2 met Person 1')
+  })
+})
+
+describe('regression: problems never repeat what the list holds', () => {
+  const SECRET = 'Zq7Secret'
+  test('messages and paths carry codes and positions only', () => {
+    const list = [
+      p('a', `${SECRET} Name`, `${SECRET} Label`, [`${SECRET} Alias`]),
+      p('a', 'Other', `${SECRET} label`),
+      p('c', 'Third', ` ${SECRET} padded `, []),
+      p('d', 'Fourth', `Person about ${SECRET} Alias`),
+    ]
+    const problems = peopleListProblems(list)
+    expect(new Set(problems.map(problem => problem.code))).toEqual(
+      new Set(['duplicate-id', 'duplicate-label', 'invalid-label', 'label-matches-alias']),
+    )
+    for (const problem of problems) {
+      expect(problem.message).not.toContain(SECRET)
+      expect(JSON.stringify(problem.path)).not.toContain(SECRET)
+      expect(problem.path[0]).toBeTypeOf('number')
+    }
+    expect(problems.find(problem => problem.code === 'duplicate-label')?.path).toEqual([1, 'label'])
+  })
+
+  test('property: no label, name or alias is ever in a problem', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            id: fc.constantFrom('a', 'b', 'c'),
+            name: fc.constantFrom('Aq1 Nm', 'Bq2'),
+            label: fc.constantFrom('Lbq1', 'lbq1', ' Lbq2', 'Aq1', ''),
+            aliases: fc.array(fc.constantFrom('Aq1', 'Lbq1', 'Zq3'), { maxLength: 2 }),
+          }),
+          { maxLength: 6 },
+        ),
+        list => {
+          for (const problem of peopleListProblems(list)) {
+            const text = JSON.stringify([problem.message, problem.path])
+            expect(text).not.toMatch(/q1|q2|q3/i)
+          }
+        },
+      ),
+      { numRuns: 200 },
+    )
   })
 })

@@ -204,6 +204,7 @@ describe('who has decided is left alone', () => {
     const base = published()
     const flow = must(base.template, base.flow, T0 + HOUR, {
       type: 'submit_review',
+      revision: 1,
       reviewerId: 'r1',
       decision,
     })
@@ -318,6 +319,7 @@ describe('a decided or superseded round schedules nothing', () => {
     for (const id of ['r1', 'r2']) {
       flow = must(base.template, flow, T0 + HOUR, {
         type: 'submit_review',
+        revision: 1,
         reviewerId: id,
         decision: 'approve',
       })
@@ -446,6 +448,136 @@ describe('extending a deadline', () => {
     // The request does not depend on the deadline and stays.
     const request = written.find(j => j.kind === 'review_request')
     expect(request && isJobNeeded(request, next, T0 + HOUR, config)).toBe(true)
+  })
+})
+
+describe('regression: reminders are never written late', () => {
+  const cfg = notificationConfigInMinutes(24 * 60, 4 * 60)
+  const reminderTimes = (jobs: ReadonlyArray<{ kind: string; dueAt: number }>) =>
+    jobs.filter(j => j.kind.startsWith('reminder')).map(j => [j.kind, (j.dueAt - T0) / HOUR])
+
+  test('a deadline extended at 70 h of 72 h writes only the reminder still ahead', () => {
+    const base = published()
+    const written = notificationJobs(state(base), T0, cfg)
+    const flow = must(base.template, base.flow, T0 + 70 * HOUR, {
+      type: 'extend_deadline',
+      deadline: T0 + 80 * HOUR,
+    })
+    const fresh = notificationJobs(
+      state({ ...base, flow }, written.map(j => j.key)),
+      T0 + 70 * HOUR,
+      cfg,
+    )
+    // The first reminder of the new deadline (32 h) is long past: skipped.
+    // The final one (76 h) is ahead.
+    expect(reminderTimes(fresh)).toEqual([
+      ['reminder_final', 76],
+      ['reminder_final', 76],
+    ])
+    // And asking again, now or later, writes nothing more.
+    const keys = [...written, ...fresh].map(j => j.key)
+    for (const at of [70 * HOUR, 75 * HOUR]) {
+      expect(
+        notificationJobs(state({ ...base, flow }, keys), T0 + at, cfg),
+      ).toEqual([])
+    }
+  })
+
+  test('without a first reminder the old one and the new final keep their order', () => {
+    // 72 h: first at 24 h, final at 68 h. Extended at 70 h to 80 h.
+    const base = published()
+    const written = notificationJobs(state(base), T0, cfg)
+    const flow = must(base.template, base.flow, T0 + 70 * HOUR, {
+      type: 'extend_deadline',
+      deadline: T0 + 80 * HOUR,
+    })
+    const fresh = notificationJobs(
+      state({ ...base, flow }, written.map(j => j.key)),
+      T0 + 70 * HOUR,
+      cfg,
+    )
+    const sent = written.filter(
+      j => j.kind.startsWith('reminder') && j.dueAt <= T0 + 70 * HOUR,
+    )
+    const lastSent = Math.max(...sent.map(j => j.dueAt))
+    for (const j of fresh.filter(j => j.kind.startsWith('reminder'))) {
+      expect(j.dueAt).toBeGreaterThan(lastSent)
+    }
+  })
+
+  test('property: no reminder is ever sent before one already sent to the same person', () => {
+    const stepArb = fc.record({
+      dt: fc.integer({ min: 1, max: 4 }),
+      extend: fc.option(fc.integer({ min: 1, max: 6 }), { nil: undefined }),
+    })
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 20, max: 40 }),
+        fc.integer({ min: 8, max: 19 }),
+        fc.integer({ min: 1, max: 4 }),
+        fc.array(stepArb, { minLength: 10, maxLength: 40 }),
+        (spanH, firstH, finalH, steps) => {
+          const config = notificationConfigInMinutes(firstH * 60, finalH * 60)
+          let base = published(INTAKE_TEMPLATE, COMMITTEE, spanH * HOUR)
+          let flow = base.flow
+          const existing = new Set<string>()
+          const pending: Array<ReturnType<typeof notificationJobs>[number]> = []
+          const sentLast = new Map<string, { dueAt: number; kind: string }>()
+          const write = (now: number) => {
+            const jobs = notificationJobs(
+              state({ ...base, flow }, [...existing]),
+              now,
+              config,
+            )
+            for (const j of jobs) {
+              existing.add(j.key)
+              pending.push(j)
+            }
+          }
+          const deliver = (now: number) => {
+            const due = pending
+              .filter(j => j.dueAt <= now)
+              .sort((a, b) => a.dueAt - b.dueAt)
+            for (const j of due) {
+              pending.splice(pending.indexOf(j), 1)
+              if (!isJobNeeded(j, state({ ...base, flow }, [...existing]), now, config)) continue
+              if (!j.kind.startsWith('reminder')) continue
+              const id = `${j.revision}|${j.recipient}`
+              const before = sentLast.get(id)
+              if (before !== undefined) {
+                expect(j.dueAt, `${j.kind} after ${before.kind}`).toBeGreaterThan(
+                  before.dueAt,
+                )
+              }
+              sentLast.set(id, { dueAt: j.dueAt, kind: j.kind })
+            }
+          }
+          let now = T0
+          write(now)
+          for (const step of steps) {
+            now += step.dt * HOUR
+            const settled = settle({ template: base.template, authors: ['a1', 'a2'], now }, flow)
+            if (openRound(settled) === undefined) break
+            flow = settled
+            deliver(now)
+            if (step.extend !== undefined) {
+              const round = openRound(flow)!
+              const result = applyEvent(
+                { template: base.template, authors: ['a1', 'a2'], now },
+                flow,
+                { type: 'extend_deadline', deadline: round.deadline + step.extend * HOUR },
+              )
+              if (Result.isSuccess(result)) {
+                flow = result.success
+                write(now)
+              }
+            }
+          }
+          base = { ...base, flow }
+        },
+      ),
+      { numRuns: 300 },
+    )
   })
 })
 

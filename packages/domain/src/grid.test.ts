@@ -92,11 +92,13 @@ describe('revision rows', () => {
     })
     flow = must(flow, T0 + HOUR, {
       type: 'submit_review',
+      revision: 1,
       reviewerId: 'r1',
       decision: 'request_changes',
     })
     flow = must(flow, T0 + 2 * HOUR, {
       type: 'submit_review',
+      revision: 1,
       reviewerId: 'r2',
       decision: 'approve',
     })
@@ -237,6 +239,7 @@ describe('revision rows', () => {
     for (const [index, id] of ['r1', 'r2', 'r3'].entries()) {
       flow = must(flow, T0 + (index + 1) * HOUR, {
         type: 'submit_review',
+        revision: 1,
         reviewerId: id,
         decision: 'approve',
       })

@@ -40,9 +40,18 @@ import {
 //
 // Matching. Case-insensitive and accent-insensitive (NFKD without marks, a few
 // letters folded by hand: ø, đ, ł, ß, æ, œ, ı), whitespace runs equal, curly
-// apostrophes and dash variants equal, zero-width and combining marks
-// transparent. A match must sit on whole words: the character before and after
-// is not a letter or a number (so "Ana's" matches "Ana" and "Banana" does not).
+// apostrophes and dash variants equal, combining marks transparent. Format
+// characters (zero-width space, joiners, word joiner, soft hyphen, bidi marks:
+// `\p{Cf}`) are never deleted: each run becomes one marker in the folded text
+// that a name may have between any two of its letters (as nothing) and that
+// also counts as the separator between its words (so "Ana<ZWSP>Garcia" is
+// "Ana Garcia", and "Ana<ZWSP>s" still holds "Ana"). Offsets stay in the
+// original text, and a trailing marker is replaced with the name. A match must sit on
+// whole words: the character before and after is not a letter or a number (so
+// "Ana's" matches "Ana" and "Banana" does not). Scripts written without
+// spaces (Han, Hiragana, Katakana, Thai, Khmer, Lao, Myanmar, Tibetan) have no
+// word boundaries: a name in them matches wherever it occurs, and their
+// characters never count as a word next to a name in another script.
 // Every occurrence of every alias is found, the longest alias first. A match
 // that is not entirely inside a longer one adds coverage, and overlapping
 // matches are replaced as one range, labelled with each person involved ("Person
@@ -50,8 +59,8 @@ import {
 // the earlier person wins. Matching runs over a whole text block, across text
 // nodes (a name split by bold stays one name) and over line breaks.
 //
-// Rich text. A document is changed only if something in it matches, a link was
-// removed or an image was withheld; then it is returned in canonical form. A
+// Rich text. A document is always rebuilt in canonical form, never returned as
+// it came, so no attribute or field of the input can get through. A
 // link whose target contains an alias (also percent-encoded, or split by `.`,
 // `-`, `_`, `/`, `@`) loses the link and keeps its redacted text. An image whose
 // `safeToShare` is false is replaced by a paragraph "Image withheld": its ID,
@@ -103,8 +112,17 @@ const SPECIAL: Readonly<Record<string, string>> = {
 }
 
 const TRANSPARENT = /^[\p{M}\p{Cf}]$/u
+const FORMAT = /^\p{Cf}$/u
+// NOTE: What a run of format characters becomes in the folded text. A
+// noncharacter, so it is neither a letter nor a space.
+const MARK = '\uFFFF'
 const SPACE = /^\s$/u
 const WORD = /[\p{L}\p{N}]/u
+// NOTE: Scripts written without spaces between words. Their letters are not
+// "words" for the boundary rule (see `wordBefore`, `wordAt`).
+const UNSPACED =
+  /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Thai}\p{Script_Extensions=Khmer}\p{Script_Extensions=Lao}\p{Script_Extensions=Myanmar}\p{Script_Extensions=Tibetan}\p{Script_Extensions=Bopomofo}]/u
+const SPACED_WORD = (ch: string): boolean => WORD.test(ch) && !UNSPACED.test(ch)
 
 const fold = (input: string, loose: boolean): Folded => {
   const text: Array<string> = []
@@ -112,20 +130,25 @@ const fold = (input: string, loose: boolean): Folded => {
   const ends: Array<number> = []
   let lastFirst = -1
   let offset = 0
-  const pushSpace = (start: number, end: number) => {
-    if (text.length > 0 && text[text.length - 1] === ' ') {
+  const pushRun = (char: string, start: number, end: number) => {
+    if (text.length > 0 && text[text.length - 1] === char) {
       ends[ends.length - 1] = end
     } else {
       lastFirst = text.length
-      text.push(' ')
+      text.push(char)
       starts.push(start)
       ends.push(end)
     }
   }
+  const pushSpace = (start: number, end: number) => pushRun(' ', start, end)
   for (const ch of input) {
     const start = offset
     const end = offset + ch.length
     offset = end
+    if (FORMAT.test(ch) || ch === MARK) {
+      pushRun(MARK, start, end)
+      continue
+    }
     if (TRANSPARENT.test(ch)) {
       for (let i = Math.max(lastFirst, 0); i < ends.length; i++) {
         ends[i] = end
@@ -157,7 +180,11 @@ const fold = (input: string, loose: boolean): Folded => {
 }
 
 const foldKey = (alias: string, loose: boolean): string =>
-  fold(alias, loose).text.trim()
+  fold(alias, loose)
+    .text.split(MARK)
+    .join('')
+    .replace(/ +/g, ' ')
+    .trim()
 
 // NOTE: The key two labels are compared by: folded, case- and accent-blind.
 export const foldedKey = (text: string): string => foldKey(text, false)
@@ -169,12 +196,12 @@ const wordBefore = (text: string, index: number): boolean => {
   const low = text.charCodeAt(index - 1)
   const start =
     low >= 0xdc00 && low <= 0xdfff && index >= 2 ? index - 2 : index - 1
-  return WORD.test(text.slice(start, index))
+  return SPACED_WORD(text.slice(start, index))
 }
 
 const wordAt = (text: string, index: number): boolean =>
   index < text.length &&
-  WORD.test(String.fromCodePoint(text.codePointAt(index) as number))
+  SPACED_WORD(String.fromCodePoint(text.codePointAt(index) as number))
 
 // ---- Matcher -----------------------------------------------------------------------------
 
@@ -185,7 +212,22 @@ export type Match = Readonly<{
   label: string
 }>
 
-type AliasEntry = Readonly<{ key: string; person: number }>
+type AliasEntry = Readonly<{ key: string; person: number; pattern: RegExp }>
+
+// NOTE: The key as a pattern over the folded text: a marker may sit between
+// any two letters, and a space of the key is a space, a marker, or both.
+const patternOf = (key: string): RegExp => {
+  const parts: Array<string> = []
+  for (const [index, unit] of Array.from(key).entries()) {
+    if (unit === ' ') {
+      parts.push(`[ ${MARK}]+`)
+    } else {
+      const escaped = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      parts.push(index === Array.from(key).length - 1 ? escaped : `${escaped}${MARK}*`)
+    }
+  }
+  return new RegExp(parts.join(''), 'g')
+}
 
 const entriesFor = (
   people: ReadonlyArray<Person>,
@@ -198,7 +240,7 @@ const entriesFor = (
       const key = foldKey(alias, loose)
       if (key !== '' && !seen.has(key)) {
         seen.add(key)
-        out.push({ key, person: index })
+        out.push({ key, person: index, pattern: patternOf(key) })
       }
     }
   })
@@ -210,35 +252,37 @@ const entriesFor = (
     .map(({ entry }) => entry)
 }
 
-const findMatches = (
+type Range = { start: number; end: number; person: number }
+
+// NOTE: The matches in the folded text, in offsets of the original. A marker
+// next to a match is a separator, so it ends a word on either side.
+const rangesIn = (
   entries: ReadonlyArray<AliasEntry>,
-  labels: ReadonlyArray<string>,
-  input: string,
-  loose: boolean,
-): ReadonlyArray<Match> => {
-  if (entries.length === 0 || input === '') {
-    return []
-  }
-  const folded = fold(input, loose)
+  folded: Folded,
+): ReadonlyArray<Range> => {
   const f = folded.text
   const covered = new Uint8Array(f.length)
-  const accepted: Array<{ start: number; end: number; person: number }> = []
-  for (const { key, person } of entries) {
+  const accepted: Array<Range> = []
+  for (const { key, person, pattern } of entries) {
     const startsOnWord = wordAt(key, 0)
     const endsOnWord = wordBefore(key, key.length)
-    let from = 0
+    pattern.lastIndex = 0
     for (;;) {
-      const at = f.indexOf(key, from)
-      if (at < 0) {
+      const found = pattern.exec(f)
+      if (found === null) {
         break
       }
-      from = at + 1
-      const end = at + key.length
+      const at = found.index
+      let end = at + found[0].length
+      pattern.lastIndex = at + 1
       if (startsOnWord && wordBefore(f, at)) {
         continue
       }
       if (endsOnWord && wordAt(f, end)) {
         continue
+      }
+      while (f[end] === MARK) {
+        end++
       }
       let adds = false
       for (let i = at; i < end; i++) {
@@ -248,23 +292,38 @@ const findMatches = (
         }
       }
       if (adds) {
-        accepted.push({ start: at, end, person })
+        accepted.push({
+          start: folded.starts[at] as number,
+          end: folded.ends[end - 1] as number,
+          person,
+        })
       }
     }
   }
+  return accepted
+}
+
+const findMatches = (
+  entries: ReadonlyArray<AliasEntry>,
+  labels: ReadonlyArray<string>,
+  input: string,
+  loose: boolean,
+): ReadonlyArray<Match> => {
+  if (entries.length === 0 || input === '') {
+    return []
+  }
+  const accepted = [...rangesIn(entries, fold(input, loose))]
   accepted.sort((a, b) => a.start - b.start || b.end - a.end)
   const out: Array<Match> = []
   let i = 0
   while (i < accepted.length) {
-    const start = (accepted[i] as { start: number }).start
-    let end = (accepted[i] as { end: number }).end
-    const people: Array<number> = [(accepted[i] as { person: number }).person]
+    const first = accepted[i] as Range
+    const start = first.start
+    let end = first.end
+    const people: Array<number> = [first.person]
     i++
-    while (
-      i < accepted.length &&
-      (accepted[i] as { start: number }).start < end
-    ) {
-      const next = accepted[i] as { end: number; person: number }
+    while (i < accepted.length && (accepted[i] as Range).start < end) {
+      const next = accepted[i] as Range
       end = Math.max(end, next.end)
       if (!people.includes(next.person)) {
         people.push(next.person)
@@ -272,8 +331,8 @@ const findMatches = (
       i++
     }
     out.push({
-      start: folded.starts[start] as number,
-      end: folded.ends[end - 1] as number,
+      start,
+      end,
       label: people.map(index => labels[index] as string).join(' / '),
     })
   }
@@ -563,10 +622,12 @@ const redactBlock = (
   }
 }
 
+// NOTE: Always a rebuilt document, in canonical form: nothing of the input
+// object (no attribute, no field the schema does not know) is carried over.
 const redactDoc = (matcher: Matcher, doc: RichTextDoc): RichTextDoc => {
   const context: Context = { changed: false }
   const content = doc.content.map(block => redactBlock(matcher, context, block))
-  return context.changed ? canonicalRichText({ type: 'doc', content }) : doc
+  return canonicalRichText({ type: 'doc', content })
 }
 
 // ---- Content -------------------------------------------------------------------------------

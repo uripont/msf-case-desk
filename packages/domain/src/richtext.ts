@@ -18,7 +18,18 @@ export const MAX_COLSPAN = 50
 export const MAX_COLWIDTH = 2000
 export const LINK_PROTOCOLS = ['http:', 'https:', 'mailto:', 'tel:'] as const
 
-const Attribute = Schema.NullOr(Schema.String.check(Schema.isMaxLength(500)))
+// NOTE: Link attributes other than `href` and `title` are Tiptap's defaults
+// and nothing more: fixed values only, so a free string can never carry a name
+// past redaction (D14). `canonicalRichText` drops all three.
+export const LINK_TARGETS = ['_blank', '_self'] as const
+export const LINK_RELS = [
+  'noopener noreferrer nofollow',
+  'noopener noreferrer',
+  'noopener nofollow',
+  'noopener',
+  'noreferrer',
+  'nofollow',
+] as const
 
 // ---- Marks ------------------------------------------------------------------
 
@@ -35,9 +46,9 @@ export const LinkMark = Schema.Struct({
       Schema.isPattern(/^(https?:\/\/|mailto:|tel:)\S+$/i),
     ),
     title: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
-    target: Schema.optionalKey(Attribute),
-    rel: Schema.optionalKey(Attribute),
-    class: Schema.optionalKey(Attribute),
+    target: Schema.optionalKey(Schema.NullOr(Schema.Literals(LINK_TARGETS))),
+    rel: Schema.optionalKey(Schema.NullOr(Schema.Literals(LINK_RELS))),
+    class: Schema.optionalKey(Schema.Null),
   }),
 })
 export const Mark = Schema.Union([

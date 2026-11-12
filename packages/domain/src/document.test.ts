@@ -47,7 +47,6 @@ const VERSION = {
   reportName: 'Synthetic report',
   versionLabel: 'Revision 2',
   date: '2026-11-12',
-  redacted: false,
 }
 
 const input = (
@@ -57,7 +56,7 @@ const input = (
 ): DocumentInput => ({
   template,
   content,
-  people: [],
+  view: { kind: 'original', people: [] },
   caseFile: CASE,
   theme: DEFAULT_THEME,
   version: VERSION,
@@ -278,7 +277,7 @@ describe('cover (D23)', () => {
     expect(plain.parts[0]?.blocks.some(b => b.type === 'stamp')).toBe(false)
     const redacted = documentDescription(
       input(INVESTIGATION_TEMPLATE, content, {
-        version: { ...VERSION, redacted: true },
+        view: { kind: 'redacted', people: [] },
         theme: { ...DEFAULT_THEME, logo: 'logo-1' },
       }),
     )
@@ -717,8 +716,7 @@ describe('redacted content (D14)', () => {
     const redacted = redactContent([ANA], content)
     const description = documentDescription(
       input(MINI_TEMPLATE, redacted, {
-        people: [{ ...ANA, name: ANA.label, aliases: [] }],
-        version: { ...VERSION, redacted: true },
+        view: { kind: 'redacted', people: [ANA] },
       }),
     )
     expect(description.imageIds).toEqual(['img-safe'])
@@ -733,11 +731,63 @@ describe('redacted content (D14)', () => {
   test('as a second line of defence, an unsafe image is dropped even if content was not redacted', () => {
     const description = documentDescription(
       input(MINI_TEMPLATE, content, {
-        version: { ...VERSION, redacted: true },
+        view: { kind: 'redacted', people: [] },
       }),
     )
     expect(description.imageIds).toEqual(['img-safe'])
     expect(documentStrings(description).join('\n')).toContain('Image withheld')
+  })
+
+  test('regression: the case file and the metadata are redacted by the description itself', () => {
+    const named = {
+      reference: 'IL-Ana-2026',
+      unit: "Ana's unit",
+      title: 'Complaint about Ana Garcia',
+    }
+    const base = MINI_TEMPLATE
+    const template: Template = {
+      ...base,
+      cover: {
+        lines: [
+          { emphasis: 'title', parts: [{ kind: 'case_value', field: 'title' }] },
+          { emphasis: 'normal', parts: [{ kind: 'case_value', field: 'unit' }] },
+          { emphasis: 'normal', parts: [{ kind: 'case_value', field: 'reference' }] },
+        ],
+      },
+      sections: base.sections.map((section, index) =>
+        index === 1
+          ? {
+              ...section,
+              items: [
+                ...section.items,
+                { id: 'cv-title', label: 'Case title', type: 'case_value' as const, field: 'title' as const, requirement: 'optional' as const },
+                { id: 'cv-unit', label: 'Unit', type: 'case_value' as const, field: 'unit' as const, requirement: 'optional' as const },
+              ],
+            }
+          : section,
+      ),
+    }
+    const named2 = (view: DocumentInput['view']) =>
+      documentDescription(
+        input(template, emptyContent(template), {
+          caseFile: named,
+          view,
+          version: {
+            ...VERSION,
+            reportName: 'Ana Garcia: the report',
+            versionLabel: 'Revision 2 for Anita',
+          },
+        }),
+      )
+    const original = documentStrings(named2({ kind: 'original', people: [ANA] })).join('\n')
+    expect(original).toContain('Complaint about Ana Garcia')
+    expect(original).toContain("Ana's unit")
+    const redacted = named2({ kind: 'redacted', people: [ANA] })
+    const strings = documentStrings(redacted).join('\n')
+    expect(strings).not.toMatch(/\bAna\b|\bAnita\b|Garcia/)
+    expect(strings).toContain('Complaint about Person 1')
+    expect(strings).toContain("Person 1's unit")
+    expect(JSON.stringify(redacted)).not.toMatch(/Ana|Anita|Garcia/)
   })
 
   test('the original keeps every image', () => {
@@ -767,8 +817,7 @@ describe('redacted content (D14)', () => {
       documentStrings(
         documentDescription(
           input(peopleTemplate, withPerson, {
-            people: [ANA],
-            version: { ...VERSION, redacted },
+            view: { kind: redacted ? 'redacted' : 'original', people: [ANA] },
           }),
         ),
       )
@@ -794,8 +843,7 @@ describe('redacted content (D14)', () => {
           )
           const description = documentDescription(
             input(template, redacted, {
-              people,
-              version: { ...VERSION, redacted: true },
+              view: { kind: 'redacted', people },
               includeConclusion: true,
             }),
           )
@@ -803,8 +851,7 @@ describe('redacted content (D14)', () => {
             expect(safeIds.has(id)).toBe(true)
           const fromOriginal = documentDescription(
             input(template, generated, {
-              people,
-              version: { ...VERSION, redacted: true },
+              view: { kind: 'redacted', people },
               includeConclusion: true,
             }),
           )
@@ -908,6 +955,7 @@ describe('the approval record (D4)', () => {
   })
   flow = apply(flow, T0 + HOUR, {
     type: 'submit_review',
+    revision: 1,
     reviewerId: 'r1',
     decision: 'request_changes',
   })

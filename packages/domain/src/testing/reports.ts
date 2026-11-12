@@ -195,7 +195,8 @@ export const resolveIntent = (
     case 'publish_closing_revision':
       return {
         type: intent.kind,
-        draft: pick % (flow.draftCount + 1),
+        // NOTE: one in five is not the latest draft (or not shared at all).
+        draft: pick % 5 === 0 ? pick % (flow.draftCount + 1) : flow.draftCount,
         deadline: now + intent.span,
         participants: intent.people,
       }
@@ -204,6 +205,13 @@ export const resolveIntent = (
       const chosen = people[pick % Math.max(1, people.length)]
       return {
         type: 'submit_review',
+        // NOTE: one in four reviews was written on an older revision.
+        revision:
+          round === undefined
+            ? 1
+            : pick % 4 === 1 && round.revision > 1
+              ? Math.max(1, round.revision - 1 - (pick % 3))
+              : round.revision,
         reviewerId:
           chosen === undefined || pick % 13 === 0
             ? 'stranger'
