@@ -105,3 +105,155 @@ There is no sign-up page. `pnpm users:add` writes password hashes to `.local/use
 ## Plain Commands instead of KeyedQuery
 
 The web app loads and saves through ordinary Foldkit Commands that call the Effect RPC client. Foldkit's `KeyedQuery` is still experimental, and the desk loads one list of cases and one of rule sets, so caching by key adds nothing yet.
+
+## Stage 0 spikes (iteration 3)
+
+Throwaway spikes, run on 12 Nov 2026 in `apps/web` with real Chromium 155 (`/usr/bin/chromium`, driven by `playwright-core` 1.65.0) and then deleted. No spike code and no dependency was kept; the versions below are what stages 4 and 8 add. Spikes 1 and 2 ran in `apps/web`; spikes 3 to 5 ran on a throwaway Cloudflare stack (see below) and left nothing behind either.
+
+### Spike 1: Tiptap in a Foldkit `CustomElement`
+
+Pass thresholds: everything works at 375 px; the stored JSON round-trips unchanged; `pnpm lint` passes on the wrapper; the lazily loaded editor chunk is under 250 KB compressed. **Result: pass.**
+
+| Check | Result |
+| --- | --- |
+| Viewport | 375 x 740. No horizontal page scroll; the editor stays inside the viewport. Toolbar buttons are 44 px |
+| Typing | Reaches the model as a debounced `change` Message |
+| No cursor jump on echo | Typed 60 characters in the middle of a paragraph with echoes arriving during the typing, then four bursts with echoes between them: text and caret position exact. Negative control: with the version check removed, the same script fails (the text lands in the wrong place and a stale echo overwrites the document) |
+| Table | Inserted, typed into with Tab, a row added: 3 rows |
+| Column resize | Dragging the column border widens the cell and stores `colwidth` in the JSON |
+| Image | Inserted through a file input (a data URL in the spike); stored as an `image` node |
+| Undo | Removes the image, also from the stored JSON |
+| Selection for a comment | Event reports `{ from: 1, to: 6, text: 'Hello' }` (ProseMirror positions and quoted text) |
+| JSON round trip | `setContent(stored)` then `getJSON()` is string-identical to the stored value |
+| External content | A higher version replaces the document; typing continues from there. A lower version (a late echo) is ignored |
+| Lint | `pnpm lint` passes with the wrapper, the element class and the spike app in `src` |
+| Editor chunk, lazy | 432,393 bytes raw, **134,775 gzip (-9), 114,609 brotli**. It is a separate chunk loaded by a Command; the main chunk (Foldkit and Effect, 300,123 raw, 97,855 gzip) does not contain it |
+
+The check script passed 11 of 11 checks on four consecutive runs. Stage 4 recreates it as the permanent browser test (section 3, constraint 6).
+
+Chosen: Tiptap 3.33.1, pinned exactly, importing single extensions instead of `@tiptap/starter-kit`:
+
+- `@tiptap/core`, `@tiptap/pm` (ProseMirror: `prosemirror-model` 1.25.13, `-view` 1.42.9, `-state` 1.4.4, `-tables` 1.8.5)
+- `@tiptap/extension-document`, `-paragraph`, `-text`, `-heading`, `-bold`, `-italic`, `-underline`, `-link` (brings `linkifyjs` 4.4.0), `-image`
+- `@tiptap/extension-list` (bullet list, ordered list, list item)
+- `@tiptap/extension-table` (it also exports `TableRow`, `TableHeader` and `TableCell`; `Table.configure({ resizable: true })`)
+- `@tiptap/extensions` (`UndoRedo`, `Gapcursor`)
+
+All are MIT and none touches Tiptap's cloud. None depends on `effect`.
+
+How the wrapper works, for stage 4:
+
+- `CustomElement.define({ tag: 'quoroom-editor', properties: { content: String, version: Number }, events: { change: { content, version }, selection: { from, to, text } } })`. The content is the ProseMirror JSON as a string.
+- The element is plain DOM code in its own module. It lives in the light DOM and draws its own toolbar. Foldkit sets properties and listens to events, and never touches the inside. The module registers the element when it is imported, so a Command does `import('./editor-element')` and answers `CompletedLoadEditor`. The view renders the element only after that (a `Loading | Ready | Failed` union). Rendering it earlier would set the properties on a not yet upgraded element and shadow the setters.
+- **Echo.** The element keeps `knownVersion`. A local edit increments it and emits `change` with the new number, debounced 250 ms with a 1 s maximum wait (so echoes also happen during long typing); it also flushes on blur and on disconnect. The Model stores that content and version and passes them back. An incoming `version` is applied only if it is greater than `knownVersion`, so the echo of the element's own change, even a late one, never touches the document or the caret. To replace the content from outside, the update increments the Model's version. Property setters read both values in a microtask, because Foldkit may set them in either order.
+- A Foldkit toolbar would need a command channel into the element; the spike kept the toolbar inside the element, and stage 4 chooses between the two. The image caption of D3 is not proven by the spike (it needs a figure node); stage 4 adds it as a custom node. Images were a data URL here; the real flow resizes, uploads, and stores an ID.
+- Wrap tables in an element with `overflow-x: auto` so that a wide table scrolls inside the editor, not the page. The resize handle and cell borders need the CSS the spike had (`.column-resize-handle`).
+- Tiptap rendering in `happy-dom` was not tried; scene tests stub the element.
+
+### Spike 2: PDF from a pure renderer, in the browser and in Node
+
+Pass thresholds: under 3 MB; text extracted with `pdfjs-dist` identical between browser and Node; under 5 s in a phone-sized browser; the PDF chunk loaded lazily. **Result: pass.**
+
+| Check | Result |
+| --- | --- |
+| Content | 20 pages: cover with an SVG logo (invented placeholder, no MSF material) and a transparent PNG; table of contents; 10 sections of synthetic text; two tables with a repeated header row (22 rows each); a 79 KB JPEG; header "STRICTLY CONFIDENTIAL" and footer "Page X of Y" |
+| Fonts | Hanken Grotesk (headings), Source Serif 4 (body), Noto Sans Greek and Cyrillic (single runs); all embedded and subset (`pdffonts`: `emb yes sub yes`) |
+| Size | **255,861 bytes (Node), 266,536 bytes (browser)**; limit 3 MB |
+| Text | `pdfjs-dist` text of the 20 pages (46,398 characters) is **identical** in Node, in the browser, and in the browser under throttling. The bytes differ (the compression differs); only the text is compared |
+| Table of contents | 10 of 10 entries show the page the heading is on |
+| Time, 375 px viewport, no throttle | About 0.5 s from the click, including loading the chunk and the fonts (render 0.37 to 0.42 s; Node 0.38 to 0.5 s) |
+| Time, 375 px, CPU throttled 4x (CDP) | **2.0 to 2.2 s** (render 1.64 to 1.79 s, chunk 0.28 to 0.32 s) |
+| Lazy | No request for the PDF chunk before the click |
+| Chunk | 777,952 bytes raw, 288,099 gzip, 246,125 brotli. No threshold applies; it is only loaded when someone asks for a PDF |
+| Fonts on the wire | The eight `.woff` files total 122,792 bytes, fetched at generation time |
+
+Chosen: **pdfmake 0.3.14**, pinned exactly (MIT; brings `pdfkit` 0.20.2 and `fontkit` 2.0.4; no `effect`), and **`pdfjs-dist` 6.5.438** as a dev dependency for the tests (`pdfjs-dist/legacy/build/pdf.mjs` in Node). pdfmake gave tables with repeated headers, a table of contents with page numbers, page numbers in the footer, SVG and image nodes, and font embedding as built-in features, and met every threshold on the first try. `pdf-lib` was not built: it has no layout engine (no tables, wrapping or table of contents), so each of those would be our own code. Font files: `@fontsource/hanken-grotesk` 5.3.0, `@fontsource/source-serif-4` 5.3.1, `@fontsource/noto-sans` 5.3.0 and `@fontsource/inter` 5.3.0 (static `.woff`, not the variable package the app already uses; pdfmake needs static instances).
+
+How it works, for stage 8:
+
+- One pure function builds the pdfmake document definition (in the real design, from the document description in `packages/domain`). It gets the fonts and images as inputs and runs unchanged in both environments. Only the adapter differs.
+- Browser: `import pdfMake from 'pdfmake/build/pdfmake'` in a lazily imported module; fonts are `?url` imports fetched at generation time, passed as base64 to `pdfMake.addVirtualFileSystem({ name: base64 })`, then `pdfMake.addFonts(...)` and `createPdf(definition).getBuffer()`. Images are data URIs.
+- Node: `require('pdfmake')` (the server build), `pdfmake.sharedVirtualfs.writeFileSync(name, Buffer)` for each font, `addFonts`, `setUrlAccessPolicy(() => false)` and `setLocalAccessPolicy(() => false)` (otherwise it warns), then `getBuffer()`.
+- Table of contents: `{ toc: { title } }` plus `tocItem: true` on each heading. pdfmake resolves the page numbers itself in one pass. Page numbers: `footer: (currentPage, pageCount) => ...`. A header can differ on the cover: return `null` for page 1.
+- The logo is an `svg` node (vector; shapes only, no text inside the SVG). A transparent PNG works.
+- Set `info.creationDate` and `info.modDate` to a fixed value in tests.
+- **D16 consequence.** fontkit reads `.woff` but not `.woff2`. The fontsource files are subsets per script (`latin`, `greek`, `cyrillic`, `latin-ext`, ...), and pdfmake has no per-glyph fallback. The renderer must therefore split each text into runs by script and give each run the font file for that subset (the spike did this for Greek and Cyrillic), and must keep spaces and punctuation in the Latin run. `latin-ext` covers names such as "Ș" or "ğ" and is larger (Inter 48 KB, Noto Sans 78 KB per weight). A glyph missing from every subset, and the placeholder D16 promises for Arabic and Amharic, were not tested; stage 8 does it.
+
+### Spike 3: Worker CPU on Workers Free
+
+Run on 12 Nov 2026 on a throwaway stack (`test_spike0c`, Worker `test-spike0c-app`, a Vite-built Foldkit Worker like `app`, with Workers Logs). The spike code was bundled from `apps/api` (so it used `effect@4.0.0`), served a real Effect RPC group and a plain `/api/images` route, and was driven from Node with synthetic content: a Tiptap-JSON-shaped 20-page document (10 sections, 54,000 characters of text, 110 KB of JSON, two 22-row tables, lists, images, about 800 text nodes, 30 invented aliases), and a 1 MB generated JPEG. Numbers are `cpuTimeMs` from the Workers observability API, joined to the Worker's own log line (operation, isolate, sequence number) by request ID. About 1,850 requests, all with outcome `ok`; **none reported `exceededCpu`**. `cpuTimeMs` is a whole number of milliseconds.
+
+Pass thresholds: no request reports exceeded CPU; each operation under 8 ms when warm (the plan's limit on Free is 10 ms); sign-in recorded, no threshold. "Warm" is the third request or later of that operation in an isolate; I give median / 95th percentile / maximum. "Cold" is the first request an isolate handles, forced by redeploying (2 to 4 samples each; the first request of a fresh deploy always reported a sequence number of 1). **Result: pass, after changing how a draft is shared.**
+
+| Operation (final design) | Warm p50 / p95 / max (ms) | Cold, first request in a new isolate (ms) | n warm |
+| --- | --- | --- | --- |
+| Save one section (7.6 KB JSON, `SaveSection`: Schema decode, batch of 3 statements with guards) | 3 / 6 / 10 | 20 to 25 | 35 |
+| Share a 20-page draft, as 10 `ShareSection` requests (read the section, redact in place, stage it) | 2 / 5 / 7 | 22 to 25 | 394 |
+| ...and the closing `FinishShare` (one batch, set-based `INSERT ... SELECT` with `json_group_array`, guard on the staged count) | 1 / 3 / 4 | 19 | 34 |
+| Read a revision as a reviewer (membership check and the stored redacted text, 121 KB response) | 2 / 3 / 6 | 20 to 26 | 34 |
+| Decode a 20-page document through the real RPC Schema (110 KB request body, `DecodeDocument`) | 4 / 6 / 7 | 22 to 54 | 34 |
+| Notification pass, 20 due jobs (`/api/tick`, one batch: claim, recheck, deliver, mark) | 0 / 1 / 2 | 2 to 4 | 36 |
+| Seeding the 20 jobs (20 inserts in one batch) | 0 / 1 / 1 | 2 | 35 |
+| Image upload, one 700 KB chunk (size and signature check, native base64, 2 statements) | 2 / 3 / 5 | 4 to 7 | 73 |
+| Image read, 1 MB in two chunks (one query, text returned as is) | 1 / 3 / 4 | 5 to 7 | 32 |
+| Cron `scheduled` run (the same pass, then one row written) | not applicable | 3 to 9 (each run is on a fresh isolate; one run claimed 20 jobs) | 15 runs |
+| **Sign-in** (D1 read, PBKDF2-SHA256 100,000 iterations, session insert), recorded only | 17 / 27 / 29 | 20 to 30 | 34 |
+
+The 1 MB image came back byte for byte after the two-chunk upload. Every operation passes the warm threshold on the 95th percentile. A few single warm requests reached 10 ms (a save, a share section) and are why the pass is judged on the 95th percentile and not on the maximum; none was cut off.
+
+**Cold requests.** The first request an isolate handles costs 19 to 54 ms for an RPC route (building the RPC server and the Schemas), against a nominal 10 ms limit, yet every one finished with outcome `ok`. Free allows some slack for cold starts. Stages 2 to 7 must therefore not depend on a cold request being fast, and must not do more work on it than on a warm one. Plain routes (`/api/tick`, images) cost 2 to 7 ms cold.
+
+**What did not fit, and what replaced it.**
+
+| Variant for sharing a draft | Warm p50 / p95 / max (ms) |
+| --- | --- |
+| One RPC with the whole document (decode, redact, stringify twice, 2 binds of 110 KB), as first written | 15 / 21 / 28 (**fails**) |
+| Same with an ASCII fast path in the accent-folding (variant B) | 12 / 17 / 17 (**fails**) |
+| Same with the outline-only Schema (sections checked, content `Unknown`) | 10 / 13 / 13 (**fails**) |
+| One RPC with no body: read the stored sections, redact in place, one bind of 110 KB, original assembled by SQLite | 5 / 11 / 11 (fails on 95th percentile) |
+| Same, without parsing or redacting (read and write 110 KB only) | 5 / 8 / 10 |
+| Same, parsing but not redacting | 6 / 8 / 8 |
+| **10 `ShareSection` requests and one `FinishShare`** | **2 / 5 / 7 and 1 / 3 / 4** |
+
+The lesson is about bytes, not about the redaction or the Schema. The redaction of the whole document costs about 1 to 2 ms, the full-tree Schema decode about 1 ms more than an outline check, but each 110 KB that crosses into or out of D1 costs about 2 to 3 ms, and the same 110 KB in a request body (JSON parse plus the RPC machinery) about 3 ms. **Chosen: nothing larger than one section crosses the Worker in one request.** Sharing is a sequence driven by the browser: one `ShareSection` per section (the server reads the stored working copy, redacts it, and stages the result in a row), then `FinishShare`, which builds the draft rows with `INSERT ... SELECT` and `json_group_array`, so SQLite concatenates the original and redacted text and the Worker never holds them. `FinishShare` is guarded: it inserts only if the number of staged sections equals the number of sections of the working copy, and it removes the staging rows. A share that is interrupted leaves only staging rows, which a later share with a new ID ignores.
+
+**Notes for stages 2 to 7.**
+
+- **Full-tree Schema decoding fits.** A 110 KB document decodes at 4 ms warm in total (6 ms at the 95th percentile), 1 ms of which is the Schema itself (`Schema.Struct` with `Schema.Literals` for the node type, `Schema.suspend` for the tree, `Schema.Record` for attributes). The plan's fallback of validating only the outline on the server is not needed for one section (7.6 KB). It is no use for the whole document, though: whole documents must not travel in one request at all (see above).
+- **Saves send one section; shares work per section.** A section the size of the test section (7.6 KB, about 2.5 pages) saves in 3 ms. Cost grows with bytes, roughly 1 ms per 30 KB, so a 20-page report written as a single huge section would not fit; the template editor should not offer sections that long, or the editor should split them.
+- **Base64 must be native.** The image upload uses `Uint8Array.prototype.toBase64()`, which the Workers runtime provides: 2 / 3 / 3 ms warm for a 700 KB chunk. The `btoa` and `String.fromCharCode` fallback took **22 / 39 / 43 ms** for the same chunk and fails. The image route must use `toBase64()`, and `fromBase64()` is the counterpart for any decoding. The `workerd` build (1.20261012.1) must be checked for it in stage 4 or 7, since the self-hosted build is the one that could lack it.
+- **Statements.** All writes used `D1Database.batch` with guards (`WHERE EXISTS`) as constraint 3 of the plan describes. A batch of three statements for a save did not stand out. `RETURNING` was not used in the spike.
+- **JSON stays text.** Stored and read as text columns; reading a 121 KB redacted revision and returning it as a string field costs 2 ms. Parsing JSON only where the server has to look inside it.
+- **Redaction.** One combined regular expression with the aliases sorted longest first, folded text (accent-insensitive by taking the first code point of each character's NFD form, with an ASCII fast path), Unicode-aware word boundaries, replaced by index on the original text, and the tree changed in place after `JSON.parse`. About 1 ms per 54,000 characters in Node. The per-character `normalize('NFD')` without the ASCII fast path costs about four times that and should not be used.
+- **Reading is cheap, sharing is the heaviest thing.** If the reviewer's read ever needs a join or a transformation, measure it again.
+- **Sign-in** costs about 17 ms warm, 27 at the 95th percentile and up to 30 cold, with no failure or cut-off in 40 calls. This matches iteration 2 on the same plan. The iteration count was not touched.
+- **Workers Logs.** Invocation logs carry `cpuTimeMs`, `wallTimeMs` and `outcome` per request (`$workers`), and a `console.log` line shares the `$metadata.requestId`, which is how the operation and isolate were joined. Events appear about 30 to 60 seconds after the request. The query needs `view: 'events'`, and paging uses `offset` as the last event's `$metadata.id` with `offsetBy: 0` and `offsetDirection: 'next'`.
+- **Test method.** Use a fresh deploy (a changed bundle gives new isolates) and check the response header `x-seq` of 1 to know a request was cold. Concurrent requests did not produce many new isolates (ten concurrent chains used three).
+
+### Spike 4: `scheduled` in the Vite-built Foldkit Worker
+
+Pass threshold: the handler runs on a test environment with a one-minute cron and writes a row. **Result: pass.** On `test-spike0c-app` the handler ran every minute (a row in a `cron_log` table every 60 seconds, written about 0.8 s after the scheduled time; 15 scheduled invocations were logged in all), and a run with 20 due jobs seeded claimed all 20.
+
+How it is wired, for stage 7:
+
+- The `Cloudflare.Website.Foldkit` resource accepts the Worker's `crons` prop: `crons: ["* * * * *"]` next to `main`, `env` and `assets`. Alchemy reconciles the Cron Triggers as part of the Worker's deploy ("Reconciling Cron Triggers (1)"); the schedule was visible through the Workers API (`GET /workers/scripts/<name>/schedules`) and was removed with the Worker on destroy. No other resource is needed. The environment's cadence (D12) is therefore a stack setting: a cron every minute on test environments, a slower one on demo and pilot.
+- The entry file named by `main` exports `scheduled(controller, env, ctx)` next to `fetch`, as an ordinary `ExportedHandler`. The Vite build kept it. Do the work inside `ctx.waitUntil(...)`; `controller.scheduledTime` and `controller.cron` are available. The handler builds its own D1 access from `env.DB` and does not go through the per-request RPC app.
+- CPU of the scheduled run: 3 to 9 ms (15 runs, each on a fresh isolate), with 20 due jobs in the one where they were present.
+- Failure and retry of a failing run were not exercised. The pass must be safe to run twice (claims are guarded, as in constraint 3).
+- Account usage during the spike: 1 Cron Trigger (limit 5) and 3 D1 databases (limit 10). `workerd` does not fire crons, so `/api/tick` stays for self-hosting.
+
+### Spike 5: D1 EU jurisdiction
+
+Pass threshold: a database is created, used and destroyed. **Result: pass.** `Cloudflare.D1.Database("...", { jurisdiction: "eu", migrations })` created the database in 2.3 s with its migration applied. The Cloudflare API lists it with `jurisdiction: "eu"` (the other, default one shows none). The Worker bound it as an ordinary `DB`-style binding, inserted a row and read the count back, and the destroy removed it in 1 s; afterwards the account listed only the live database.
+
+Notes for stage 3:
+
+- The only change is the `jurisdiction` prop; bindings, migrations and `importFiles` behave as for a default database. Alchemy's type is `"default" | "eu" | "fedramp"`.
+- Per Alchemy's own documentation, changing `jurisdiction` (or `primaryLocationHint`) later replaces the database, and with a fixed `name` it deletes the old one first. Set it before the pilot's first deploy and never change it afterwards.
+- Alchemy generated the database name from the stack, resource and stage (`Spike0c-SpikeDbEu-test-spike0c-<suffix>`), so test stacks never collide with live names.
+- Whether the EU database also serves faster or slower from Spain was not measured; the first call through the Worker (cold, insert and count) took 151 ms wall time.
+
+### Safety record of the run
+
+Stack `Spike0c`, stage `test_spike0c`, alchemy file `alchemy.spike0c.run.ts` (deleted). Every plan and deploy named only that stage; the plan showed 3 creations and no change to anything else. The destroy removed the Worker, both databases and the cron; the account listing afterwards matched the state before the spike. `live_uripont` was never planned, deployed or destroyed. The smoke check passes (4 of 4) on `app` and `iter2` afterwards.
+
