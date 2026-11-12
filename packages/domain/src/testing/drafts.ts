@@ -385,6 +385,8 @@ const personArb = (id: string): fc.Arbitrary<Person> =>
   fc.record({
     id: fc.constant(id),
     name: fc.constantFrom('Bea', 'Ben', 'Dr Okafor', 'Ana'),
+    // One label per ID, so labels are unique in any list and never an alias.
+    label: fc.constant(`Person ${id.slice(1)}`),
     aliases: fc.uniqueArray(fc.constantFrom('B.', 'the nurse', 'X', 'Y'), {
       maxLength: 3,
     }),

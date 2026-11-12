@@ -12,14 +12,14 @@ import {
   contentProblems,
   validateContent,
 } from './content'
-import { type Person, aliasKey } from './people'
+import { type Person, aliasKey, peopleListProblems } from './people'
 import {
   type RichTextDoc,
   canonicalRichText,
   decodeRichText,
   richTextFigures,
 } from './richtext'
-import type { Template } from './template'
+import type { Item, Section, Template } from './template'
 
 // NOTE: Three-way comparison of two drafts against their common base (stage 1d,
 // used by sharing in stage 4g). "Ours" is the working copy being shared,
@@ -81,19 +81,39 @@ export type DraftConflict =
   | (Readonly<{ key: string; kind: 'image_flag' }> & Sides<boolean>)
   | (Readonly<{ key: string; kind: 'person' }> & Sides<Person>)
   | (Readonly<{ key: string; kind: 'person_name' }> & Sides<string>)
+  // The label of a person: changed differently on both sides, or (also when
+  // `clash` is true) left duplicate or matching an alias by the merge.
+  | (Readonly<{ key: string; kind: 'person_label'; clash: boolean }> &
+      Sides<string>)
+  // Both sides added entries and together exceed the limit of the repeat: the
+  // author picks which entries stay. `merged` holds every entry, in order.
+  | (Readonly<{
+      key: string
+      kind: 'entries_limit'
+      max: number
+      merged: ReadonlyArray<string>
+    }> &
+      Sides<ReadonlyArray<string>>)
 
 export type ConflictKind = DraftConflict['kind']
 
 // NOTE: `edited` is allowed only for a `value` conflict whose `richText` is
 // true: the author's own version of the rich text item.
+//
+// A `person_label` conflict also takes `{ label }`, a label the author types. An
+// `entries_limit` conflict takes `{ keep }`, the IDs of the entries that stay (in
+// the merged order); `ours` and `theirs` keep the entries that side has.
 export type ConflictChoice =
   | 'ours'
   | 'theirs'
   | Readonly<{ edited: RichTextDoc }>
+  | Readonly<{ label: string }>
+  | Readonly<{ keep: ReadonlyArray<string> }>
 
 export type MergeProblemCode =
   | ContentProblem['code']
   | 'people'
+  | 'people-label'
   | 'unresolved'
   | 'unknown-conflict'
   | 'edit-not-allowed'
@@ -244,6 +264,7 @@ type Context = {
   readonly choices: ReadonlyMap<string, ConflictChoice> | undefined
   readonly conflicts: Array<DraftConflict>
   readonly problems: Array<MergeProblem>
+  readonly template: Template
 }
 
 const join = (prefix: string, segment: string): string =>
@@ -268,6 +289,42 @@ const pickSide = (
     return 'ours'
   }
   return choice
+}
+
+// ---- Repeat limits ----------------------------------------------------------------
+
+// NOTE: The most entries the repeat at `prefix` (a key of sections and items,
+// entry segments ignored) may hold, from the template.
+const maxEntriesAt = (
+  template: Template,
+  prefix: string,
+): number | undefined => {
+  let sections: ReadonlyArray<Section> =
+    template.conclusion === undefined
+      ? template.sections
+      : [...template.sections, template.conclusion]
+  let items: ReadonlyArray<Item> = []
+  let max: number | undefined
+  for (const segment of prefix.split('/')) {
+    if (segment.startsWith('s:')) {
+      const section = sections.find(s => s.id === segment.slice(2))
+      if (section === undefined) {
+        return undefined
+      }
+      sections = section.sections
+      items = section.items
+      max = section.repeat?.max
+    } else if (segment.startsWith('i:')) {
+      const item = items.find(i => i.id === segment.slice(2))
+      if (item === undefined || item.type !== 'repeated') {
+        return undefined
+      }
+      items = item.items
+      sections = []
+      max = item.max
+    }
+  }
+  return max
 }
 
 // ---- Values -----------------------------------------------------------------------
@@ -344,7 +401,8 @@ const mergeValue = (
   if (choice === 'theirs') {
     return theirs
   }
-  const decoded = richText ? decodeRichText(choice.edited) : undefined
+  const decoded =
+    richText && 'edited' in choice ? decodeRichText(choice.edited) : undefined
   if (decoded === undefined || Result.isFailure(decoded)) {
     context.problems.push({
       code: decoded === undefined ? 'edit-not-allowed' : 'invalid-edit',
@@ -432,6 +490,10 @@ const mergeEntries = <E extends ItemEntry | SectionEntry>(
   const o = byId(ours)
   const t = byId(theirs)
   const survivors = new Map<string, E>()
+  // Entries a side deleted and the other changed that the choice dropped. They
+  // count towards the limit, so whether the limit is a conflict never depends
+  // on how another conflict was chosen.
+  let undecided = 0
   const ids = [
     ...new Set([...ours.map(e => e.id), ...theirs.map(e => e.id), ...b.keys()]),
   ]
@@ -474,6 +536,8 @@ const mergeEntries = <E extends ItemEntry | SectionEntry>(
     const kept = side === 'ours' ? eo : et
     if (kept !== undefined) {
       survivors.set(id, kept)
+    } else {
+      undecided++
     }
   }
 
@@ -514,7 +578,41 @@ const mergeEntries = <E extends ItemEntry | SectionEntry>(
     }
     result.splice(at, 0, id)
   })
-  return result.map(id => survivors.get(id) as E)
+  const max = maxEntriesAt(context.template, prefix)
+  if (max === undefined || result.length + undecided <= max) {
+    return result.map(id => survivors.get(id) as E)
+  }
+  const conflict: DraftConflict = {
+    key: `${prefix}/limit`,
+    kind: 'entries_limit',
+    max,
+    merged: result,
+    base: base.map(e => e.id),
+    ours: ours.map(e => e.id),
+    theirs: theirs.map(e => e.id),
+  }
+  // Until the author chooses, every entry stays (and `problems` says the repeat
+  // is over its limit), so nothing either side added is lost.
+  context.conflicts.push(conflict)
+  const choice = context.choices?.get(conflict.key)
+  if (choice === undefined) {
+    return result.map(id => survivors.get(id) as E)
+  }
+  const kept =
+    choice === 'ours' || choice === 'theirs'
+      ? new Set((choice === 'ours' ? ours : theirs).map(e => e.id))
+      : 'keep' in choice
+        ? new Set(choice.keep)
+        : undefined
+  if (kept === undefined) {
+    context.problems.push({
+      code: 'edit-not-allowed',
+      path: [conflict.key],
+      message: `"${conflict.key}" takes a side or a list of entries to keep`,
+    })
+    return result.map(id => survivors.get(id) as E)
+  }
+  return result.filter(id => kept.has(id)).map(id => survivors.get(id) as E)
 }
 
 // ---- Sections ---------------------------------------------------------------------
@@ -733,6 +831,7 @@ const mergeFlags = (
 
 const personData = (person: Person): unknown => ({
   name: person.name.normalize('NFC').trim(),
+  label: person.label.normalize('NFC').trim(),
   aliases: [...new Set(person.aliases.map(aliasKey))].sort(),
 })
 
@@ -761,6 +860,69 @@ const mergeAliases = (
     }
   }
   return out
+}
+
+// NOTE: Takes a side or a label the author typed.
+const pickLabel = (context: Context, conflict: DraftConflict): string => {
+  const choice = pick(context, conflict)
+  if (choice === 'ours' || choice === 'theirs') {
+    return (conflict[choice] ?? conflict.ours ?? '') as string
+  }
+  if ('label' in choice) {
+    return choice.label.trim()
+  }
+  context.problems.push({
+    code: 'edit-not-allowed',
+    path: [conflict.key],
+    message: `"${conflict.key}" takes a side or a label`,
+  })
+  return (conflict as { ours?: string }).ours ?? ''
+}
+
+// NOTE: After the merge, a person whose label is a copy of an earlier person's
+// (two authors both added "Person 3") or matches an alias gets a conflict, so
+// the author can type another label.
+const settleLabels = (
+  context: Context,
+  merged: ReadonlyArray<Person>,
+  sides: Readonly<{
+    base: ReadonlyArray<Person>
+    ours: ReadonlyArray<Person>
+    theirs: ReadonlyArray<Person>
+  }>,
+): ReadonlyArray<Person> => {
+  const flagged = new Set(
+    peopleListProblems(merged)
+      .filter(
+        problem =>
+          problem.code === 'duplicate-label' ||
+          problem.code === 'label-matches-alias',
+      )
+      .map(problem => problem.path[0] as string),
+  )
+  if (flagged.size === 0) {
+    return merged
+  }
+  const labelOf = (list: ReadonlyArray<Person>, id: string) =>
+    list.find(person => person.id === id)?.label
+  return merged.map(person => {
+    const key = `person:${person.id}/label`
+    if (
+      !flagged.has(person.id) ||
+      context.conflicts.some(conflict => conflict.key === key)
+    ) {
+      return person
+    }
+    const label = pickLabel(context, {
+      key,
+      kind: 'person_label',
+      clash: true,
+      base: labelOf(sides.base, person.id),
+      ours: person.label,
+      theirs: labelOf(sides.theirs, person.id),
+    })
+    return { ...person, label }
+  })
 }
 
 const mergePeople = (
@@ -808,9 +970,24 @@ const mergePeople = (
                   }) === 'ours'
                 ? po.name
                 : pt.name
+        const labelDecision = side3(pb?.label, po.label, pt.label)
+        const label =
+          labelDecision === 'ours'
+            ? po.label
+            : labelDecision === 'theirs'
+              ? pt.label
+              : pickLabel(context, {
+                  key: `${key}/label`,
+                  kind: 'person_label',
+                  clash: false,
+                  base: pb?.label,
+                  ours: po.label,
+                  theirs: pt.label,
+                })
         out.push({
           id,
           name,
+          label,
           aliases: mergeAliases(pb?.aliases ?? [], po.aliases, pt.aliases),
         })
       }
@@ -856,28 +1033,22 @@ const run = (
   )
   const flags = mergeFlags(context, base.content, ours.content, theirs.content)
   const flagged = mapDocs(sections, doc => withFlag(doc, id => flags.get(id)))
-  const people = mergePeople(context, base.people, ours.people, theirs.people)
+  const people = settleLabels(
+    context,
+    mergePeople(context, base.people, ours.people, theirs.people),
+    { base: base.people, ours: ours.people, theirs: theirs.people },
+  )
   return { content: { ...ours.content, sections: flagged }, people }
 }
 
 const peopleProblems = (
   people: ReadonlyArray<Person>,
-): ReadonlyArray<MergeProblem> => {
-  const seen = new Set<string>()
-  return people.flatMap(person => {
-    if (seen.has(person.id)) {
-      return [
-        {
-          code: 'people' as const,
-          path: [person.id],
-          message: `The person "${person.id}" is listed twice`,
-        },
-      ]
-    }
-    seen.add(person.id)
-    return []
-  })
-}
+): ReadonlyArray<MergeProblem> =>
+  peopleListProblems(people).map(problem => ({
+    code: problem.code === 'duplicate-id' ? 'people' : 'people-label',
+    path: problem.path,
+    message: problem.message,
+  }))
 
 // NOTE: Compares two drafts against their base and returns the merged draft
 // with every true conflict at "ours" and the conflicts for the author to
@@ -887,7 +1058,12 @@ export const compareDrafts = (
   drafts: Readonly<{ base: DraftData; ours: DraftData; theirs: DraftData }>,
 ): Merge => {
   const { base, ours, theirs } = drafts
-  const context: Context = { choices: undefined, conflicts: [], problems: [] }
+  const context: Context = {
+    template,
+    choices: undefined,
+    conflicts: [],
+    problems: [],
+  }
   const draft = run(context, base, ours, theirs)
   return {
     template,
@@ -911,6 +1087,7 @@ export const resolveMerge = (
   choices: Readonly<Record<string, ConflictChoice>>,
 ): Result.Result<DraftData, ReadonlyArray<MergeProblem>> => {
   const context: Context = {
+    template: merge.template,
     choices: new Map(Object.entries(choices)),
     conflicts: [],
     problems: [],

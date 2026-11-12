@@ -270,7 +270,12 @@ const keysOf = (conflicts: ReadonlyArray<DraftConflict>) =>
 const peopleData = (people: ReadonlyArray<Person>) =>
   JSON.stringify(
     people
-      .map(person => [person.id, person.name, [...person.aliases].sort()])
+      .map(person => [
+        person.id,
+        person.name,
+        person.label,
+        [...person.aliases].sort(),
+      ])
       .sort(),
   )
 
@@ -407,14 +412,18 @@ describe('comparing drafts: properties', () => {
           }
           const changed: DraftData = {
             content: withImageFlags(content, { 'img-1': true, 'img-3': true }),
-            people: [{ id: 'p1', name: 'Bea', aliases: ['B.'] }],
+            people: [
+              { id: 'p1', name: 'Bea', label: 'Person 1', aliases: ['B.'] },
+            ],
           }
           const merge = compareDrafts(template, {
             base,
             ours: changed,
             theirs: {
               content: withEditorNoise(changed.content, noise),
-              people: [{ id: 'p1', name: 'Bea', aliases: ['B.'] }],
+              people: [
+                { id: 'p1', name: 'Bea', label: 'Person 1', aliases: ['B.'] },
+              ],
             },
           })
           expect(merge.conflicts).toEqual([])
@@ -536,7 +545,8 @@ describe('comparing drafts: properties', () => {
           })
           const result = resolveMerge(merge, choices)
           if (Result.isFailure(result)) {
-            // Both sides may have added entries beyond a repeat limit.
+            // Both sides may have added entries beyond a repeat limit, and the
+            // choices above are only sides, which cannot always fix it.
             expect(
               result.failure.every(
                 problem => problem.code === 'too-many-entries',
@@ -562,7 +572,9 @@ describe('comparing drafts: properties', () => {
           merge.conflicts.map(conflict => [conflict.key, 'ours' as const]),
         )
         const result = resolveMerge(merge, choices)
-        if (Result.isSuccess(result)) {
+        // "Ours" on a repeat over its limit keeps only our entries.
+        const limited = merge.conflicts.some(c => c.kind === 'entries_limit')
+        if (Result.isSuccess(result) && !limited) {
           expect(result.success).toEqual(merge.draft)
         }
       }),
@@ -750,12 +762,12 @@ describe('comparing drafts: examples', () => {
     const [a, b, c] = [thing('a', 'A'), thing('b', 'B'), thing('c', 'C')]
     const base = draft([a, b, c])
     const moved = compareDrafts(T, {
-      base,
-      ours: draft([c, a, b]),
-      theirs: draft([a, b, c, thing('t', 'T')]),
+      base: draft([a, b]),
+      ours: draft([b, a]),
+      theirs: draft([a, b, thing('t', 'T')]),
     })
     expect(moved.conflicts).toEqual([])
-    expect(entriesOf(moved.draft).map(e => e.id)).toEqual(['c', 't', 'a', 'b'])
+    expect(entriesOf(moved.draft).map(e => e.id)).toEqual(['b', 't', 'a'])
     const both = compareDrafts(T, {
       base,
       ours: draft([c, a, b]),
@@ -891,6 +903,7 @@ describe('comparing drafts: examples', () => {
     const p = (name: string, aliases: ReadonlyArray<string>): Person => ({
       id: 'p1',
       name,
+      label: 'Person 1',
       aliases,
     })
     const base = draft([], {}, [p('Bea', ['B.'])])
@@ -899,13 +912,13 @@ describe('comparing drafts: examples', () => {
       ours: draft([], {}, [p('Bea', ['B.', 'the nurse'])]),
       theirs: draft([], {}, [
         p('Bea', []),
-        { id: 'p2', name: 'Ben', aliases: [] },
+        { id: 'p2', name: 'Ben', label: 'Person 2', aliases: [] },
       ]),
     })
     expect(merge.conflicts).toEqual([])
     expect(merge.draft.people).toEqual([
       p('Bea', ['the nurse']),
-      { id: 'p2', name: 'Ben', aliases: [] },
+      { id: 'p2', name: 'Ben', label: 'Person 2', aliases: [] },
     ])
     const rename = compareDrafts(T, {
       base,
@@ -992,12 +1005,135 @@ describe('comparing drafts: examples', () => {
       ours: draft(entries('o')),
       theirs: draft(entries('t')),
     })
-    // The repeat allows at most three entries.
-    expect(merge.conflicts).toEqual([])
+    // The repeat allows at most three entries: the author chooses which stay.
+    const key = 's:things/s:thing/limit'
+    expect(merge.conflicts.map(c => [c.key, c.kind])).toEqual([
+      [key, 'entries_limit'],
+    ])
+    expect(entriesOf(merge.draft).length).toBe(4)
     expect(merge.problems.map(p => p.code)).toEqual(['too-many-entries'])
-    const result = resolveMerge(merge, {})
-    expect(Result.isFailure(result) && result.failure.map(p => p.code)).toEqual(
-      ['too-many-entries'],
+    const unresolved = resolveMerge(merge, {})
+    expect(
+      Result.isFailure(unresolved) && unresolved.failure.map(p => p.code),
+    ).toEqual(['unresolved'])
+    const keep = resolveMerge(merge, { [key]: { keep: ['t1', 'o1', 'o2'] } })
+    expect(
+      Result.isSuccess(keep) && entriesOf(keep.success).map(e => e.id),
+    ).toEqual(['t1', 'o1', 'o2'])
+    const ours = resolveMerge(merge, { [key]: 'ours' })
+    expect(
+      Result.isSuccess(ours) && entriesOf(ours.success).map(e => e.id),
+    ).toEqual(['o1', 'o2'])
+    const tooMany = resolveMerge(merge, {
+      [key]: { keep: ['t1', 't2', 'o1', 'o2'] },
+    })
+    expect(Result.isFailure(tooMany)).toBe(true)
+    const edit = resolveMerge(merge, { [key]: { label: 'x' } })
+    expect(Result.isFailure(edit)).toBe(true)
+  })
+
+  test('labels: one-sided changes are taken, two-sided ones conflict and take a typed label', () => {
+    const p = (label: string): Person => ({
+      id: 'p1',
+      name: 'Bea',
+      label,
+      aliases: [],
+    })
+    const base = draft([], {}, [p('Person 1')])
+    const oneSide = compareDrafts(T, {
+      base,
+      ours: draft([], {}, [p('Witness')]),
+      theirs: base,
+    })
+    expect(oneSide.conflicts).toEqual([])
+    expect(oneSide.draft.people[0]?.label).toBe('Witness')
+    const both = compareDrafts(T, {
+      base,
+      ours: draft([], {}, [p('Witness')]),
+      theirs: draft([], {}, [p('Source')]),
+    })
+    expect(both.conflicts.map(c => [c.key, c.kind])).toEqual([
+      ['person:p1/label', 'person_label'],
+    ])
+    const key = 'person:p1/label'
+    const theirs = resolveMerge(both, { [key]: 'theirs' })
+    expect(Result.isSuccess(theirs) && theirs.success.people[0]?.label).toBe(
+      'Source',
     )
+    const typed = resolveMerge(both, { [key]: { label: ' Informant ' } })
+    expect(Result.isSuccess(typed) && typed.success.people[0]?.label).toBe(
+      'Informant',
+    )
+    const bad = resolveMerge(both, { [key]: { keep: [] } })
+    expect(Result.isFailure(bad)).toBe(true)
+  })
+
+  test('labels: two authors both add "Person 3" and the author can fix it', () => {
+    const person = (id: string, name: string, label: string): Person => ({
+      id,
+      name,
+      label,
+      aliases: [],
+    })
+    const base = draft([], {}, [
+      person('p1', 'Ana', 'Person 1'),
+      person('p2', 'Bo', 'Person 2'),
+    ])
+    const merge = compareDrafts(T, {
+      base,
+      ours: draft([], {}, [...base.people, person('p3', 'Cy', 'Person 3')]),
+      theirs: draft([], {}, [...base.people, person('p4', 'Di', 'Person 3')]),
+    })
+    expect(merge.problems.map(x => x.code)).toEqual(['people-label'])
+    expect(merge.conflicts.map(c => [c.key, c.kind])).toEqual([
+      ['person:p4/label', 'person_label'],
+    ])
+    expect(merge.conflicts[0]).toMatchObject({ clash: true })
+    const unresolved = resolveMerge(merge, {})
+    expect(Result.isFailure(unresolved)).toBe(true)
+    const kept = resolveMerge(merge, { 'person:p4/label': 'ours' })
+    expect(Result.isFailure(kept) && kept.failure.map(x => x.code)).toEqual([
+      'people-label',
+    ])
+    const fixed = resolveMerge(merge, {
+      'person:p4/label': { label: 'Person 4' },
+    })
+    expect(
+      Result.isSuccess(fixed) && fixed.success.people.map(x => x.label),
+    ).toEqual(['Person 1', 'Person 2', 'Person 3', 'Person 4'])
+    // Swapping the sides gives the same conflict and a valid result.
+    const swapped = compareDrafts(T, {
+      base,
+      ours: draft([], {}, [...base.people, person('p4', 'Di', 'Person 3')]),
+      theirs: draft([], {}, [...base.people, person('p3', 'Cy', 'Person 3')]),
+    })
+    expect(swapped.conflicts.length).toBe(1)
+    expect(
+      Result.isSuccess(
+        resolveMerge(swapped, {
+          [swapped.conflicts[0]?.key as string]: { label: 'Person 4' },
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  test('labels: one that matches an alias added by the other side is a conflict', () => {
+    const person = (aliases: ReadonlyArray<string>): Person => ({
+      id: 'p1',
+      name: 'Ana',
+      label: 'Person 1',
+      aliases,
+    })
+    const base = draft([], {}, [person([])])
+    const merge = compareDrafts(T, {
+      base,
+      ours: draft([], {}, [person(['Person'])]),
+      theirs: base,
+    })
+    expect(merge.conflicts.map(c => c.kind)).toEqual(['person_label'])
+    const fixed = resolveMerge(merge, {
+      'person:p1/label': { label: 'Witness' },
+    })
+    expect(Result.isSuccess(fixed)).toBe(true)
   })
 })
