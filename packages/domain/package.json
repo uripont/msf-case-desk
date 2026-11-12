@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/testing/repositoryContract.ts",
-    "./testing/templates": "./src/testing/templates.ts"
+    "./testing/templates": "./src/testing/templates.ts",
+    "./testing/content": "./src/testing/content.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
