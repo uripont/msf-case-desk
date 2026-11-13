@@ -4,7 +4,12 @@ import { describe, expect, test } from 'vitest'
 
 import { SEED_CASES } from '@case-desk/domain'
 
-import { SYNTHETIC_USER, loadedModel, signedOutModel } from './fixtures'
+import {
+  SYNTHETIC_ME,
+  SYNTHETIC_USER,
+  loadedModel,
+  signedOutModel,
+} from './fixtures'
 import {
   CheckSession,
   LoadDesk,
@@ -15,6 +20,7 @@ import {
   initialModel,
   update,
 } from './main'
+import { Failure } from './quoroom/failure'
 
 const password = Redacted.make('synthetic-password')
 
@@ -31,9 +37,9 @@ describe('sign-in', () => {
     story(
       update,
       given(initialModel),
-      message(Message.SucceededCheckSession({ user: SYNTHETIC_USER })),
+      message(Message.SucceededCheckSession({ me: SYNTHETIC_ME })),
       model(next => {
-        expect(next.session).toEqual({ _tag: 'SignedIn', user: SYNTHETIC_USER })
+        expect(next.session).toEqual({ _tag: 'SignedIn', me: SYNTHETIC_ME })
       }),
       Command.expectHas(LoadDesk()),
       Command.resolve(
@@ -54,10 +60,7 @@ describe('sign-in', () => {
         expect(next.loginForm.submission._tag).toBe('Submitting')
       }),
       Command.expectHas(SignIn({ email: SYNTHETIC_USER.email, password })),
-      Command.resolve(
-        SignIn,
-        Message.SucceededSignIn({ user: SYNTHETIC_USER }),
-      ),
+      Command.resolve(SignIn, Message.SucceededSignIn({ me: SYNTHETIC_ME })),
       model(next => {
         expect(next.session._tag).toBe('SignedIn')
         expect(Redacted.value(next.loginForm.password)).toBe('')
@@ -80,14 +83,34 @@ describe('sign-in', () => {
       message(Message.SubmittedLogin()),
       Command.resolve(
         SignIn,
-        Message.FailedSignIn({ rejection: 'InvalidCredentials' }),
+        Message.FailedSignIn({ failure: Failure.InvalidCredentials() }),
       ),
       model(next => {
         expect(next.loginForm.submission).toEqual({
           _tag: 'Rejected',
-          rejection: 'InvalidCredentials',
+          failure: Failure.InvalidCredentials(),
         })
         expect(Redacted.value(next.loginForm.password)).toBe('')
+      }),
+    )
+  })
+
+  test('too many attempts says how long to wait', () => {
+    story(
+      update,
+      given(signedOutModel),
+      message(Message.SubmittedLogin()),
+      Command.resolve(
+        SignIn,
+        Message.FailedSignIn({
+          failure: Failure.Throttled({ retryAfterSeconds: 60 }),
+        }),
+      ),
+      model(next => {
+        expect(next.loginForm.submission).toEqual({
+          _tag: 'Rejected',
+          failure: Failure.Throttled({ retryAfterSeconds: 60 }),
+        })
       }),
     )
   })

@@ -1,23 +1,10 @@
 import { clsx } from 'clsx'
-import { Match, Redacted } from 'effect'
+import { Redacted } from 'effect'
 import { Html, HtmlBuilder } from 'foldkit/html'
 
-import { type SignInRejection } from './api'
 import { LoginSubmission, Message, type Model } from './main'
+import { failureText } from './quoroom/failure'
 import { fieldClassName, labelClassName, primaryButtonClassName } from './style'
-
-const rejectionText = (rejection: SignInRejection): string =>
-  Match.value(rejection).pipe(
-    Match.when(
-      'InvalidCredentials',
-      () => 'That e-mail and password do not match an account.',
-    ),
-    Match.when(
-      'Unavailable',
-      () => 'The case desk did not answer. Try again in a moment.',
-    ),
-    Match.exhaustive,
-  )
 
 export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
   const { loginForm } = model
@@ -88,13 +75,13 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
           LoginSubmission.match(loginForm.submission, {
             NotSubmitted: () => h.empty,
             Submitting: () => h.empty,
-            Rejected: ({ rejection }) =>
+            Rejected: ({ failure }) =>
               h.p(
                 [
                   h.Role('alert'),
                   h.Class('text-base font-medium text-msf-red'),
                 ],
-                [rejectionText(rejection)],
+                [failureText(failure)],
               ),
           }),
           h.button(

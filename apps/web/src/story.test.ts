@@ -11,6 +11,7 @@ import {
   GetCurrentTime,
   LoadDesk,
   Message,
+  ReadLocation,
   heroLayoutTransition,
   init,
   initialModel,
@@ -196,6 +197,7 @@ describe('loading the desk', () => {
     expect(started.commands?.map(command => command.name)).toEqual([
       GetCurrentTime.name,
       CheckSession.name,
+      ReadLocation.name,
     ])
   })
 

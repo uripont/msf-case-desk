@@ -257,3 +257,7 @@ Notes for stage 3:
 
 Stack `Spike0c`, stage `test_spike0c`, alchemy file `alchemy.spike0c.run.ts` (deleted). Every plan and deploy named only that stage; the plan showed 3 creations and no change to anything else. The destroy removed the Worker, both databases and the cron; the account listing afterwards matched the state before the spike. `live_uripont` was never planned, deployed or destroyed. The smoke check passes (4 of 4) on `app` and `iter2` afterwards.
 
+
+## `playwright-core` for the browser check (stage 3)
+
+`packages/e2e` is the one place that drives a real browser. It uses `playwright-core` 1.65.0 (no bundled browsers) with the system Chromium (`/usr/bin/chromium`, or `E2E_CHROMIUM`), so nothing is downloaded. It is a dev dependency of that package only, has no `test` script (so `pnpm test` and `pnpm check` do not need a browser) and starts its own workerd on a free port with a temporary data folder. Run it with `pnpm --filter @case-desk/e2e e2e`.

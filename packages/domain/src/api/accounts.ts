@@ -46,6 +46,10 @@ export type MeView = typeof MeView.Type
 
 // ---- Links (D13) --------------------------------------------------------------
 
+// NOTE: Where the two iteration 3 RPC groups are served.
+export const QUOROOM_RPC_PATH = '/api/q/rpc'
+export const QUOROOM_PUBLIC_PATH = '/api/q/public'
+
 // NOTE: Where the app shows a link. The token follows in the fragment, so it
 // is never part of a request URL: `/link#<token>`.
 export const LINK_PATH = '/link'

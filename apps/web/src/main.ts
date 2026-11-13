@@ -24,6 +24,8 @@ import {
   CaseId,
   DEMO_START,
   FastTrackSignal,
+  LINK_PATH,
+  MeView,
   RISKS,
   RuleSet,
   RuleSetScope,
@@ -32,20 +34,11 @@ import {
   TriageRules as TriageRulesSchema,
   type TriagedCase,
   URGENCIES,
-  User,
   prioritiseByCentre,
   rulesFor,
 } from '@case-desk/domain'
 
-import {
-  ApiFailure,
-  SignInRejection,
-  failureOf,
-  fetchSession,
-  postSignIn,
-  postSignOut,
-  withApi,
-} from './api'
+import { ApiFailure, failureOf, withApi } from './api'
 import {
   HeroLayout,
   LAYOUT_SETTLE_MS,
@@ -63,6 +56,12 @@ import {
   toggleSignal,
 } from './entryForm'
 import { hoursToMs } from './format'
+import * as Account from './quoroom/account'
+import * as Admin from './quoroom/admin'
+import { withPublic, withQuoroom } from './quoroom/api'
+import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
+import * as Link from './quoroom/link'
+import * as Unit from './quoroom/unit'
 import {
   RulesField,
   RulesForm,
@@ -95,14 +94,14 @@ export type DeskLoad = typeof DeskLoad.Type
 export const Session = defineTaggedUnion({
   Checking: {},
   SignedOut: {},
-  SignedIn: { user: User },
+  SignedIn: { me: MeView },
 })
 export type Session = typeof Session.Type
 
 export const LoginSubmission = defineTaggedUnion({
   NotSubmitted: {},
   Submitting: {},
-  Rejected: { rejection: SignInRejection },
+  Rejected: { failure: Failure },
 })
 export type LoginSubmission = typeof LoginSubmission.Type
 
@@ -113,14 +112,34 @@ export const LoginForm = Schema.Struct({
 })
 export type LoginForm = typeof LoginForm.Type
 
-export const Page = Schema.Literals(['Desk', 'NewCase', 'Rules'])
+export const Page = Schema.Literals([
+  'Desk',
+  'NewCase',
+  'Rules',
+  'Account',
+  'Unit',
+  'Admin',
+])
 export type Page = typeof Page.Type
+
+export const DESK_PAGES: ReadonlyArray<Page> = ['Desk', 'NewCase', 'Rules']
+
+export const Place = defineTaggedUnion({
+  Elsewhere: {},
+  LinkPage: { maybeToken: Schema.Option(Schema.Redacted(Schema.String)) },
+})
+export type Place = typeof Place.Type
 
 export const Model = Schema.Struct({
   page: Page,
   entryForm: EntryForm,
   rulesForm: RulesForm,
   session: Session,
+  origin: Schema.String,
+  maybeLink: Schema.Option(Link.Model),
+  account: Account.Model,
+  admin: Admin.Model,
+  unit: Unit.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
   ruleSets: Schema.Array(RuleSet),
@@ -160,13 +179,19 @@ export const Message = defineMessageUnion({
   },
   FailedLoadDesk: { failure: ApiFailure },
   ClickedRetryLoad: {},
-  SucceededCheckSession: { user: User },
+  CompletedReadLocation: { origin: Schema.String, place: Place },
+  CompletedReturnToRoot: {},
+  GotLinkMessage: { message: Link.Message },
+  GotAccountMessage: { message: Account.Message },
+  GotAdminMessage: { message: Admin.Message },
+  GotUnitMessage: { message: Unit.Message },
+  SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
   UpdatedLoginEmail: { value: Schema.String },
   UpdatedLoginPassword: { value: Schema.Redacted(Schema.String) },
   SubmittedLogin: {},
-  SucceededSignIn: { user: User },
-  FailedSignIn: { rejection: SignInRejection },
+  SucceededSignIn: { me: MeView },
+  FailedSignIn: { failure: Failure },
   ClickedSignOut: {},
   CompletedSignOut: {},
   ClickedPage: { page: Page },
@@ -244,6 +269,11 @@ export const initialModel = Model.make({
   entryForm: emptyEntryForm(DEMO_START),
   rulesForm: rulesFormFor([], 'Default'),
   session: Session.Checking(),
+  origin: '',
+  maybeLink: Option.none(),
+  account: Account.initialModel,
+  admin: Admin.initialModel,
+  unit: Unit.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
   ruleSets: [],
@@ -261,7 +291,7 @@ export const initialModel = Model.make({
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   model: initialModel,
-  commands: [GetCurrentTime(), CheckSession()],
+  commands: [GetCurrentTime(), CheckSession(), ReadLocation()],
 })
 
 // COMMAND
@@ -316,15 +346,44 @@ export const LoadDesk = Command.define('LoadDesk', {
   ),
 })
 
+// NOTE: A link is opened at `/link#<token>`. The token is read once and the
+// fragment is removed at once, so it is not left in the address bar, the
+// history or a copied URL. It is only ever sent in a POST body.
+export const ReadLocation = Command.define('ReadLocation', {
+  messages: [Message.CompletedReadLocation],
+  execute: Effect.sync(() => {
+    const { origin, pathname, hash } = window.location
+    if (pathname !== LINK_PATH) {
+      return Message.CompletedReadLocation({
+        origin,
+        place: Place.Elsewhere(),
+      })
+    }
+    window.history.replaceState(null, '', LINK_PATH)
+    return Message.CompletedReadLocation({
+      origin,
+      place: Place.LinkPage({
+        maybeToken:
+          hash.length > 1
+            ? Option.some(Redacted.make(hash.slice(1)))
+            : Option.none(),
+      }),
+    })
+  }),
+})
+
+export const ReturnToRoot = Command.define('ReturnToRoot', {
+  messages: [Message.CompletedReturnToRoot],
+  execute: Effect.sync(() => {
+    window.history.replaceState(null, '', '/')
+    return Message.CompletedReturnToRoot()
+  }),
+})
+
 export const CheckSession = Command.define('CheckSession', {
   messages: [Message.SucceededCheckSession, Message.FailedCheckSession],
-  execute: fetchSession.pipe(
-    Effect.map(maybeUser =>
-      Option.match(maybeUser, {
-        onNone: () => Message.FailedCheckSession(),
-        onSome: user => Message.SucceededCheckSession({ user }),
-      }),
-    ),
+  execute: withQuoroom(client => client.GetMe()).pipe(
+    Effect.map(me => Message.SucceededCheckSession({ me })),
     Effect.catch(() => Effect.succeed(Message.FailedCheckSession())),
   ),
 })
@@ -333,17 +392,24 @@ export const SignIn = Command.define('SignIn', {
   args: { email: Schema.String, password: Schema.Redacted(Schema.String) },
   messages: [Message.SucceededSignIn, Message.FailedSignIn],
   execute: ({ email, password }) =>
-    postSignIn(email, password).pipe(
-      Effect.map(user => Message.SucceededSignIn({ user })),
-      Effect.catch(rejection =>
-        Effect.succeed(Message.FailedSignIn({ rejection })),
+    withPublic(client =>
+      client.SignIn({ email, password: Redacted.value(password) }),
+    ).pipe(
+      Effect.map(me => Message.SucceededSignIn({ me })),
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedSignIn({ failure: quoroomFailureOf(error) }),
+        ),
       ),
     ),
 })
 
 export const SignOut = Command.define('SignOut', {
   messages: [Message.CompletedSignOut],
-  execute: Effect.as(postSignOut, Message.CompletedSignOut()),
+  execute: withQuoroom(client => client.SignOut()).pipe(
+    Effect.ignore,
+    Effect.as(Message.CompletedSignOut()),
+  ),
 })
 
 export const CreateCase = Command.define('CreateCase', {
@@ -527,6 +593,9 @@ const signedOut = (model: Model): Model =>
   modifyFields(model, {
     page: () => 'Desk',
     session: () => Session.SignedOut(),
+    account: () => Account.initialModel,
+    admin: () => Admin.initialModel,
+    unit: () => Unit.initialModel,
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
     ruleSets: () => [],
@@ -535,12 +604,86 @@ const signedOut = (model: Model): Model =>
     isDetailSheetOpen: () => false,
   })
 
-const loadingDesk = (model: Model, user: User): Model =>
+const loadingDesk = (model: Model, me: MeView): Model =>
   modifyFields(model, {
-    session: () => Session.SignedIn({ user }),
+    session: () => Session.SignedIn({ me }),
     loginForm: () => emptyLoginForm,
     deskLoad: () => DeskLoad.Loading(),
   })
+
+const foldLink = Update.foldChild({
+  update: Link.update,
+  read: (model: Model) => model.maybeLink,
+  write: (model, nextLink) =>
+    modifyFields(model, { maybeLink: () => Option.some(nextLink) }),
+  toParentMessage: message => Message.GotLinkMessage({ message }),
+  foldOutMessage: outMessage =>
+    Link.OutMessage.match<Update.Step<Model, Message>>(outMessage, {
+      SignedInWithLink:
+        ({ me }) =>
+        stepModel => ({
+          model: modifyFields(loadingDesk(stepModel, me), {
+            maybeLink: () => Option.none(),
+          }),
+          commands: [LoadDesk(), ReturnToRoot()],
+        }),
+    }),
+})
+
+const foldAccount = Update.foldChild({
+  update: Account.update,
+  read: (model: Model) => Option.some(model.account),
+  write: (model, nextAccount) =>
+    modifyFields(model, { account: () => nextAccount }),
+  toParentMessage: message => Message.GotAccountMessage({ message }),
+})
+
+const foldAdmin = Update.foldChild({
+  update: Admin.update,
+  read: (model: Model) => Option.some(model.admin),
+  write: (model, nextAdmin) => modifyFields(model, { admin: () => nextAdmin }),
+  toParentMessage: message => Message.GotAdminMessage({ message }),
+})
+
+const foldUnit = Update.foldChild({
+  update: Unit.update,
+  read: (model: Model) => Option.some(model.unit),
+  write: (model, nextUnit) => modifyFields(model, { unit: () => nextUnit }),
+  toParentMessage: message => Message.GotUnitMessage({ message }),
+})
+
+const enterAccount = Update.foldChildStep({
+  update: Account.enter,
+  read: (model: Model) => Option.some(model.account),
+  write: (model, nextAccount) =>
+    modifyFields(model, { account: () => nextAccount }),
+  toParentMessage: message => Message.GotAccountMessage({ message }),
+})
+
+const enterAdmin = (origin: string) =>
+  Update.foldChildStep({
+    update: (child: Admin.Model) => Admin.enter(child, origin),
+    read: (model: Model) => Option.some(model.admin),
+    write: (model, nextAdmin) =>
+      modifyFields(model, { admin: () => nextAdmin }),
+    toParentMessage: message => Message.GotAdminMessage({ message }),
+  })
+
+const enterUnit = (origin: string) =>
+  Update.foldChildStep({
+    update: (child: Unit.Model) => Unit.enter(child, origin),
+    read: (model: Model) => Option.some(model.unit),
+    write: (model, nextUnit) => modifyFields(model, { unit: () => nextUnit }),
+    toParentMessage: message => Message.GotUnitMessage({ message }),
+  })
+
+const enterPage = (model: Model, page: Page): Update.Return<Model, Message> =>
+  Match.value(page).pipe(
+    Match.when('Account', () => enterAccount(model)),
+    Match.when('Admin', () => enterAdmin(model.origin)(model)),
+    Match.when('Unit', () => enterUnit(model.origin)(model)),
+    Match.orElse(() => ({ model })),
+  )
 
 // UPDATE
 
@@ -644,8 +787,30 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, { deskLoad: () => DeskLoad.Loading() }),
       commands: [LoadDesk()],
     }),
-    SucceededCheckSession: ({ user }) => ({
-      model: loadingDesk(model, user),
+    CompletedReadLocation: ({ origin, place }) => {
+      const located = modifyFields(model, { origin: () => origin })
+      return Place.match(place, {
+        Elsewhere: () => ({ model: located }),
+        LinkPage: ({ maybeToken }) => {
+          const linkInit = Link.init(maybeToken)
+          return {
+            model: modifyFields(located, {
+              maybeLink: () => Option.some(linkInit.model),
+            }),
+            commands: Command.mapMessages(linkInit.commands ?? [], message =>
+              Message.GotLinkMessage({ message }),
+            ),
+          }
+        },
+      })
+    },
+    CompletedReturnToRoot: () => ({ model }),
+    GotLinkMessage: ({ message }) => foldLink(model, message),
+    GotAccountMessage: ({ message }) => foldAccount(model, message),
+    GotAdminMessage: ({ message }) => foldAdmin(model, message),
+    GotUnitMessage: ({ message }) => foldUnit(model, message),
+    SucceededCheckSession: ({ me }) => ({
+      model: loadingDesk(model, me),
       commands: [LoadDesk()],
     }),
     FailedCheckSession: () => ({ model: signedOut(model) }),
@@ -665,16 +830,16 @@ export const update = (model: Model, message: Message) =>
         NotSubmitted: () => submitLogin(model),
         Rejected: () => submitLogin(model),
       }),
-    SucceededSignIn: ({ user }) => ({
-      model: loadingDesk(model, user),
+    SucceededSignIn: ({ me }) => ({
+      model: loadingDesk(model, me),
       commands: [LoadDesk()],
     }),
-    FailedSignIn: ({ rejection }) => ({
+    FailedSignIn: ({ failure }) => ({
       model: modifyFields(model, {
         loginForm: form =>
           modifyFields(form, {
             password: () => Redacted.make(''),
-            submission: () => LoginSubmission.Rejected({ rejection }),
+            submission: () => LoginSubmission.Rejected({ failure }),
           }),
       }),
     }),
@@ -683,17 +848,21 @@ export const update = (model: Model, message: Message) =>
       commands: [SignOut()],
     }),
     CompletedSignOut: () => ({ model }),
-    ClickedPage: ({ page }) => ({
-      commands: [focusPageHeading()],
-      model: modifyFields(model, {
+    ClickedPage: ({ page }) => {
+      const paged = modifyFields(model, {
         page: () => page,
         isDetailSheetOpen: () => false,
         rulesForm: form =>
           page === 'Rules' && !RulesSubmission.guards.Saving(form.submission)
             ? rulesFormFor(model.ruleSets, form.scope)
             : form,
-      }),
-    }),
+      })
+      const entered = enterPage(paged, page)
+      return {
+        model: entered.model,
+        commands: [...(entered.commands ?? []), focusPageHeading()],
+      }
+    },
     SelectedRulesScope: ({ scope }) => ({
       model: modifyFields(model, {
         rulesForm: () => rulesFormFor(model.ruleSets, scope),

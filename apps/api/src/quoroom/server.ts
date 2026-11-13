@@ -3,6 +3,8 @@ import { HttpRouter } from 'effect/http'
 import { RpcSerialization, RpcServer } from 'effect/rpc'
 
 import {
+  QUOROOM_PUBLIC_PATH,
+  QUOROOM_RPC_PATH,
   QuoroomPublicRpcs,
   QuoroomRpcs,
   type Repository,
@@ -23,8 +25,7 @@ import { reviewerHandlers } from './reviewer'
 // NOTE: The iteration 3 RPC, served at its own path next to the iteration 2
 // one, which keeps working as it was. Stage 3 switches the apps over.
 
-export const QUOROOM_RPC_PATH = '/api/q/rpc'
-export const QUOROOM_PUBLIC_PATH = '/api/q/public'
+export { QUOROOM_PUBLIC_PATH, QUOROOM_RPC_PATH }
 
 const handlers = QuoroomRpcs.toLayer(
   Effect.succeed(

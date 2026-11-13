@@ -117,17 +117,56 @@ const isPageRequest = (request: Request): boolean =>
   request.method === 'GET' &&
   !/\.[a-z0-9]+$/i.test(new URL(request.url).pathname)
 
+const CONTENT_TYPES: Readonly<Record<string, string>> = {
+  html: 'text/html; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  mjs: 'text/javascript; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  json: 'application/json',
+  ico: 'image/x-icon',
+  txt: 'text/plain; charset=utf-8',
+}
+
+// NOTE: the disk service sends every file as `application/octet-stream`,
+// which a browser downloads instead of showing, so the type comes from the
+// file's extension.
+const typed = (response: Response, path: string): Response => {
+  if (response.status !== 200) {
+    return response
+  }
+  const extension = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase() ?? ''
+  const type = CONTENT_TYPES[extension]
+  if (type === undefined) {
+    return response
+  }
+  const headers = new Headers(response.headers)
+  headers.set('content-type', type)
+  return new Response(response.body, { status: response.status, headers })
+}
+
 // NOTE: the disk service lists a folder instead of serving its index.html,
 // so the root and any page route are answered with the app's index.html.
 const serveAssets = async (request: Request, env: Env): Promise<Response> => {
-  if (new URL(request.url).pathname.endsWith('/')) {
-    return env.ASSETS.fetch(new URL('/index.html', request.url))
+  const index = () =>
+    env.ASSETS.fetch(new URL('/index.html', request.url)).then(response =>
+      typed(response, '/index.html'),
+    )
+  const path = new URL(request.url).pathname
+  if (path.endsWith('/')) {
+    return index()
   }
   const response = await env.ASSETS.fetch(request)
   if (response.status !== 404 || !isPageRequest(request)) {
-    return response
+    return typed(response, path)
   }
-  return env.ASSETS.fetch(new URL('/index.html', request.url))
+  return index()
 }
 
 export default {

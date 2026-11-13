@@ -1,4 +1,4 @@
-import { SEED_CASES, UserId } from '@case-desk/domain'
+import { MeView, SEED_CASES, UserId } from '@case-desk/domain'
 
 import { Message, initialModel, update } from './main'
 
@@ -8,11 +8,19 @@ export const SYNTHETIC_USER = {
   name: 'Synthetic Tester',
 }
 
+export const SYNTHETIC_ME = MeView.make({
+  id: SYNTHETIC_USER.id,
+  email: SYNTHETIC_USER.email,
+  name: SYNTHETIC_USER.name,
+  grants: [],
+  profile: { whatsappConsent: false, notifyOnApproval: false },
+})
+
 // NOTE: signed in, with the synthetic seed cases loaded, for Story and Scene
 // tests that start from a working desk.
 export const signedInModel = update(
   initialModel,
-  Message.SucceededCheckSession({ user: SYNTHETIC_USER }),
+  Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
 ).model
 
 export const loadedModel = update(

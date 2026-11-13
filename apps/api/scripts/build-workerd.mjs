@@ -15,9 +15,13 @@ const migrations = readdirSync(migrationsDir)
   .sort()
   .map(name => ({ name, sql: readFileSync(join(migrationsDir, name), 'utf8') }))
 
+// NOTE: CASE_DESK_LOCAL_DIR points the build at another folder for the account
+// and grant files, so the browser check (packages/e2e) never touches .local.
+const local = process.env.CASE_DESK_LOCAL_DIR ?? join(root, '.local')
+
 const imports = [
-  join(root, '.local/users.sql'),
-  join(root, '.local/grants-workerd.sql'),
+  join(local, 'users.sql'),
+  join(local, 'grants-workerd.sql'),
   join(api, 'seed/demo-cases.sql'),
 ]
   .filter(existsSync)

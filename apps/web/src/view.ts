@@ -3,6 +3,7 @@ import { Array, Match, Option } from 'effect'
 import { Document, Html, HtmlBuilder } from 'foldkit/html'
 
 import {
+  type MeView,
   PRIORITIES,
   type Priority,
   type SlaStatus,
@@ -19,6 +20,7 @@ import { loginPage } from './loginView'
 import {
   CENTRE_FILTERS,
   type CentreFilter,
+  DESK_PAGES,
   DeskLoad,
   Message,
   type Model,
@@ -31,6 +33,10 @@ import {
   rulesOf,
   visibleQueueOf,
 } from './main'
+import * as Account from './quoroom/account'
+import * as Admin from './quoroom/admin'
+import * as Link from './quoroom/link'
+import * as Unit from './quoroom/unit'
 import { rulesPage } from './rulesView'
 import { focusRing, outlineButtonClassName, textButtonClassName } from './style'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
@@ -139,10 +145,24 @@ const wordmark = (h: HtmlBuilder<Message>): Html =>
     [BRAND.productName],
   )
 
-const PAGE_LINKS: ReadonlyArray<{ page: Page; label: string }> = [
+const hasCapability = (
+  me: MeView,
+  capability: 'admin' | 'author' | 'template_editor',
+): boolean => Array.some(me.grants, grant => grant.capability === capability)
+
+const pageLinksFor = (
+  me: MeView,
+): ReadonlyArray<{ page: Page; label: string }> => [
   { page: 'Desk', label: 'Cases' },
   { page: 'NewCase', label: 'New case' },
   { page: 'Rules', label: 'Rules' },
+  ...(hasCapability(me, 'author')
+    ? [{ page: 'Unit' as const, label: 'My unit' }]
+    : []),
+  ...(hasCapability(me, 'admin')
+    ? [{ page: 'Admin' as const, label: 'Administration' }]
+    : []),
+  { page: 'Account', label: 'My account' },
 ]
 
 const pageLink = (
@@ -174,7 +194,7 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
   Session.match(model.session, {
     Checking: () => h.empty,
     SignedOut: () => h.empty,
-    SignedIn: ({ user }) =>
+    SignedIn: ({ me }) =>
       h.div(
         [
           h.Class(
@@ -183,15 +203,15 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
         ],
         [
           h.nav(
-            [h.AriaLabel('Pages'), h.Class('flex gap-x-6')],
-            Array.map(PAGE_LINKS, ({ page, label }) =>
+            [h.AriaLabel('Pages'), h.Class('flex flex-wrap gap-x-6 gap-y-2')],
+            Array.map(pageLinksFor(me), ({ page, label }) =>
               pageLink(model, page, label, h),
             ),
           ),
           h.div(
             [h.Class('flex items-baseline gap-x-4')],
             [
-              h.span([], [user.name]),
+              h.span([], [me.name]),
               h.button(
                 [
                   h.Class(textButtonClassName),
@@ -789,36 +809,79 @@ const loadedDesk = (
   ),
 ]
 
-const pageView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
-  Match.value(model.page).pipe(
-    Match.when('Desk', () => loadedDesk(model, h)),
-    Match.when('NewCase', () => [entryPage(model, h)]),
-    Match.when('Rules', () => [rulesPage(model, h)]),
-    Match.exhaustive,
-  )
+const deskPageView = (
+  model: Model,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> =>
+  DeskLoad.match(model.deskLoad, {
+    Loading: () => [loadingDesk(h)],
+    Failed: ({ failure }) => [failedDesk(failure, h)],
+    Loaded: () =>
+      Match.value(model.page).pipe(
+        Match.when('NewCase', () => [entryPage(model, h)]),
+        Match.when('Rules', () => [rulesPage(model, h)]),
+        Match.orElse(() => loadedDesk(model, h)),
+      ),
+  })
+
+const pageView = (
+  model: Model,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> =>
+  Array.contains(DESK_PAGES, model.page)
+    ? deskPageView(model, h)
+    : Match.value(model.page).pipe(
+        Match.when('Account', () => [
+          h.submodel({
+            slotId: 'account',
+            model: model.account,
+            view: Account.view,
+            toParentMessage: message => Message.GotAccountMessage({ message }),
+          }),
+        ]),
+        Match.when('Unit', () => [
+          h.submodel({
+            slotId: 'unit',
+            model: model.unit,
+            view: Unit.view,
+            toParentMessage: message => Message.GotUnitMessage({ message }),
+          }),
+        ]),
+        Match.orElse(() => [
+          h.submodel({
+            slotId: 'admin',
+            model: model.admin,
+            view: Admin.view,
+            toParentMessage: message => Message.GotAdminMessage({ message }),
+          }),
+        ]),
+      )
+
+const linkView = (link: Link.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    slotId: 'link',
+    model: link,
+    view: Link.view,
+    toParentMessage: message => Message.GotLinkMessage({ message }),
+  })
+
+const mainView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
+  Option.match(model.maybeLink, {
+    onSome: link => [linkView(link, h)],
+    onNone: () =>
+      Session.match(model.session, {
+        Checking: () => [
+          deskMessage('Opening Case Desk', 'Checking your session.', h),
+        ],
+        SignedOut: () => [loginPage(model, h)],
+        SignedIn: () => pageView(model, h),
+      }),
+  })
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: BRAND.productName,
   body: h.div(
     [h.Class('mx-auto max-w-6xl px-5 sm:px-10')],
-    [
-      topBar(model, h),
-      h.main(
-        [],
-        Session.match(model.session, {
-          Checking: () => [
-            deskMessage('Opening Case Desk', 'Checking your session.', h),
-          ],
-          SignedOut: () => [loginPage(model, h)],
-          SignedIn: () =>
-            DeskLoad.match(model.deskLoad, {
-              Loading: () => [loadingDesk(h)],
-              Failed: ({ failure }) => [failedDesk(failure, h)],
-              Loaded: () => pageView(model, h),
-            }),
-        }),
-      ),
-      footer(model, h),
-    ],
+    [topBar(model, h), h.main([], mainView(model, h)), footer(model, h)],
   ),
 })
