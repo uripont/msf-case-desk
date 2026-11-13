@@ -223,6 +223,10 @@ export const ShareSectionResult = Schema.Struct({
   shareId: ApiId,
   sectionId: ApiId,
   staged: Count,
+  // NOTE: Hash of the redacted content just staged. The author's redaction
+  // preview of the whole share is confirmed with the hash of these, joined
+  // in section order (see `FinishShare.redactionHash`).
+  redactedHash: Schema.String,
 })
 
 export const DraftHeader = Schema.Struct({

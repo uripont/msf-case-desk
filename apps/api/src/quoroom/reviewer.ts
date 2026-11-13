@@ -1,0 +1,710 @@
+import { Effect, Result } from 'effect'
+import type { RpcGroup } from 'effect/rpc'
+
+import {
+  type Person,
+  type QuoroomRpcs,
+  type ReviewDecision,
+  type StoreCommentRecord,
+  CurrentUser,
+  DeadlinePassed,
+  NotAllowedInState,
+  NotFound,
+  Conflict,
+  Validation,
+  applyEvent,
+  canSeeComment,
+  redactorFor,
+  reviewerRoleFor,
+  revisionTitle,
+  templateNodes,
+} from '@case-desk/domain'
+
+import { EMPTY_SECTION, parseSection, topLevelIds } from './content'
+import {
+  type Loaded,
+  type Store,
+  QuoroomClock,
+  QuoroomConfig,
+  flowFailure,
+  idOf,
+  jobsFor,
+  loadReport,
+  loadTemplate,
+  problem,
+  requireReviewer,
+  roundOf,
+  store,
+  validation,
+} from './core'
+import { auditOf, member, peopleOf } from './support'
+import { roundSummaryOf, roundViewOf, sectionRefsOf, summaryOf } from './views'
+
+// NOTE: The reviewer side. Reviewer procedures are for participants only: an
+// author of the report gets `NotFound` here, as for any report they are not a
+// reviewer of. The view a reviewer reads (original or redacted) is taken from
+// `authorize` (the role of the template), never from the request, and every
+// response carries one `content` or `body` that is already the right version.
+
+type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
+
+type RoleView = 'full' | 'redacted'
+
+const roleViewOf = (view: 'original' | 'redacted' | undefined): RoleView =>
+  view === 'original' ? 'full' : 'redacted'
+
+// NOTE: the anchor of a comment as stored. An entry path travels in the item
+// ID, outermost first, joined with `/`.
+const encodeItem = (anchor: {
+  itemId: string
+  entryPath?: ReadonlyArray<string> | undefined
+}): string => [...(anchor.entryPath ?? []), anchor.itemId].join('/')
+
+const anchorOf = (comment: StoreCommentRecord) => {
+  if (
+    comment.itemId === null ||
+    comment.rangeFrom === null ||
+    comment.rangeTo === null ||
+    comment.quoted === null
+  ) {
+    return { kind: 'section' as const, sectionId: comment.sectionId }
+  }
+  const parts = comment.itemId.split('/')
+  const itemId = parts[parts.length - 1] ?? comment.itemId
+  const entryPath = parts.slice(0, -1)
+  return {
+    kind: 'text' as const,
+    sectionId: comment.sectionId,
+    itemId,
+    ...(entryPath.length === 0 ? {} : { entryPath }),
+    from: comment.rangeFrom,
+    to: comment.rangeTo,
+    quoted: comment.quoted,
+  }
+}
+
+const sectionKnown = (template: Loaded['template'], sectionId: string) =>
+  templateNodes(template).some(
+    entry => entry.kind === 'section' && entry.node.id === sectionId,
+  )
+
+const standingOf = (
+  loaded: Loaded,
+  roundId: string,
+  reviewerId: string,
+): ReviewDecision | undefined => {
+  const sent = loaded.reviews
+    .filter(
+      review =>
+        review.roundId === roundId &&
+        review.reviewerId === reviewerId &&
+        review.decision !== 'comment',
+    )
+    .sort((a, b) => a.sentAt - b.sentAt)
+  return sent[sent.length - 1]?.decision
+}
+
+// NOTE: the people list of the draft a revision was made from, for the
+// redaction of text a redacted reader is shown.
+const peopleOfRevision = (db: Store, loaded: Loaded, revision: number) =>
+  Effect.gen(function* () {
+    const published = loaded.revisions.find(entry => entry.number === revision)
+    if (published === undefined) return [] as ReadonlyArray<Person>
+    const draft = yield* db.getDraft(loaded.record.id, published.draftNumber)
+    return draft === null ? [] : peopleOf(draft.people)
+  })
+
+// NOTE: why a round takes no more reviews or comments.
+const roundClosed = (loaded: Loaded, revision: number) => {
+  const entry = roundOf(loaded, revision)
+  if (entry === undefined) return new NotFound()
+  return entry.round.deadlineAt <= loaded.now
+    ? new DeadlinePassed({ deadline: entry.round.deadlineAt })
+    : new NotAllowedInState({
+        state: loaded.record.state,
+        code: 'round_not_open',
+      })
+}
+
+const reviewerStanding = (
+  db: Store,
+  roundId: string,
+  reviewerId: string,
+) => db.getPendingReview(roundId, reviewerId)
+
+const pendingView = (
+  loaded: Loaded,
+  revision: number,
+  userName: string,
+  comments: ReadonlyArray<StoreCommentRecord>,
+  decision: ReviewDecision | null,
+) => ({
+  revision,
+  comments: comments.map(comment => ({
+    id: comment.id,
+    revision,
+    authorName: userName,
+    mine: true as const,
+    body: comment.body,
+    visibility: comment.visibility,
+    sent: false,
+    resolved: comment.resolved,
+    createdAt: comment.createdAt,
+    replies: [],
+    anchor: anchorOf(comment),
+  })),
+  ...(decision === null ? {} : { decision }),
+})
+
+export const reviewerHandlers: Pick<
+  AllHandlers,
+  | 'ListInbox'
+  | 'ListPendingReviews'
+  | 'GetRevisionOutline'
+  | 'GetRevisionSection'
+  | 'ListReviewerComments'
+  | 'AddComment'
+  | 'UpdatePendingComment'
+  | 'DeletePendingComment'
+  | 'GetPendingReview'
+  | 'SavePendingReview'
+  | 'SendReview'
+> = {
+  // NOTE: one line per round the caller takes part in, newest deadline first,
+  // in one query per page (`listReviewerRounds`) plus the template names. The
+  // status of an open round past its deadline reads `decided`: the round is
+  // settled for real the next time the report is loaded. A page holds at most
+  // `limit` rounds (default 10); `next` is the offset of the following one.
+  ListInbox: ({ offset, limit }) =>
+    Effect.gen(function* () {
+      const user = yield* CurrentUser
+      const db = yield* store
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const start = offset ?? 0
+      const size = limit ?? 10
+      const rows = yield* db.listReviewerRounds(user.id, {
+        offset: start,
+        limit: size + 1,
+        openOnly: false,
+        pendingOnly: false,
+      })
+      const items = []
+      for (const row of rows.slice(0, size)) {
+        const template = yield* loadTemplate(
+          db,
+          row.templateId,
+          row.templateVersion,
+        )
+        items.push({
+          reportId: row.reportId,
+          revision: row.revision,
+          label: revisionTitle(row.revision, row.closing),
+          caseReference: row.caseReference,
+          reportName: template.name,
+          deadline: { at: row.deadlineAt, timeZone: row.deadlineZone },
+          status:
+            row.roundState === 'open' && row.deadlineAt <= now
+              ? ('decided' as const)
+              : row.roundState,
+          sentAt: row.publishedAt,
+          ...(row.decision === null ? {} : { myDecision: row.decision }),
+          hasPending: row.pendingDecision !== null || row.pendingComments > 0,
+        })
+      }
+      return {
+        items,
+        ...(rows.length > size ? { next: start + size } : {}),
+      }
+    }),
+
+  // NOTE: the reviews the caller has begun and not sent, in open rounds.
+  ListPendingReviews: () =>
+    Effect.gen(function* () {
+      const user = yield* CurrentUser
+      const db = yield* store
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const rows = yield* db.listReviewerRounds(user.id, {
+        offset: 0,
+        limit: 50,
+        openOnly: true,
+        pendingOnly: true,
+      })
+      return rows
+        .filter(row => row.deadlineAt > now)
+        .map(row => ({
+          reportId: row.reportId,
+          revision: row.revision,
+          label: revisionTitle(row.revision, row.closing),
+          caseReference: row.caseReference,
+          deadline: { at: row.deadlineAt, timeZone: row.deadlineZone },
+          commentCount: row.pendingComments,
+          ...(row.pendingDecision === null
+            ? {}
+            : { decision: row.pendingDecision }),
+        }))
+    }),
+
+  GetRevisionOutline: ({ reportId, revision }) =>
+    Effect.gen(function* () {
+      const { user, loaded, allowed, db } = yield* member(reportId, {
+        type: 'read_revision',
+        revision,
+      })
+      yield* requireReviewer(loaded, user)
+      const role = reviewerRoleFor(
+        { id: user.id, grants: [] },
+        loaded.access,
+        revision,
+      )
+      const entry = roundOf(loaded, revision)
+      const published = loaded.revisions.find(item => item.number === revision)
+      const summary = roundSummaryOf(loaded, revision)
+      if (
+        role === undefined ||
+        entry === undefined ||
+        published === undefined ||
+        summary === undefined
+      ) {
+        return yield* Effect.fail(new NotFound())
+      }
+      // NOTE: the view is the role's, from `authorize`; the draft number is the
+      // revision's own, never one from the request.
+      const view = allowed.view === 'original' ? 'original' : 'redacted'
+      const draft = yield* db.getDraft(reportId, published.draftNumber)
+      const rows = yield* db.getDraftContents(
+        reportId,
+        published.draftNumber,
+        view,
+      )
+      const clock = yield* QuoroomClock
+      yield* db.recordEvent({
+        reportId,
+        kind: 'read',
+        accountId: user.id,
+        revisionNumber: revision,
+        at: yield* clock.now,
+      })
+      const decision = standingOf(loaded, entry.round.id, user.id)
+      return {
+        reportId,
+        revision,
+        label: revisionTitle(revision, entry.round.closing),
+        caseReference: loaded.record.caseFile.reference,
+        caseTitle:
+          view === 'original'
+            ? loaded.record.caseFile.title
+            : (draft?.caseTitleRedacted ?? ''),
+        templateId: loaded.record.templateId,
+        templateVersion: loaded.record.templateVersion,
+        view: roleViewOf(allowed.view),
+        roleId: role.id,
+        canComment: role.permissions.includes('comment'),
+        canVote: role.permissions.includes('vote'),
+        round: summary,
+        ...(decision === undefined ? {} : { myDecision: decision }),
+        closing: entry.round.closing,
+        sections: sectionRefsOf(rows),
+      }
+    }),
+
+  GetRevisionSection: ({ reportId, revision, sectionId }) =>
+    Effect.gen(function* () {
+      const { user, loaded, allowed, db } = yield* member(reportId, {
+        type: 'read_revision',
+        revision,
+      })
+      yield* requireReviewer(loaded, user)
+      if (!topLevelIds(loaded.template).includes(sectionId)) {
+        return yield* Effect.fail(new NotFound())
+      }
+      const view = allowed.view === 'original' ? 'original' : 'redacted'
+      const text = yield* db.getRevisionSection(
+        reportId,
+        revision,
+        sectionId,
+        view,
+      )
+      return {
+        sectionId,
+        view: roleViewOf(allowed.view),
+        content: text === null ? EMPTY_SECTION : parseSection(text),
+      }
+    }),
+
+  ListReviewerComments: ({ reportId, revision }) =>
+    Effect.gen(function* () {
+      const { user, loaded, allowed, db } = yield* member(reportId, {
+        type: 'read_comments',
+        revision,
+      })
+      yield* requireReviewer(loaded, user)
+      const readerView = roleViewOf(allowed.view)
+      const listed = yield* db.listComments({
+        reportId,
+        kind: 'revision',
+        number: revision,
+        audience: { kind: 'reviewer', userId: user.id },
+      })
+      const redactor = redactorFor(
+        yield* peopleOfRevision(db, loaded, revision),
+      )
+      const out = []
+      for (const comment of listed.comments) {
+        // NOTE: the same rule as `canSeeComment`, checked again here.
+        if (
+          !canSeeComment({ id: user.id, grants: [] }, loaded.access, {
+            authorId: comment.authorId,
+            scope: { kind: 'revision', revision },
+            visibility: comment.visibility,
+            sent: comment.reviewId !== null,
+          })
+        ) {
+          continue
+        }
+        // NOTE: a comment with a redacted twin was written in the original
+        // view; any other was written in the redacted one.
+        const writtenFull = comment.redactedBody !== null
+        const mine = comment.authorId === user.id
+        const body =
+          readerView === 'full'
+            ? comment.body
+            : (comment.redactedBody ?? redactor.text(comment.body))
+        const replies = listed.replies
+          .filter(reply => reply.commentId === comment.id)
+          .map(reply => ({
+            id: reply.id,
+            authorName:
+              readerView === 'full'
+                ? reply.authorName
+                : redactor.text(reply.authorName),
+            body:
+              readerView === 'full'
+                ? reply.body
+                : (reply.redactedBody ?? redactor.text(reply.body)),
+            createdAt: reply.createdAt,
+          }))
+        const common = {
+          id: comment.id,
+          revision,
+          authorName:
+            readerView === 'full'
+              ? comment.authorName
+              : redactor.text(comment.authorName),
+          mine,
+          body,
+          visibility: comment.visibility,
+          sent: comment.reviewId !== null,
+          resolved: comment.resolved,
+          createdAt: comment.createdAt,
+          replies,
+        }
+        const sameView = mine || writtenFull === (readerView === 'full')
+        if (sameView) {
+          out.push({ ...common, anchor: anchorOf(comment) })
+        } else {
+          // NOTE: positions point into a text this reader does not have, so
+          // the comment sits on the section, with its quoted text in the
+          // reader's own view (D14).
+          out.push({
+            ...common,
+            anchor: {
+              kind: 'section_note' as const,
+              sectionId: comment.sectionId,
+              ...(comment.quoted === null
+                ? {}
+                : {
+                    quoted:
+                      readerView === 'redacted'
+                        ? redactor.text(comment.quoted)
+                        : comment.quoted,
+                  }),
+            },
+          })
+        }
+      }
+      return out
+    }),
+
+  AddComment: ({ reportId, revision, anchor, body, visibility }) =>
+    Effect.gen(function* () {
+      const { user, loaded, allowed, db } = yield* member(reportId, {
+        type: 'write_comment',
+        revision,
+      })
+      yield* requireReviewer(loaded, user)
+      const entry = roundOf(loaded, revision)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      if (entry.round.state !== 'open' || entry.round.deadlineAt <= loaded.now) {
+        return yield* Effect.fail(roundClosed(loaded, revision))
+      }
+      if (!sectionKnown(loaded.template, anchor.sectionId)) {
+        return yield* Effect.fail(
+          validation('input', 'unknown_section', [anchor.sectionId]),
+        )
+      }
+      const role = reviewerRoleFor(
+        { id: user.id, grants: [] },
+        loaded.access,
+        revision,
+      )
+      const full = role?.view === 'full'
+      // NOTE: a `full` reviewer's comment is stored with its redacted twin,
+      // made now, on the server, from the people list of the revision's draft.
+      const redactor = redactorFor(
+        full ? yield* peopleOfRevision(db, loaded, revision) : [],
+      )
+      const id = yield* idOf('comment')
+      const stored = {
+        id,
+        sectionId: anchor.sectionId,
+        itemId: anchor.kind === 'text' ? encodeItem(anchor) : null,
+        rangeFrom: anchor.kind === 'text' ? anchor.from : null,
+        rangeTo: anchor.kind === 'text' ? anchor.to : null,
+        quoted: anchor.kind === 'text' ? anchor.quoted : null,
+        body,
+        redactedBody: full ? redactor.text(body) : null,
+        visibility,
+        now: loaded.now,
+      }
+      const outcome = yield* db.addPendingComment({
+        ...stored,
+        roundId: entry.round.id,
+        reviewerId: user.id,
+        revision,
+      })
+      if (outcome._tag !== 'Added') {
+        return yield* Effect.fail(roundClosed(loaded, revision))
+      }
+      void allowed
+      return {
+        id,
+        revision,
+        authorName: user.name,
+        mine: true,
+        body,
+        visibility,
+        sent: false,
+        resolved: false,
+        createdAt: loaded.now,
+        replies: [],
+        anchor,
+      }
+    }),
+
+  UpdatePendingComment: ({ reportId, commentId, body, visibility }) =>
+    Effect.gen(function* () {
+      const user = yield* CurrentUser
+      const db = yield* store
+      const comment = yield* db.getComment(reportId, commentId)
+      if (
+        comment === null ||
+        comment.authorId !== user.id ||
+        comment.targetKind !== 'revision'
+      ) {
+        return yield* Effect.fail(new NotFound())
+      }
+      const { loaded } = yield* member(reportId, {
+        type: 'write_comment',
+        revision: comment.targetNumber,
+      })
+      yield* requireReviewer(loaded, user)
+      if (comment.reviewId !== null) {
+        return yield* Effect.fail(new Conflict({ reason: 'already_sent' }))
+      }
+      const nextBody = body ?? comment.body
+      const redactor = redactorFor(
+        comment.redactedBody === null
+          ? []
+          : yield* peopleOfRevision(db, loaded, comment.targetNumber),
+      )
+      const updated = yield* db.updatePendingComment({
+        id: commentId,
+        reviewerId: user.id,
+        body: nextBody,
+        redactedBody:
+          comment.redactedBody === null ? null : redactor.text(nextBody),
+        visibility: visibility ?? comment.visibility,
+      })
+      if (!updated) {
+        return yield* Effect.fail(new Conflict({ reason: 'already_sent' }))
+      }
+      return {
+        id: commentId,
+        revision: comment.targetNumber,
+        authorName: user.name,
+        mine: true,
+        body: nextBody,
+        visibility: visibility ?? comment.visibility,
+        sent: false,
+        resolved: comment.resolved,
+        createdAt: comment.createdAt,
+        replies: [],
+        anchor: anchorOf(comment),
+      }
+    }),
+
+  DeletePendingComment: ({ reportId, commentId }) =>
+    Effect.gen(function* () {
+      const user = yield* CurrentUser
+      const db = yield* store
+      const comment = yield* db.getComment(reportId, commentId)
+      if (
+        comment === null ||
+        comment.authorId !== user.id ||
+        comment.targetKind !== 'revision'
+      ) {
+        return yield* Effect.fail(new NotFound())
+      }
+      const { loaded } = yield* member(reportId, {
+        type: 'write_comment',
+        revision: comment.targetNumber,
+      })
+      yield* requireReviewer(loaded, user)
+      const deleted = yield* db.deletePendingComment(commentId, user.id)
+      if (!deleted) {
+        return yield* Effect.fail(new Conflict({ reason: 'already_sent' }))
+      }
+    }),
+
+  GetPendingReview: ({ reportId, revision }) =>
+    Effect.gen(function* () {
+      const { user, loaded, db } = yield* member(reportId, {
+        type: 'write_comment',
+        revision,
+      })
+      yield* requireReviewer(loaded, user)
+      const entry = roundOf(loaded, revision)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      const pending = yield* reviewerStanding(db, entry.round.id, user.id)
+      return pendingView(
+        loaded,
+        revision,
+        user.name,
+        pending.comments,
+        pending.decision,
+      )
+    }),
+
+  SavePendingReview: ({ reportId, revision, decision }) =>
+    Effect.gen(function* () {
+      const { user, loaded, db } = yield* member(reportId, {
+        type: 'write_comment',
+        revision,
+      })
+      yield* requireReviewer(loaded, user)
+      const entry = roundOf(loaded, revision)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      if (entry.round.state !== 'open' || entry.round.deadlineAt <= loaded.now) {
+        return yield* Effect.fail(roundClosed(loaded, revision))
+      }
+      const saved = yield* db.savePendingReview({
+        roundId: entry.round.id,
+        reviewerId: user.id,
+        decision: decision ?? null,
+        now: loaded.now,
+      })
+      if (saved._tag !== 'Saved') {
+        return yield* Effect.fail(roundClosed(loaded, revision))
+      }
+      const pending = yield* reviewerStanding(db, entry.round.id, user.id)
+      return pendingView(
+        loaded,
+        revision,
+        user.name,
+        pending.comments,
+        pending.decision,
+      )
+    }),
+
+  SendReview: ({ reportId, revision, decision }) =>
+    Effect.gen(function* () {
+      const { user, loaded, db } = yield* member(reportId, {
+        type: 'submit_review',
+        revision,
+        decision,
+      })
+      yield* requireReviewer(loaded, user)
+      const entry = roundOf(loaded, revision)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      const config = yield* QuoroomConfig
+      const applied = applyEvent(
+        { template: loaded.template, authors: loaded.authors, now: loaded.now },
+        loaded.flow,
+        {
+          type: 'submit_review',
+          revision,
+          reviewerId: user.id,
+          decision,
+        },
+      )
+      if (Result.isFailure(applied)) {
+        return yield* Effect.fail(
+          flowFailure(applied.failure, entry.round.deadlineAt),
+        )
+      }
+      const pending = yield* reviewerStanding(db, entry.round.id, user.id)
+      const reviewId = yield* idOf('review')
+      const sentComments = pending.comments.length
+      const jobs = yield* jobsFor(db, config, {
+        template: loaded.template,
+        flow: applied.success,
+        authors: loaded.authors,
+        approvalWatchers: new Set(
+          (yield* Effect.forEach(loaded.authors, author =>
+            db.getProfile(author),
+          ))
+            .filter(profile => profile?.notifyOnApproval === true)
+            .map(profile => profile?.userId ?? ''),
+        ),
+        revisions: loaded.revisions,
+        rounds: loaded.rounds,
+        reviews: loaded.reviews,
+        extraEvents: [
+          {
+            type: 'review',
+            id: reviewId,
+            reviewerId: user.id,
+            revision,
+            decision,
+            hasComments: sentComments > 0,
+            at: loaded.now,
+          },
+        ],
+        reportId,
+        now: loaded.now,
+      })
+      const outcome = yield* db.sendReview({
+        reviewId,
+        roundId: entry.round.id,
+        reportId,
+        reviewerId: user.id,
+        decision,
+        jobs,
+        now: loaded.now,
+        audit: auditOf(loaded.now, user.id, 'review.sent', reportId, {
+          revisionNumber: revision,
+          meta: JSON.stringify({ decision }),
+        }),
+      })
+      if (outcome._tag !== 'Sent') {
+        return yield* Effect.fail(roundClosed(loaded, revision))
+      }
+      // NOTE: the review that completes the rule decides the round: loading
+      // the report settles it and stores the decision.
+      const after = yield* loadReport(reportId)
+      const round =
+        after === undefined ? undefined : roundSummaryOf(after, revision)
+      if (round === undefined) return yield* Effect.fail(new NotFound())
+      return {
+        reviewId,
+        decision,
+        sentAt: loaded.now,
+        commentsSent: sentComments,
+        round,
+      }
+    }),
+}
+
+export { Validation, problem, roundViewOf, summaryOf }

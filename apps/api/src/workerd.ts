@@ -3,11 +3,14 @@
 // Object with SQLite storage on local disk, behind the same SqlDatabase
 // interface D1 satisfies. Built and started by `pnpm workerd`.
 import { DurableObject } from 'cloudflare:workers'
+import { Layer } from 'effect'
 // @ts-expect-error: provided by the bundler from the migrations and seed files.
 import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
 import { makeApp } from './app'
 import { layerSql } from './d1Repository'
+import { QuoroomServicesLive } from './quoroom/core'
+import { layerSqlReport } from './reportRepository'
 import {
   type SqlBatchResult,
   type SqlRow,
@@ -127,7 +130,11 @@ export default {
     if (!new URL(request.url).pathname.startsWith('/api/')) {
       return serveAssets(request, env)
     }
-    const app = makeApp(layerSql(localDatabase(env)))
+    const database = localDatabase(env)
+    const app = makeApp(
+      layerSql(database),
+      Layer.mergeAll(layerSqlReport(database), QuoroomServicesLive),
+    )
     try {
       return await app.handle(request)
     } finally {

@@ -21,6 +21,7 @@ import {
   type PutChunkOutcome,
   type ReplyRecord,
   type ReportRecord,
+  type ReviewerRoundRecord,
   ReportRepository,
   type ReportRepositoryApi,
   type StoreReviewRecord,
@@ -311,6 +312,7 @@ const wcOf = (r: Row) => ({
   userId: s(r['user_id']),
   baseDraft: n(r['base_draft']),
   saveCounter: n(r['save_counter']),
+  sharedCounter: n(r['shared_counter']),
   people: s(r['people']),
   startedAt: n(r['started_at']),
   lastSavedAt: n(r['last_saved_at']),
@@ -471,6 +473,18 @@ const publishSteps = (
         values: [reportId, ...draft.values],
       }
     : { sql: '', values: [] }
+  // NOTE: a participant with a `redacted` view needs the redaction of exactly
+  // this draft confirmed; the check is part of the publish statement.
+  const confirmCheck: Expr =
+    input.requiresConfirmation === true
+      ? {
+          sql:
+            ' AND EXISTS (SELECT 1 FROM redaction_confirmations WHERE report_id = ? AND draft_number = ' +
+            draft.sql +
+            ')',
+          values: [reportId, ...draft.values],
+        }
+      : { sql: '', values: [] }
   const jobs = insertJobsStep(reportId, input.roundId, input.jobs, input.now)
   return compact<GuardedStep>([
     {
@@ -479,7 +493,7 @@ const publishSteps = (
         WHERE EXISTS (SELECT 1 FROM reports WHERE id = ? AND state IN (${IN(input.fromStates.length)}))${latestCheck.sql}
         AND (SELECT COALESCE(MAX(number), 0) FROM revisions WHERE report_id = ?) = ?
         AND NOT EXISTS (SELECT 1 FROM report_members m, json_each(?) j
-          WHERE m.report_id = ? AND m.user_id = json_extract(j.value, '$.userId'))`,
+          WHERE m.report_id = ? AND m.user_id = json_extract(j.value, '$.userId'))${confirmCheck.sql}`,
       values: [
         reportId,
         input.revision,
@@ -494,6 +508,7 @@ const publishSteps = (
         input.revision - 1,
         participantsJson,
         reportId,
+        ...confirmCheck.values,
       ],
       expectChanges: 1,
     },
@@ -640,6 +655,34 @@ const ops: Impl = {
           LEFT JOIN account_profiles p ON p.user_id = u.id ORDER BY u.email`,
       )
     ).map(accountOf),
+  getAccount: async (db, userId) => {
+    const found = await row(
+      db,
+      `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM users u
+        LEFT JOIN account_profiles p ON p.user_id = u.id WHERE u.id = ?`,
+      userId,
+    )
+    return found === null ? null : accountOf(found)
+  },
+  findAccountByEmail: async (db, email) => {
+    const found = await row(
+      db,
+      `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM users u
+        LEFT JOIN account_profiles p ON p.user_id = u.id WHERE u.email = ?`,
+      email,
+    )
+    return found === null ? null : accountOf(found)
+  },
+  updateAccountName: async (db, userId, name) => {
+    const outcome = await runBatch(db, [
+      {
+        sql: 'UPDATE users SET name = ? WHERE id = ?',
+        values: [name, userId],
+        expectChanges: 1,
+      },
+    ])
+    return outcome._tag === 'Committed'
+  },
   createAccount: async (db, input) => {
     const email = normaliseEmail(input.email)
     const profile = input.profile
@@ -1529,11 +1572,87 @@ const ops: Impl = {
       saveCounter: n(outcome.results[0]?.rows[0]?.['save_counter']),
     }
   },
+  getWorkingCopyContents: async (db, reportId, userId) =>
+    (
+      await rows(
+        db,
+        `SELECT section_id, ordinal, content, save_counter FROM working_copy_sections
+          WHERE report_id = ? AND user_id = ? ORDER BY ordinal, section_id`,
+        reportId,
+        userId,
+      )
+    ).map(r => ({
+      sectionId: s(r['section_id']),
+      ordinal: n(r['ordinal']),
+      content: s(r['content']),
+      version: n(r['save_counter']),
+    })),
+  // NOTE: 5 queries with the diagnosis: the guarded counter bump, the removal of sections that
+  // are no longer there and one upsert of every section from a JSON list.
+  rebaseWorkingCopy: async (db, input) => {
+    const list = JSON.stringify(input.sections)
+    const outcome = await runBatch(db, [
+      {
+        sql: `UPDATE working_copies SET base_draft = ?, people = ?,
+          save_counter = save_counter + 1, last_saved_at = ?,
+          shared_counter = CASE WHEN ? = 1 THEN save_counter + 1 ELSE shared_counter END
+          WHERE report_id = ? AND user_id = ? AND save_counter = ?
+          AND EXISTS (SELECT 1 FROM drafts WHERE report_id = ? AND number = ?)
+          RETURNING save_counter`,
+        values: [
+          input.baseDraft,
+          input.people,
+          input.now,
+          flag(input.markShared === true),
+          input.reportId,
+          input.userId,
+          input.expectedCounter,
+          input.reportId,
+          input.baseDraft,
+        ],
+        expectChanges: 1,
+      },
+      {
+        sql: `DELETE FROM working_copy_sections WHERE report_id = ? AND user_id = ?
+          AND section_id NOT IN (SELECT json_extract(j.value, '$.sectionId') FROM json_each(?) j)`,
+        values: [input.reportId, input.userId, list],
+      },
+      {
+        sql: `INSERT INTO working_copy_sections (report_id, user_id, section_id, ordinal,
+          content, save_counter, saved_at)
+          SELECT w.report_id, w.user_id, json_extract(j.value, '$.sectionId'),
+            json_extract(j.value, '$.ordinal'), json_extract(j.value, '$.content'),
+            w.save_counter, ?
+          FROM working_copies w, json_each(?) j
+          WHERE w.report_id = ? AND w.user_id = ?
+          ON CONFLICT (report_id, user_id, section_id) DO UPDATE SET
+            ordinal = excluded.ordinal, content = excluded.content,
+            save_counter = excluded.save_counter, saved_at = excluded.saved_at`,
+        values: [input.now, list, input.reportId, input.userId],
+      },
+    ])
+    if (outcome._tag === 'Committed') {
+      return {
+        _tag: 'Saved',
+        saveCounter: n(outcome.results[0]?.rows[0]?.['save_counter']),
+      }
+    }
+    const draft = await row(
+      db,
+      'SELECT 1 AS ok FROM drafts WHERE report_id = ? AND number = ?',
+      input.reportId,
+      input.baseDraft,
+    )
+    return draft === null
+      ? { _tag: 'Refused', reason: 'no_draft' }
+      : { _tag: 'Refused', reason: 'stale_save' }
+  },
   listDrafting: async (db, reportId) =>
     (
       await rows(
         db,
-        `SELECT w.user_id, u.name, w.base_draft, w.last_saved_at FROM working_copies w
+        `SELECT w.user_id, u.name, w.base_draft, w.last_saved_at,
+          w.save_counter > w.shared_counter AS unshared FROM working_copies w
           JOIN users u ON u.id = w.user_id WHERE w.report_id = ?
           ORDER BY w.last_saved_at DESC, w.user_id`,
         reportId,
@@ -1543,6 +1662,7 @@ const ops: Impl = {
       name: s(r['name']),
       baseDraft: n(r['base_draft']),
       lastSavedAt: n(r['last_saved_at']),
+      unshared: b(r['unshared']),
     })),
 
   // -- sharing
@@ -1646,6 +1766,44 @@ const ops: Impl = {
           WHERE report_id = ? AND user_id = ?`,
         values: [...newDraft.values, input.reportId, input.userId],
       },
+      input.confirmation === undefined
+        ? null
+        : {
+            // NOTE: the confirmation is recorded for the new draft only while
+            // the staged redacted content is the content the author saw.
+            sql: `INSERT INTO redaction_confirmations (report_id, draft_number, confirmed_by, confirmed_at)
+              SELECT ?, ${newDraft.sql}, ?, ?
+              WHERE (SELECT group_concat(redacted_hash, ',') FROM
+                (SELECT redacted_hash FROM share_staging WHERE share_id = ? AND report_id = ?
+                  ORDER BY ordinal, section_id)) = ?`,
+            values: [
+              input.reportId,
+              ...newDraft.values,
+              input.confirmation.confirmedBy,
+              input.now,
+              input.shareId,
+              input.reportId,
+              input.confirmation.joinedHashes,
+            ],
+            expectChanges: 1,
+          },
+      input.confirmation === undefined
+        ? null
+        : auditStep(
+            { ...input.confirmation.audit, reportId: input.reportId },
+            { draft: newDraft },
+          ),
+      {
+        // NOTE: shared up to the newest section that still has the staged
+        // content; a section saved after staging keeps the copy "unshared".
+        sql: `UPDATE working_copies SET shared_counter = COALESCE(
+            (SELECT MAX(w.save_counter) FROM working_copy_sections w
+              JOIN share_staging s ON s.report_id = w.report_id AND s.user_id = w.user_id
+                AND s.section_id = w.section_id AND s.content = w.content
+              WHERE s.share_id = ?), 0)
+          WHERE report_id = ? AND user_id = ?`,
+        values: [input.shareId, input.reportId, input.userId],
+      },
       {
         sql: 'DELETE FROM share_staging WHERE share_id = ? AND report_id = ?',
         values: [input.shareId, input.reportId],
@@ -1674,6 +1832,9 @@ const ops: Impl = {
         (SELECT state FROM reports WHERE id = ?) AS state,
         (SELECT MAX(number) FROM drafts WHERE report_id = ?) AS latest,
         (SELECT COUNT(*) FROM share_staging WHERE share_id = ? AND report_id = ? AND user_id = ?) AS staged,
+        (SELECT COUNT(*) FROM share_staging WHERE share_id = ? AND report_id = ? AND user_id = ?
+          AND ? = (SELECT group_concat(redacted_hash, ',') FROM
+            (SELECT redacted_hash FROM share_staging WHERE share_id = ? AND report_id = ? ORDER BY ordinal, section_id))) AS confirmed,
         (SELECT COALESCE(MAX(number), 0) FROM revisions WHERE report_id = ?) AS last_revision,
         (SELECT COUNT(*) FROM report_members m, json_each(?) j
           WHERE m.report_id = ? AND m.user_id = json_extract(j.value, '$.userId')) AS overlap`,
@@ -1686,6 +1847,12 @@ const ops: Impl = {
       input.shareId,
       input.reportId,
       input.userId,
+      input.shareId,
+      input.reportId,
+      input.userId,
+      input.confirmation?.joinedHashes ?? '',
+      input.shareId,
+      input.reportId,
       input.reportId,
       JSON.stringify(input.publish?.participants ?? []),
       input.reportId,
@@ -1708,6 +1875,15 @@ const ops: Impl = {
     }
     if (n(why['staged']) !== input.expectedSections) {
       return { _tag: 'Refused', reason: 'share_incomplete' }
+    }
+    if (input.confirmation !== undefined && n(why['confirmed']) === 0) {
+      return { _tag: 'Refused', reason: 'not_confirmed' }
+    }
+    if (
+      input.publish?.requiresConfirmation === true &&
+      input.confirmation === undefined
+    ) {
+      return { _tag: 'Refused', reason: 'not_confirmed' }
     }
     if (input.publish !== undefined) {
       if (!input.publish.fromStates.includes(state as never)) {
@@ -1768,6 +1944,33 @@ const ops: Impl = {
     )
     return found === null ? null : s(found['text'])
   },
+  getDraftContents: async (db, reportId, number, view) =>
+    (
+      await rows(
+        db,
+        `SELECT section_id, ordinal, ${view === 'original' ? 'content' : 'redacted_content'} AS text,
+          redacted_hash FROM draft_sections WHERE report_id = ? AND draft_number = ?
+          ORDER BY ordinal, section_id`,
+        reportId,
+        number,
+      )
+    ).map(r => ({
+      sectionId: s(r['section_id']),
+      ordinal: n(r['ordinal']),
+      content: s(r['text']),
+      version: s(r['redacted_hash']),
+    })),
+  listRedactedHashes: async (db, reportId) =>
+    (
+      await rows(
+        db,
+        `SELECT draft_number, group_concat(redacted_hash, ',') AS hash FROM
+          (SELECT draft_number, redacted_hash FROM draft_sections WHERE report_id = ?
+            ORDER BY draft_number, ordinal, section_id)
+          GROUP BY draft_number ORDER BY draft_number`,
+        reportId,
+      )
+    ).map(r => ({ draftNumber: n(r['draft_number']), hash: s(r['hash']) })),
   confirmRedaction: async (db, input) => {
     const outcome = await runBatch(db, [
       {
@@ -1884,6 +2087,15 @@ const ops: Impl = {
     if (n(why?.['last_revision']) !== input.revision - 1) {
       return { _tag: 'Refused', reason: 'revision_number' }
     }
+    if (input.requiresConfirmation === true) {
+      const confirmed = await row(
+        db,
+        'SELECT 1 AS ok FROM redaction_confirmations WHERE report_id = ? AND draft_number = ?',
+        input.reportId,
+        input.draft,
+      )
+      if (confirmed === null) return { _tag: 'Refused', reason: 'not_confirmed' }
+    }
     return { _tag: 'Refused', reason: 'participant_is_author' }
   },
   getRound: async (db, reportId, revision) => {
@@ -1958,6 +2170,71 @@ const ops: Impl = {
       roundState: s(r['state']) as AssignmentRecord['roundState'],
       deadlineAt: n(r['deadline_at']),
       closing: b(r['closing']),
+    })),
+  listReviewerRounds: async (db, userId, options) =>
+    (
+      await rows(
+        db,
+        `SELECT r.report_id, r.revision_number, r.id AS round_id, r.closing, r.state,
+          r.deadline_at, r.deadline_zone, cf.reference, rep.template_id, rep.template_version,
+          v.published_at, p.role_id,
+          (SELECT decision FROM reviews WHERE round_id = r.id AND reviewer_id = p.user_id
+            AND decision <> 'comment' ORDER BY sent_at DESC, id DESC LIMIT 1) AS decision,
+          (SELECT decision FROM pending_reviews WHERE round_id = r.id AND reviewer_id = p.user_id)
+            AS pending_decision,
+          (SELECT COUNT(*) FROM comments WHERE round_id = r.id AND author_id = p.user_id
+            AND review_id IS NULL) AS pending_comments
+          FROM round_participants p
+          JOIN review_rounds r ON r.id = p.round_id
+          JOIN reports rep ON rep.id = r.report_id
+          JOIN case_files cf ON cf.id = rep.case_file_id
+          JOIN revisions v ON v.report_id = r.report_id AND v.number = r.revision_number
+          WHERE p.user_id = ? AND p.removed_at IS NULL${options.openOnly ? " AND r.state = 'open'" : ''}${
+            options.pendingOnly
+              ? ` AND (EXISTS (SELECT 1 FROM pending_reviews q WHERE q.round_id = r.id
+                  AND q.reviewer_id = p.user_id AND q.decision IS NOT NULL)
+                OR EXISTS (SELECT 1 FROM comments c WHERE c.round_id = r.id
+                  AND c.author_id = p.user_id AND c.review_id IS NULL))`
+              : ''
+          }
+          ORDER BY r.deadline_at DESC, r.id LIMIT ? OFFSET ?`,
+        userId,
+        options.limit,
+        options.offset,
+      )
+    ).map((r): ReviewerRoundRecord => ({
+      reportId: s(r['report_id']),
+      revision: n(r['revision_number']),
+      roundId: s(r['round_id']),
+      closing: b(r['closing']),
+      roundState: s(r['state']) as ReviewerRoundRecord['roundState'],
+      deadlineAt: n(r['deadline_at']),
+      deadlineZone: s(r['deadline_zone']),
+      caseReference: s(r['reference']),
+      templateId: s(r['template_id']),
+      templateVersion: n(r['template_version']),
+      publishedAt: n(r['published_at']),
+      roleId: s(r['role_id']),
+      decision: sn(r['decision']) as ReviewerRoundRecord['decision'],
+      pendingDecision: sn(
+        r['pending_decision'],
+      ) as ReviewerRoundRecord['pendingDecision'],
+      pendingComments: n(r['pending_comments']),
+    })),
+  listStagedSections: async (db, shareId, reportId, userId) =>
+    (
+      await rows(
+        db,
+        `SELECT section_id, ordinal, redacted_hash FROM share_staging
+          WHERE share_id = ? AND report_id = ? AND user_id = ? ORDER BY ordinal, section_id`,
+        shareId,
+        reportId,
+        userId,
+      )
+    ).map(r => ({
+      sectionId: s(r['section_id']),
+      ordinal: n(r['ordinal']),
+      redactedHash: s(r['redacted_hash']),
     })),
   decideRound: async (db, input) => {
     const outcome = await runBatch(
@@ -2139,13 +2416,28 @@ const ops: Impl = {
     (
       await runBatch(db, [
         {
-          sql: `UPDATE comments SET body = ?, visibility = ?
+          sql: `UPDATE comments SET body = ?, redacted_body = ?, visibility = ?
             WHERE id = ? AND author_id = ? AND review_id IS NULL`,
-          values: [input.body, input.visibility, input.id, input.reviewerId],
+          values: [
+            input.body,
+            input.redactedBody ?? null,
+            input.visibility,
+            input.id,
+            input.reviewerId,
+          ],
           expectChanges: 1,
         },
       ])
     )._tag === 'Committed',
+  getComment: async (db, reportId, commentId) => {
+    const found = await row(
+      db,
+      `${COMMENT_SELECT} WHERE c.id = ? AND c.report_id = ?`,
+      commentId,
+      reportId,
+    )
+    return found === null ? null : commentOf(found)
+  },
   deletePendingComment: async (db, id, reviewerId) =>
     (
       await rows(
@@ -2363,16 +2655,29 @@ const ops: Impl = {
         reportId,
       )
     ).map(r => s(r['dedupe_key']).slice(reportId.length + 1)),
-  listInbox: async (db, userId, limit) =>
+  listInbox: async (db, userId, limit, before) =>
     (
       await rows(
         db,
         `SELECT * FROM notification_jobs WHERE recipient_id = ? AND channel = 'inbox'
-          AND state = 'done' ORDER BY due_at DESC, id DESC LIMIT ?`,
+          AND state = 'done'${before === undefined ? '' : ' AND id < ?'}
+          ORDER BY id DESC LIMIT ?`,
         userId,
+        ...(before === undefined ? [] : [before]),
         limit,
       )
     ).map(jobOf),
+  countUnread: async (db, userId) =>
+    n(
+      (
+        await row(
+          db,
+          `SELECT COUNT(*) AS c FROM notification_jobs WHERE recipient_id = ?
+            AND channel = 'inbox' AND state = 'done' AND read_at IS NULL`,
+          userId,
+        )
+      )?.['c'],
+    ),
   markInboxRead: async (db, userId, ids, now) =>
     ids.length === 0
       ? 0
@@ -2446,6 +2751,14 @@ const ops: Impl = {
     if (filter.templateId !== undefined) {
       conditions.push('template_id = ?')
       values.push(filter.templateId)
+    }
+    if (filter.actionPrefix !== undefined) {
+      conditions.push('substr(action, 1, ?) = ?')
+      values.push(filter.actionPrefix.length, filter.actionPrefix)
+    }
+    if (filter.before !== undefined) {
+      conditions.push('id < ?')
+      values.push(filter.before)
     }
     return (
       await rows(

@@ -1,5 +1,10 @@
+import { Layer } from 'effect'
+
 import { makeApp } from './app'
 import { layerSql } from './d1Repository'
+import { QuoroomServicesLive } from './quoroom/core'
+import { layerSqlReport } from './reportRepository'
+import { fromD1 } from './sql'
 
 export type Env = {
   readonly ASSETS: Fetcher
@@ -16,7 +21,10 @@ const handleApi = async (
   env: Env,
   context: ExecutionContext,
 ): Promise<Response> => {
-  const app = makeApp(layerSql(env.DB))
+  const app = makeApp(
+    layerSql(env.DB),
+    Layer.mergeAll(layerSqlReport(fromD1(env.DB)), QuoroomServicesLive),
+  )
   try {
     return await app.handle(request)
   } finally {

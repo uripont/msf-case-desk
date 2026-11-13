@@ -2,6 +2,12 @@ import { Effect, Layer, Option, Schema } from 'effect'
 
 import { DEFAULT_RULES, RPC_PATH, type Repository } from '@case-desk/domain'
 
+import {
+  QUOROOM_RPC_PATH,
+  type QuoroomDeps,
+  makeQuoroomImageHandler,
+  makeQuoroomRpcHandler,
+} from './quoroom/server'
 import { makeRpcHandler } from './server'
 import {
   Credentials,
@@ -30,8 +36,20 @@ const isJsonPost = (request: Request): boolean =>
   request.method === 'POST' &&
   (request.headers.get('content-type') ?? '').startsWith('application/json')
 
-export const makeApp = (repository: Layer.Layer<Repository>) => {
+// NOTE: `quoroom` carries the iteration 3 repository, clock and ID services.
+// With it the app also serves the iteration 3 RPC at `/api/q/rpc` and the
+// image route at `/api/images`; without it the app is exactly iteration 2.
+export const makeApp = (
+  repository: Layer.Layer<Repository>,
+  quoroom?: QuoroomDeps,
+) => {
   const rpc = makeRpcHandler(repository)
+  const quoroomRpc =
+    quoroom === undefined ? undefined : makeQuoroomRpcHandler(repository, quoroom)
+  const images =
+    quoroom === undefined
+      ? undefined
+      : makeQuoroomImageHandler(repository, quoroom)
   const run = <A>(program: Effect.Effect<A, unknown, Repository>) =>
     Effect.runPromise(
       program.pipe(
@@ -111,6 +129,20 @@ export const makeApp = (repository: Layer.Layer<Repository>) => {
     if (pathname === RPC_PATH) {
       return rpc.handler(request)
     }
+    if (quoroomRpc !== undefined && pathname === QUOROOM_RPC_PATH) {
+      return quoroomRpc.handler(request)
+    }
+    if (quoroomRpc !== undefined && pathname === `${QUOROOM_RPC_PATH}/`) {
+      const url = new URL(request.url)
+      url.pathname = QUOROOM_RPC_PATH
+      return quoroomRpc.handler(new Request(url, request))
+    }
+    if (
+      images !== undefined &&
+      (pathname === '/api/images' || pathname.startsWith('/api/images/'))
+    ) {
+      return images(request)
+    }
     if (pathname === `${RPC_PATH}/`) {
       const url = new URL(request.url)
       url.pathname = RPC_PATH
@@ -119,5 +151,10 @@ export const makeApp = (repository: Layer.Layer<Repository>) => {
     return Promise.resolve(json({ error: 'NotFound' }, 404))
   }
 
-  return { handle, dispose: rpc.dispose }
+  return {
+    handle,
+    dispose: async () => {
+      await Promise.all([rpc.dispose(), quoroomRpc?.dispose()])
+    },
+  }
 }

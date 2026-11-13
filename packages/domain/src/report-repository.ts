@@ -214,6 +214,9 @@ export type WorkingCopyRecord = Readonly<{
   userId: string
   baseDraft: number
   saveCounter: number
+  // NOTE: the save counter at the last share (or replace) of this working
+  // copy, so "unshared changes" is exactly `saveCounter > sharedCounter`.
+  sharedCounter: number
   people: string
   startedAt: number
   lastSavedAt: number
@@ -233,6 +236,8 @@ export type DraftingRecord = Readonly<{
   name: string
   baseDraft: number
   lastSavedAt: number
+  // NOTE: the working copy has saves that were never shared.
+  unshared: boolean
 }>
 
 export type DraftRecord = Readonly<{
@@ -394,6 +399,35 @@ export type JobRecord = Readonly<{
   readAt: number | null
 }>
 
+export type AuditFilter = Readonly<{
+  reportId?: string
+  templateId?: string
+  // NOTE: `theme.` for the theme's log.
+  actionPrefix?: string
+  // NOTE: only events older than this ID (paging, newest first).
+  before?: number
+  limit: number
+}>
+
+export type ReviewerRoundRecord = Readonly<{
+  reportId: string
+  revision: number
+  roundId: string
+  closing: boolean
+  roundState: RoundState
+  deadlineAt: number
+  deadlineZone: string
+  caseReference: string
+  templateId: string
+  templateVersion: number
+  publishedAt: number
+  roleId: string
+  // NOTE: the standing decision (latest approve or request changes sent).
+  decision: ReviewDecision | null
+  pendingDecision: ReviewDecision | null
+  pendingComments: number
+}>
+
 export type StoreEventKind =
   | 'draft_read'
   | 'read'
@@ -500,6 +534,10 @@ export type PublishInput = Readonly<{
   toState: ReportState
   jobs: ReadonlyArray<NotificationJob>
   publishedBy: string
+  // NOTE: set when a participant has a `redacted` view (D14). The batch then
+  // refuses to publish unless a redaction confirmation exists for the draft
+  // being published, so the check and the publish are one atomic step.
+  requiresConfirmation?: boolean
   now: number
   audit: AuditInput
 }>
@@ -509,6 +547,7 @@ export type PublishRefusal =
   | 'wrong_state'
   | 'revision_number'
   | 'participant_is_author'
+  | 'not_confirmed'
 
 export type PublishOutcome =
   | Readonly<{ _tag: 'Published'; revision: number; roundId: string }>
@@ -524,6 +563,16 @@ export type FinishShareInput = Readonly<{
   redactedCaseTitle: string
   now: number
   audit: AuditInput
+  // NOTE: the author confirmed the redaction preview of this content (D14).
+  // `joinedHashes` is the redacted hashes of the staged sections in order,
+  // joined with commas, exactly as the handler read them; the batch records
+  // the confirmation for the new draft only while the staged content still
+  // gives that string, and refuses everything otherwise.
+  confirmation?: Readonly<{
+    joinedHashes: string
+    confirmedBy: string
+    audit: AuditInput
+  }>
   // NOTE: "share and publish": the same batch also publishes the new draft.
   publish?: PublishInput
 }>
@@ -537,6 +586,12 @@ export type FinishShareOutcome =
   | Readonly<{ _tag: 'AlreadyShared'; number: number }>
   | Readonly<{ _tag: 'Refused'; reason: 'stale_base'; latest: number }>
   | Refused<'share_incomplete' | 'no_working_copy' | PublishRefusal>
+
+export type StagedSectionRecord = Readonly<{
+  sectionId: string
+  ordinal: number
+  redactedHash: string
+}>
 
 export type SaveWorkingCopyInput = Readonly<{
   reportId: string
@@ -553,6 +608,35 @@ export type SaveWorkingCopyInput = Readonly<{
 export type SaveOutcome =
   | Readonly<{ _tag: 'Saved'; saveCounter: number }>
   | Refused<'stale_save'>
+
+// NOTE: a section with its stored text, for the reads that need a whole
+// document in one query (merging, closing checks). `version` is the save
+// counter for working copies and the redacted hash for drafts.
+export type SectionContentRow = Readonly<{
+  sectionId: string
+  ordinal: number
+  content: string
+  version: number | string
+}>
+
+// NOTE: moves a working copy to a new base draft with merged content (the
+// resolution of a stale share). Guarded on the save counter. Sections not in
+// the list are removed from the copy: it is the author's own private copy.
+export type RebaseWorkingCopyInput = Readonly<{
+  reportId: string
+  userId: string
+  expectedCounter: number
+  baseDraft: number
+  sections: ReadonlyArray<
+    Readonly<{ sectionId: string; ordinal: number; content: string }>
+  >
+  people: string
+  // NOTE: the rebased copy has no unshared changes (the content is the shared
+  // draft's, as when a working copy is replaced): `sharedCounter` follows the
+  // new save counter.
+  markShared?: boolean
+  now: number
+}>
 
 export type CreateReportInput = Readonly<{
   caseFile:
@@ -643,6 +727,9 @@ export interface ReportRepositoryApi {
   ) => Eff<boolean>
   readonly listGrants: (userId?: string) => Eff<ReadonlyArray<GrantRecord>>
   readonly listAccounts: () => Eff<ReadonlyArray<AccountRecord>>
+  readonly getAccount: (userId: string) => Eff<AccountRecord | null>
+  readonly findAccountByEmail: (email: string) => Eff<AccountRecord | null>
+  readonly updateAccountName: (userId: string, name: string) => Eff<boolean>
   readonly createAccount: (
     input: CreateAccountInput,
   ) => Eff<Readonly<{ _tag: 'Created' }> | Refused<'email_taken' | 'no_unit'>>
@@ -833,6 +920,13 @@ export interface ReportRepositoryApi {
     sectionId: string,
   ) => Eff<Readonly<{ content: string; version: number }> | null>
   readonly saveWorkingCopy: (input: SaveWorkingCopyInput) => Eff<SaveOutcome>
+  readonly getWorkingCopyContents: (
+    reportId: string,
+    userId: string,
+  ) => Eff<ReadonlyArray<SectionContentRow>>
+  readonly rebaseWorkingCopy: (
+    input: RebaseWorkingCopyInput,
+  ) => Eff<SaveOutcome | Refused<'no_draft'>>
   readonly listDrafting: (
     reportId: string,
   ) => Eff<ReadonlyArray<DraftingRecord>>
@@ -842,6 +936,11 @@ export interface ReportRepositoryApi {
     input: StagedSectionInput,
   ) => Eff<Readonly<{ _tag: 'Staged' }> | Refused<'changed'>>
   readonly finishShare: (input: FinishShareInput) => Eff<FinishShareOutcome>
+  readonly listStagedSections: (
+    shareId: string,
+    reportId: string,
+    userId: string,
+  ) => Eff<ReadonlyArray<StagedSectionRecord>>
 
   // -- drafts and revisions (immutable)
   readonly getDraft: (
@@ -859,6 +958,16 @@ export interface ReportRepositoryApi {
     sectionId: string,
     view: DraftView,
   ) => Eff<string | null>
+  readonly getDraftContents: (
+    reportId: string,
+    number: number,
+    view: DraftView,
+  ) => Eff<ReadonlyArray<SectionContentRow>>
+  // NOTE: per draft, the redacted hashes of its sections joined in order, so
+  // the history can show a hash per draft in one query.
+  readonly listRedactedHashes: (
+    reportId: string,
+  ) => Eff<ReadonlyArray<Readonly<{ draftNumber: number; hash: string }>>>
   readonly confirmRedaction: (
     input: Readonly<{
       reportId: string
@@ -906,6 +1015,17 @@ export interface ReportRepositoryApi {
   readonly listAssignments: (
     userId: string,
   ) => Eff<ReadonlyArray<AssignmentRecord>>
+  // NOTE: one line per round the user takes part in (not removed), newest
+  // deadline first, with what the inbox shows, in one query.
+  readonly listReviewerRounds: (
+    userId: string,
+    options: Readonly<{
+      offset: number
+      limit: number
+      openOnly: boolean
+      pendingOnly: boolean
+    }>,
+  ) => Eff<ReadonlyArray<ReviewerRoundRecord>>
   readonly decideRound: (
     input: Readonly<{
       roundId: string
@@ -967,9 +1087,16 @@ export interface ReportRepositoryApi {
       id: string
       reviewerId: string
       body: string
+      // NOTE: the redacted twin of the new body (a `full` reviewer's comment),
+      // kept in step with it.
+      redactedBody?: string | null
       visibility: StoreCommentVisibility
     }>,
   ) => Eff<boolean>
+  readonly getComment: (
+    reportId: string,
+    commentId: string,
+  ) => Eff<StoreCommentRecord | null>
   readonly deletePendingComment: (
     id: string,
     reviewerId: string,
@@ -1044,7 +1171,10 @@ export interface ReportRepositoryApi {
   readonly listInbox: (
     userId: string,
     limit: number,
+    // NOTE: only notifications due before this time (paging).
+    before?: number,
   ) => Eff<ReadonlyArray<JobRecord>>
+  readonly countUnread: (userId: string) => Eff<number>
   readonly markInboxRead: (
     userId: string,
     ids: ReadonlyArray<number>,
@@ -1053,9 +1183,7 @@ export interface ReportRepositoryApi {
   readonly recordEvent: (event: EventInput) => Eff<void>
   readonly listEvents: (reportId: string) => Eff<ReadonlyArray<EventRecord>>
   readonly appendAudit: (audit: AuditInput) => Eff<void>
-  readonly listAudit: (
-    filter: Readonly<{ reportId?: string; templateId?: string; limit: number }>,
-  ) => Eff<ReadonlyArray<AuditRecord>>
+  readonly listAudit: (filter: AuditFilter) => Eff<ReadonlyArray<AuditRecord>>
 
   // -- images (ImageStore, D5): chunks of base64 text
   readonly putImageChunk: (input: ImageChunkInput) => Eff<PutChunkOutcome>
@@ -1117,6 +1245,9 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   revokeCapability: 1,
   listGrants: 1,
   listAccounts: 1,
+  getAccount: 1,
+  findAccountByEmail: 1,
+  updateAccountName: 2,
   createAccount: 10,
   getProfile: 1,
   putProfile: 1,
@@ -1154,9 +1285,14 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   listWorkingCopySections: 1,
   getWorkingCopySection: 1,
   saveWorkingCopy: 2 + MAX_SECTIONS_PER_SAVE + 1,
+  getWorkingCopyContents: 1,
+  rebaseWorkingCopy: 5,
+  getDraftContents: 1,
+  listRedactedHashes: 1,
   listDrafting: 1,
   stageShareSection: 2,
-  finishShare: 20,
+  finishShare: 22,
+  listStagedSections: 1,
   getDraft: 1,
   listDrafts: 1,
   listDraftSections: 1,
@@ -1172,6 +1308,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   listRounds: 2,
   getParticipation: 1,
   listAssignments: 1,
+  listReviewerRounds: 1,
   decideRound: 7,
   extendDeadline: 6,
   removeParticipant: 5,
@@ -1179,6 +1316,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   getPendingReview: 2,
   addPendingComment: 3,
   updatePendingComment: 2,
+  getComment: 1,
   deletePendingComment: 1,
   sendReview: 7,
   listReviews: 1,
@@ -1190,6 +1328,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   finishJobs: 2,
   listJobKeys: 1,
   listInbox: 1,
+  countUnread: 1,
   markInboxRead: 1,
   recordEvent: 1,
   listEvents: 1,

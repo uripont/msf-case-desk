@@ -6,6 +6,7 @@ import {
   type AccountProfile,
   type AccountRecord,
   type AssignmentRecord,
+  type ReviewerRoundRecord,
   type AuditInput,
   type AuditRecord,
   type StoreCaseFileRecord,
@@ -88,6 +89,7 @@ type WcRow = {
   userId: string
   baseDraft: number
   saveCounter: number
+  sharedCounter: number
   people: string
   startedAt: number
   lastSavedAt: number
@@ -430,6 +432,15 @@ export const makeMemoryReportRepository = (
         return { _tag: 'Refused', reason: 'revision_number' }
       }
       if (
+        input.requiresConfirmation === true &&
+        draft !== 'new' &&
+        !confirmations.some(
+          c => c.reportId === reportId && c.draftNumber === draft,
+        )
+      ) {
+        return { _tag: 'Refused', reason: 'not_confirmed' }
+      }
+      if (
         input.participants.some(p =>
           members.some(m => m.reportId === reportId && m.userId === p.userId),
         )
@@ -584,6 +595,120 @@ export const makeMemoryReportRepository = (
                 g => g.unitId ?? '',
               ),
             ),
+        ),
+      getAccount: userId =>
+        Effect.sync(() => {
+          const user = users.find(u => u.id === userId)
+          return user === undefined ? null : accountRecord(user)
+        }),
+      findAccountByEmail: email =>
+        Effect.sync(() => {
+          const user = users.find(u => u.email === normaliseEmail(email))
+          return user === undefined ? null : accountRecord(user)
+        }),
+      updateAccountName: (userId, name) =>
+        Effect.sync(() => {
+          if (!users.some(u => u.id === userId)) return false
+          users = users.map(u => (u.id === userId ? { ...u, name } : u))
+          return true
+        }),
+      listStagedSections: (shareId, reportId, userId) =>
+        Effect.sync(() =>
+          staging
+            .filter(
+              s =>
+                s.shareId === shareId &&
+                s.reportId === reportId &&
+                s.userId === userId,
+            )
+            .sort(
+              byKey(
+                s => s.ordinal,
+                s => s.sectionId,
+              ),
+            )
+            .map(s => ({
+              sectionId: s.sectionId,
+              ordinal: s.ordinal,
+              redactedHash: s.redactedHash,
+            })),
+        ),
+      listReviewerRounds: (userId, options) =>
+        Effect.sync(() =>
+          participants
+            .filter(p => p.userId === userId && p.removedAt === null)
+            .flatMap((p): Array<ReviewerRoundRecord> => {
+              const round = rounds.find(r => r.id === p.roundId)
+              const report = reports.find(r => r.id === round?.reportId)
+              const revision = revisions.find(
+                v =>
+                  v.reportId === round?.reportId &&
+                  v.number === round?.revision,
+              )
+              if (
+                round === undefined ||
+                report === undefined ||
+                revision === undefined
+              ) {
+                return []
+              }
+              if (options.openOnly && round.state !== 'open') return []
+              const standing = reviews
+                .filter(
+                  r =>
+                    r.roundId === round.id &&
+                    r.reviewerId === userId &&
+                    r.decision !== 'comment',
+                )
+                .sort(byKey(r => r.sentAt))
+                .pop()
+              const mine = pending.find(
+                q => q.roundId === round.id && q.reviewerId === userId,
+              )
+              const pendingComments = comments.filter(
+                c =>
+                  c.roundId === round.id &&
+                  c.authorId === userId &&
+                  c.reviewId === null,
+              ).length
+              if (
+                options.pendingOnly &&
+                (mine?.decision ?? null) === null &&
+                pendingComments === 0
+              ) {
+                return []
+              }
+              return [
+                {
+                  reportId: round.reportId,
+                  revision: round.revision,
+                  roundId: round.id,
+                  closing: round.closing,
+                  roundState: round.state,
+                  deadlineAt: round.deadlineAt,
+                  deadlineZone: round.deadlineZone,
+                  caseReference: (
+                    caseFiles.find(
+                      f => f.id === report.caseFileId,
+                    ) as StoreCaseFileRecord
+                  ).reference,
+                  templateId: report.templateId,
+                  templateVersion: report.templateVersion,
+                  publishedAt: revision.publishedAt,
+                  roleId: p.roleId,
+                  decision: standing?.decision ?? null,
+                  pendingDecision: mine?.decision ?? null,
+                  pendingComments,
+                },
+              ]
+            })
+            .sort(
+              byKey(
+                r => -r.deadlineAt,
+                r => r.roundId,
+              ),
+            )
+            .slice(options.offset, options.offset + options.limit),
         ),
       listAccounts: () =>
         Effect.sync(() =>
@@ -1170,6 +1295,7 @@ export const makeMemoryReportRepository = (
             userId: input.userId,
             baseDraft: input.fromDraft,
             saveCounter: 0,
+            sharedCounter: 0,
             people: draft.people,
             startedAt: input.now,
             lastSavedAt: input.now,
@@ -1269,6 +1395,82 @@ export const makeMemoryReportRepository = (
           })
           return { _tag: 'Saved', saveCounter: next } as const
         }),
+      getWorkingCopyContents: (reportId, userId) =>
+        Effect.sync(() =>
+          wcSections
+            .filter(s => s.reportId === reportId && s.userId === userId)
+            .sort(
+              byKey(
+                s => s.ordinal,
+                s => s.sectionId,
+              ),
+            )
+            .map(s => ({
+              sectionId: s.sectionId,
+              ordinal: s.ordinal,
+              content: s.content,
+              version: s.saveCounter,
+            })),
+        ),
+      rebaseWorkingCopy: input =>
+        Effect.sync(() => {
+          const index = workingCopies.findIndex(
+            w =>
+              w.reportId === input.reportId &&
+              w.userId === input.userId &&
+              w.saveCounter === input.expectedCounter,
+          )
+          const draftExists = drafts.some(
+            d => d.reportId === input.reportId && d.number === input.baseDraft,
+          )
+          if (index < 0 || !draftExists) {
+            return {
+              _tag: 'Refused',
+              reason: draftExists ? 'stale_save' : 'no_draft',
+            } as const
+          }
+          const current = workingCopies[index] as WcRow
+          const next = current.saveCounter + 1
+          workingCopies[index] = {
+            ...current,
+            baseDraft: input.baseDraft,
+            people: input.people,
+            saveCounter: next,
+            sharedCounter: input.markShared === true ? next : current.sharedCounter,
+            lastSavedAt: input.now,
+          }
+          const keep = new Set(input.sections.map(s => s.sectionId))
+          for (let at = wcSections.length - 1; at >= 0; at -= 1) {
+            const row = wcSections[at] as WcSectionRow
+            if (
+              row.reportId === input.reportId &&
+              row.userId === input.userId &&
+              !keep.has(row.sectionId)
+            ) {
+              wcSections.splice(at, 1)
+            }
+          }
+          input.sections.forEach(section => {
+            const at = wcSections.findIndex(
+              s =>
+                s.reportId === input.reportId &&
+                s.userId === input.userId &&
+                s.sectionId === section.sectionId,
+            )
+            const row: WcSectionRow = {
+              reportId: input.reportId,
+              userId: input.userId,
+              sectionId: section.sectionId,
+              ordinal: section.ordinal,
+              content: section.content,
+              saveCounter: next,
+              savedAt: input.now,
+            }
+            if (at < 0) wcSections.push(row)
+            else wcSections[at] = row
+          })
+          return { _tag: 'Saved', saveCounter: next } as const
+        }),
       listDrafting: reportId =>
         Effect.sync(() =>
           workingCopies
@@ -1284,6 +1486,7 @@ export const makeMemoryReportRepository = (
               name: nameOf(w.userId),
               baseDraft: w.baseDraft,
               lastSavedAt: w.lastSavedAt,
+              unshared: w.saveCounter > w.sharedCounter,
             })),
         ),
 
@@ -1356,7 +1559,28 @@ export const makeMemoryReportRepository = (
           if (mine.length !== input.expectedSections) {
             return { _tag: 'Refused', reason: 'share_incomplete' }
           }
+          const joined = [...mine]
+            .sort(
+              byKey(
+                s => s.ordinal,
+                s => s.sectionId,
+              ),
+            )
+            .map(s => s.redactedHash)
+            .join(',')
+          if (
+            input.confirmation !== undefined &&
+            input.confirmation.joinedHashes !== joined
+          ) {
+            return { _tag: 'Refused', reason: 'not_confirmed' }
+          }
           if (input.publish !== undefined) {
+            if (
+              input.publish.requiresConfirmation === true &&
+              input.confirmation === undefined
+            ) {
+              return { _tag: 'Refused', reason: 'not_confirmed' }
+            }
             const refusal = publishRefusal(input.reportId, 'new', input.publish)
             if (refusal !== null && refusal._tag === 'Refused') {
               return refusal
@@ -1403,7 +1627,33 @@ export const makeMemoryReportRepository = (
             }),
           )
           const at = workingCopies.indexOf(wc)
-          workingCopies[at] = { ...wc, baseDraft: number }
+          // NOTE: shared up to the newest section that still has the staged
+          // content (a section saved after staging stays "unshared").
+          const sharedCounter = Math.max(
+            0,
+            ...wcSections
+              .filter(
+                w =>
+                  w.reportId === input.reportId &&
+                  w.userId === input.userId &&
+                  mine.some(
+                    s => s.sectionId === w.sectionId && s.content === w.content,
+                  ),
+              )
+              .map(w => w.saveCounter),
+          )
+          workingCopies[at] = { ...wc, baseDraft: number, sharedCounter }
+          if (input.confirmation !== undefined) {
+            confirmations.push({
+              reportId: input.reportId,
+              draftNumber: number,
+              at: input.now,
+            })
+            addAudit(input.confirmation.audit, {
+              reportId: input.reportId,
+              draftNumber: number,
+            })
+          }
           staging = staging.filter(
             s =>
               !(s.shareId === input.shareId && s.reportId === input.reportId),
@@ -1463,6 +1713,48 @@ export const makeMemoryReportRepository = (
           )
           if (row === undefined) return null
           return view === 'original' ? row.content : row.redactedContent
+        }),
+      getDraftContents: (reportId, number, view) =>
+        Effect.sync(() =>
+          draftSections
+            .filter(s => s.reportId === reportId && s.draftNumber === number)
+            .sort(
+              byKey(
+                s => s.ordinal,
+                s => s.sectionId,
+              ),
+            )
+            .map(s => ({
+              sectionId: s.sectionId,
+              ordinal: s.ordinal,
+              content: view === 'original' ? s.content : s.redactedContent,
+              version: s.redactedHash,
+            })),
+        ),
+      listRedactedHashes: reportId =>
+        Effect.sync(() => {
+          const numbers = [
+            ...new Set(
+              draftSections
+                .filter(s => s.reportId === reportId)
+                .map(s => s.draftNumber),
+            ),
+          ].sort((a, b) => a - b)
+          return numbers.map(draftNumber => ({
+            draftNumber,
+            hash: draftSections
+              .filter(
+                s => s.reportId === reportId && s.draftNumber === draftNumber,
+              )
+              .sort(
+                byKey(
+                  s => s.ordinal,
+                  s => s.sectionId,
+                ),
+              )
+              .map(s => s.redactedHash)
+              .join(','),
+          }))
         }),
       confirmRedaction: input =>
         Effect.sync(() => {
@@ -1803,9 +2095,17 @@ export const makeMemoryReportRepository = (
           comments[index] = {
             ...(comments[index] as CommentRow),
             body: input.body,
+            redactedBody: input.redactedBody ?? null,
             visibility: input.visibility,
           }
           return true
+        }),
+      getComment: (reportId, commentId) =>
+        Effect.sync(() => {
+          const found = comments.find(
+            c => c.id === commentId && c.reportId === reportId,
+          )
+          return found === undefined ? null : commentRecord(found)
         }),
       deletePendingComment: (id, reviewerId) =>
         Effect.sync(() => {
@@ -2011,22 +2311,29 @@ export const makeMemoryReportRepository = (
             .map(j => j.key)
             .sort(),
         ),
-      listInbox: (userId, limit) =>
+      listInbox: (userId, limit, before) =>
         Effect.sync(() =>
           jobs
             .filter(
               j =>
                 j.recipientId === userId &&
                 j.channel === 'inbox' &&
-                j.state === 'done',
+                j.state === 'done' &&
+                (before === undefined || j.id < before),
             )
-            .sort(
-              byKey(
-                j => -j.dueAt,
-                j => -j.id,
-              ),
-            )
+            .sort(byKey(j => -j.id))
             .slice(0, limit),
+        ),
+      countUnread: userId =>
+        Effect.sync(
+          () =>
+            jobs.filter(
+              j =>
+                j.recipientId === userId &&
+                j.channel === 'inbox' &&
+                j.state === 'done' &&
+                j.readAt === null,
+            ).length,
         ),
       markInboxRead: (userId, ids, now) =>
         Effect.sync(() => {
@@ -2084,7 +2391,10 @@ export const makeMemoryReportRepository = (
                 (filter.reportId === undefined ||
                   a.reportId === filter.reportId) &&
                 (filter.templateId === undefined ||
-                  a.templateId === filter.templateId),
+                  a.templateId === filter.templateId) &&
+                (filter.actionPrefix === undefined ||
+                  a.action.startsWith(filter.actionPrefix)) &&
+                (filter.before === undefined || a.id < filter.before),
             )
             .sort(byKey(a => -a.id))
             .slice(0, filter.limit),

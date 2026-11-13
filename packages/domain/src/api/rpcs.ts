@@ -83,7 +83,7 @@ import {
   CommentAnchor,
   CommentBody,
   CommentVisibilityName,
-  InboxItem,
+  InboxPage,
   PendingReview,
   PendingReviewItem,
   ReviewResult,
@@ -419,9 +419,13 @@ export class QuoroomRpcs extends RpcGroup.make(
       ...ReportId,
       shareId: ApiId,
       saveCounter: SaveCounter,
-      // NOTE: The author saw the redaction preview of this working copy
-      // (D14). Needed to publish to a `redacted` role in the same step.
-      confirmRedaction: Schema.optionalKey(Schema.Boolean),
+      // NOTE: SHA-256 (hex) of the staged sections' redacted hashes, joined
+      // by commas in section order: the content the author saw in the
+      // redaction preview (D14). The server records the confirmation in the
+      // same batch as the draft and, if asked, the publish; it is required to
+      // publish to a `redacted` role, and refused when the staged content is
+      // not the content that was seen.
+      redactionHash: Schema.optionalKey(Schema.String),
       // NOTE: "Share and publish": one batch for both.
       publish: Schema.optionalKey(PublishTerms),
     },
@@ -532,7 +536,18 @@ export class QuoroomRpcs extends RpcGroup.make(
   }),
 
   // -- Reviewer: inbox, reading, comments, review (stage 6b, 6c)
-  Rpc.make('ListInbox', { success: Schema.Array(InboxItem), error: StorageError }),
+  Rpc.make('ListInbox', {
+    payload: {
+      // NOTE: Position in the list (newest deadline first); pass the page's
+      // `next` for the following one.
+      offset: Schema.optionalKey(Count),
+      limit: Schema.optionalKey(
+        Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 25 })),
+      ),
+    },
+    success: InboxPage,
+    error: StorageError,
+  }),
   Rpc.make('ListPendingReviews', {
     success: Schema.Array(PendingReviewItem),
     error: StorageError,

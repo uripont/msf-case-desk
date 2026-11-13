@@ -247,9 +247,16 @@ export const reportRepositoryContract = (
       expect(staged).toEqual({ _tag: 'Staged' })
     }
     return {
-      finish: () =>
+      finish: (
+        extra: {
+          confirmation?: NonNullable<
+            Parameters<ReportRepositoryApi['finishShare']>[0]['confirmation']
+          >
+        } = {},
+      ) =>
         run(
           r.finishShare({
+            ...extra,
             shareId: options.shareId,
             reportId: REPORT,
             userId,
@@ -1562,10 +1569,19 @@ export const reportRepositoryContract = (
             id: 'c-1',
             reviewerId: CAROL,
             body: 'Edited',
+            redactedBody: 'Edited (redacted)',
             visibility: 'authors',
           }),
         ),
       ).toBe(true)
+      expect(await run(r.getComment(REPORT, 'c-1'))).toMatchObject({
+        id: 'c-1',
+        body: 'Edited',
+        redactedBody: 'Edited (redacted)',
+        reviewId: null,
+      })
+      expect(await run(r.getComment(REPORT, 'nope'))).toBeNull()
+      expect(await run(r.getComment('other-report', 'c-1'))).toBeNull()
       expect(
         await run(
           r.updatePendingComment({
@@ -2379,6 +2395,395 @@ export const reportRepositoryContract = (
       const after = await run(r.imageStats(REPORT))
       expect(after.databaseBytes).toBe(before.databaseBytes - png.length)
       expect(after.reportBytes).toBe(before.reportBytes - 1000)
+    })
+
+    // ---- whole-document reads and rebasing (stage 2c) --------------------------------
+    test('contents, hashes and rebasing serve a merge in few queries', async () => {
+      const s = await setup()
+      const { r } = s
+      expect(await shareDraft1(s)).toMatchObject({ _tag: 'Shared', number: 1 })
+      const draft = await run(r.getDraftContents(REPORT, 1, 'original'))
+      expect(draft.map(x => [x.sectionId, x.ordinal, x.content])).toEqual([
+        ['sec-a', 0, '{"a":"original A"}'],
+        ['sec-b', 1, '{"b":"original B"}'],
+      ])
+      const redacted = await run(r.getDraftContents(REPORT, 1, 'redacted'))
+      expect(redacted.map(x => x.content)).toEqual([
+        'redacted:{"a":"original A"}',
+        'redacted:{"b":"original B"}',
+      ])
+      expect(await run(r.getDraftContents(REPORT, 9, 'original'))).toEqual([])
+      expect(await run(r.listRedactedHashes(REPORT))).toEqual([
+        { draftNumber: 1, hash: 'hash:{"a":"original A"},hash:{"b":"original B"}' },
+      ])
+      const copy = await run(r.getWorkingCopy(REPORT, ALICE))
+      const own = await run(r.getWorkingCopyContents(REPORT, ALICE))
+      expect(own.map(x => x.sectionId)).toEqual(['sec-a', 'sec-b'])
+      const rebased = await run(
+        r.rebaseWorkingCopy({
+          reportId: REPORT,
+          userId: ALICE,
+          expectedCounter: (copy as NonNullable<typeof copy>).saveCounter,
+          baseDraft: 1,
+          sections: [
+            { sectionId: 'sec-b', ordinal: 0, content: '{"b":"merged"}' },
+            { sectionId: 'sec-c', ordinal: 1, content: '{"c":"new"}' },
+          ],
+          people: '[]',
+          now: 60,
+        }),
+      )
+      expect(rebased._tag).toBe('Saved')
+      const after = await run(r.getWorkingCopy(REPORT, ALICE))
+      expect(after).toMatchObject({ baseDraft: 1, people: '[]' })
+      expect(
+        (await run(r.getWorkingCopyContents(REPORT, ALICE)))
+          .map(x => [x.sectionId, x.content]),
+      ).toEqual([
+        ['sec-b', '{"b":"merged"}'],
+        ['sec-c', '{"c":"new"}'],
+      ])
+      // NOTE: the old counter is stale now, and an unknown base is refused.
+      expect(
+        await run(
+          r.rebaseWorkingCopy({
+            reportId: REPORT,
+            userId: ALICE,
+            expectedCounter: (copy as NonNullable<typeof copy>).saveCounter,
+            baseDraft: 1,
+            sections: [],
+            people: '[]',
+            now: 61,
+          }),
+        ),
+      ).toEqual({ _tag: 'Refused', reason: 'stale_save' })
+      expect(
+        await run(
+          r.rebaseWorkingCopy({
+            reportId: REPORT,
+            userId: ALICE,
+            expectedCounter: (after as NonNullable<typeof after>).saveCounter,
+            baseDraft: 7,
+            sections: [],
+            people: '[]',
+            now: 62,
+          }),
+        ),
+      ).toEqual({ _tag: 'Refused', reason: 'no_draft' })
+    })
+
+    // ---- stage 2c: exact unshared marker, confirmation guard, paging ---------------------
+    test('the unshared marker is exact: a save sets it, a share clears it, a later save sets it again', async () => {
+      const s = await setup()
+      await shareDraft1(s)
+      const mine = () =>
+        run(s.r.listDrafting(REPORT)).then(list =>
+          list.find(x => x.userId === ALICE),
+        )
+      expect((await mine())?.unshared).toBe(false)
+      const copy = (await run(s.r.getWorkingCopy(REPORT, ALICE))) as {
+        saveCounter: number
+        sharedCounter: number
+      }
+      expect(copy.saveCounter).toBe(copy.sharedCounter)
+      const saved = await run(
+        s.r.saveWorkingCopy({
+          reportId: REPORT,
+          userId: ALICE,
+          expectedCounter: copy.saveCounter,
+          sections: [{ sectionId: 'sec-a', ordinal: 0, content: '{"a":"later"}' }],
+          now: 80,
+        }),
+      )
+      expect(saved._tag).toBe('Saved')
+      expect((await mine())?.unshared).toBe(true)
+      const after = (await run(s.r.getWorkingCopy(REPORT, ALICE))) as {
+        saveCounter: number
+        sharedCounter: number
+      }
+      expect(after.saveCounter).toBeGreaterThan(after.sharedCounter)
+      // NOTE: a rebase that marks the copy shared clears it again.
+      const rebased = await run(
+        s.r.rebaseWorkingCopy({
+          reportId: REPORT,
+          userId: ALICE,
+          expectedCounter: after.saveCounter,
+          baseDraft: 1,
+          sections: [{ sectionId: 'sec-a', ordinal: 0, content: '{"a":"original A"}' }],
+          people: '[]',
+          markShared: true,
+          now: 90,
+        }),
+      )
+      expect(rebased._tag).toBe('Saved')
+      expect((await mine())?.unshared).toBe(false)
+    })
+
+    test('share and publish needs the confirmation inside the batch: without it nothing is written', async () => {
+      const s = await setup()
+      const staged = await share(s, {
+        baseDraft: 0,
+        shareId: 'share-1',
+        sections: [{ id: 'sec-a', content: '{"a":1}' }],
+        publish: publishInput({
+          revision: 1,
+          roundId: 'round-1',
+          requiresConfirmation: true,
+        }),
+      })
+      expect(await staged.finish()).toEqual({
+        _tag: 'Refused',
+        reason: 'not_confirmed',
+      })
+      expect(await run(s.r.listDrafts(REPORT))).toHaveLength(1)
+      expect(await run(s.r.listRevisions(REPORT))).toEqual([])
+      // NOTE: a confirmation of other content is refused as well.
+      expect(
+        await staged.finish({
+          confirmation: {
+            joinedHashes: 'hash:something else',
+            confirmedBy: ALICE,
+            audit: audit('redaction.confirm', ALICE, 50),
+          },
+        }),
+      ).toEqual({ _tag: 'Refused', reason: 'not_confirmed' })
+      expect(await run(s.r.listDrafts(REPORT))).toHaveLength(1)
+      expect(await run(s.r.listRevisions(REPORT))).toEqual([])
+      const done = await staged.finish({
+        confirmation: {
+          joinedHashes: 'hash:{"a":1}',
+          confirmedBy: ALICE,
+          audit: audit('redaction.confirm', ALICE, 50),
+        },
+      })
+      expect(done).toEqual({ _tag: 'Shared', number: 1, revision: 1 })
+      expect((await run(s.r.getDraft(REPORT, 1)))?.redactionConfirmedAt).toBe(50)
+      expect(await run(s.r.listRevisions(REPORT))).toHaveLength(1)
+    })
+
+    test('a plain publish with a redacted view is refused until the draft is confirmed', async () => {
+      const s = await setup()
+      await shareDraft1(s)
+      const input = {
+        reportId: REPORT,
+        draft: 1,
+        ...publishInput({
+          revision: 1,
+          roundId: 'round-1',
+          requiresConfirmation: true,
+        }),
+      }
+      expect(await run(s.r.publishRevision(input))).toEqual({
+        _tag: 'Refused',
+        reason: 'not_confirmed',
+      })
+      expect(await run(s.r.listRevisions(REPORT))).toEqual([])
+      await run(
+        s.r.confirmRedaction({
+          reportId: REPORT,
+          draftNumber: 1,
+          confirmedBy: ALICE,
+          now: 70,
+          audit: audit('redaction.confirm', ALICE, 70),
+        }),
+      )
+      expect((await run(s.r.publishRevision(input)))._tag).toBe('Published')
+    })
+
+    test('staged sections are listed in order with their redacted hashes', async () => {
+      const s = await setup()
+      await share(s, {
+        baseDraft: 0,
+        shareId: 'share-1',
+        sections: [
+          { id: 'sec-b', content: 'B' },
+          { id: 'sec-a', content: 'A' },
+        ],
+      })
+      expect(
+        await run(s.r.listStagedSections('share-1', REPORT, ALICE)),
+      ).toEqual([
+        { sectionId: 'sec-b', ordinal: 0, redactedHash: 'hash:B' },
+        { sectionId: 'sec-a', ordinal: 1, redactedHash: 'hash:A' },
+      ])
+      expect(await run(s.r.listStagedSections('share-1', REPORT, BOB))).toEqual(
+        [],
+      )
+    })
+
+    test('accounts are found by id and email, and a name can be changed', async () => {
+      const s = await setup()
+      expect((await run(s.r.getAccount(CAROL)))?.name).toBe('Carol Reviewer')
+      expect(await run(s.r.getAccount('nobody'))).toBeNull()
+      expect((await run(s.r.findAccountByEmail('carol@case-desk.test')))?.id).toBe(
+        CAROL,
+      )
+      expect(await run(s.r.findAccountByEmail('nobody@case-desk.test'))).toBeNull()
+      expect(await run(s.r.updateAccountName(CAROL, 'Carol R.'))).toBe(true)
+      expect((await run(s.r.getAccount(CAROL)))?.name).toBe('Carol R.')
+      expect(await run(s.r.updateAccountName('nobody', 'x'))).toBe(false)
+    })
+
+    test('reviewer rounds page properly, newest deadline first, with the standing decision and pending work', async () => {
+      const s = await published()
+      const { r } = s
+      const all = await run(
+        r.listReviewerRounds(CAROL, {
+          offset: 0,
+          limit: 10,
+          openOnly: false,
+          pendingOnly: false,
+        }),
+      )
+      expect(all).toHaveLength(1)
+      expect(all[0]).toMatchObject({
+        reportId: REPORT,
+        revision: 1,
+        roundId: 'round-1',
+        caseReference: 'REF-1',
+        templateId: TEMPLATE,
+        roleId: 'reviewer',
+        decision: null,
+        pendingDecision: null,
+        pendingComments: 0,
+      })
+      expect(
+        await run(
+          r.listReviewerRounds(CAROL, {
+            offset: 1,
+            limit: 10,
+            openOnly: false,
+            pendingOnly: false,
+          }),
+        ),
+      ).toEqual([])
+      expect(
+        await run(
+          r.listReviewerRounds(CAROL, {
+            offset: 0,
+            limit: 10,
+            openOnly: true,
+            pendingOnly: true,
+          }),
+        ),
+      ).toEqual([])
+      await run(
+        r.savePendingReview({
+          roundId: 'round-1',
+          reviewerId: CAROL,
+          decision: 'approve',
+          now: 140,
+        }),
+      )
+      await run(r.addPendingComment(comment('c-1', 'authors', 'x')))
+      const pendingOnly = await run(
+        r.listReviewerRounds(CAROL, {
+          offset: 0,
+          limit: 10,
+          openOnly: true,
+          pendingOnly: true,
+        }),
+      )
+      expect(pendingOnly).toHaveLength(1)
+      expect(pendingOnly[0]).toMatchObject({
+        pendingDecision: 'approve',
+        pendingComments: 1,
+      })
+      await run(
+        r.sendReview({
+          reviewId: 'rv-1',
+          roundId: 'round-1',
+          reportId: REPORT,
+          reviewerId: CAROL,
+          decision: 'approve',
+          jobs: [],
+          now: 160,
+          audit: audit('review.send', CAROL, 160),
+        }),
+      )
+      const sent = await run(
+        r.listReviewerRounds(CAROL, {
+          offset: 0,
+          limit: 10,
+          openOnly: false,
+          pendingOnly: false,
+        }),
+      )
+      expect(sent[0]).toMatchObject({
+        decision: 'approve',
+        pendingDecision: null,
+        pendingComments: 0,
+      })
+      expect(
+        await run(
+          r.listReviewerRounds(BOB, {
+            offset: 0,
+            limit: 10,
+            openOnly: false,
+            pendingOnly: false,
+          }),
+        ),
+      ).toEqual([])
+    })
+
+    test('the inbox pages by id and counts unread', async () => {
+      const s = await setup()
+      await shareDraft1(s)
+      const { r } = s
+      await run(
+        r.publishRevision({
+          reportId: REPORT,
+          draft: 1,
+          ...publishInput({
+            revision: 1,
+            roundId: 'round-1',
+            jobs: [
+              job('p1', CAROL, 'review_request', 200),
+              job('p2', CAROL, 'review_request', 201),
+              job('p3', CAROL, 'review_request', 202),
+            ],
+          }),
+        }),
+      )
+      const claimed = await run(
+        r.claimDueJobs({ now: 300, limit: 10, leaseMs: 100, claimedBy: 'w' }),
+      )
+      await run(
+        r.finishJobs({
+          claimedBy: 'w',
+          done: claimed.filter(j => j.recipientId === CAROL).map(j => j.id),
+          skipped: [],
+          now: 310,
+        }),
+      )
+      const total = await run(r.countUnread(CAROL))
+      expect(total).toBeGreaterThanOrEqual(3)
+      const first = await run(r.listInbox(CAROL, 2))
+      expect(first).toHaveLength(2)
+      const next = await run(r.listInbox(CAROL, 10, first[1]?.id))
+      expect(next.every(j => j.id < (first[1]?.id as number))).toBe(true)
+      expect(first.length + next.length).toBe(total)
+      await run(r.markInboxRead(CAROL, [first[0]?.id as number], 320))
+      expect(await run(r.countUnread(CAROL))).toBe(total - 1)
+      expect(await run(r.countUnread(DAN))).toBe(0)
+    })
+
+    test('the audit log filters by action prefix and pages before an id', async () => {
+      const s = await setup()
+      await run(s.r.appendAudit(audit('theme.updated', ALICE, 10)))
+      await run(s.r.appendAudit(audit('theme.updated', ALICE, 11)))
+      await run(s.r.appendAudit(audit('template.published', ALICE, 12)))
+      const theme = await run(s.r.listAudit({ actionPrefix: 'theme.', limit: 10 }))
+      expect(theme.map(a => a.action)).toEqual(['theme.updated', 'theme.updated'])
+      const older = await run(
+        s.r.listAudit({
+          actionPrefix: 'theme.',
+          before: theme[0]?.id as number,
+          limit: 10,
+        }),
+      )
+      expect(older).toHaveLength(1)
+      expect(older[0]?.id).toBe(theme[1]?.id)
     })
   })
 }

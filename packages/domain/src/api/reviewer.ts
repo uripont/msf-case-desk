@@ -81,6 +81,13 @@ export const InboxItem = Schema.Struct({
   hasPending: Schema.Boolean,
 })
 
+export const InboxPage = Schema.Struct({
+  items: Schema.Array(InboxItem),
+  // NOTE: Absent on the last page.
+  next: Schema.optionalKey(Count),
+})
+export type InboxPage = typeof InboxPage.Type
+
 export const PendingReviewItem = Schema.Struct({
   reportId: ApiId,
   revision: Revision,
