@@ -44,7 +44,7 @@ describe('section keys', () => {
     )
   })
 
-  test('an entry key is not addressed here', () => {
+  test('an entry mark on a section that is not repeatable names nothing', () => {
     expect(isEntryKey('allegations#a1')).toBe(true)
     expect(sectionOfKey(INTAKE_TEMPLATE, 'allegations#a1')).toBeUndefined()
     const contents = withItemValue(

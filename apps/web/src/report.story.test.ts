@@ -19,6 +19,7 @@ import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
 import {
   REPORT_ID,
+  SAVED_AT,
   SECOND_AUTHOR,
   TEMPLATES,
   detailOf,
@@ -50,6 +51,7 @@ const changed = (sectionKey: string, itemId: string, optionId: string) =>
   reportMessage(
     Report.Message.ChangedItem({
       sectionKey,
+      steps: [],
       itemId,
       maybeValue: choose(optionId),
     }),
@@ -145,6 +147,7 @@ describe('editing and saving', () => {
         Report.Message.SucceededSaveSection({
           sectionId: 'jurisdiction-materiality',
           saveCounter: 1,
+          savedAt: SAVED_AT,
         }),
       ),
     )
@@ -185,13 +188,12 @@ describe('editing and saving', () => {
     const failed = update(
       first.model,
       reportMessage(
-        Report.Message.FailedSaveSection({
+        Report.Message.StaleSaveSection({
           sectionId: 'jurisdiction-materiality',
-          failure: Failure.Refused({ message: 'Saved from another tab.' }),
         }),
       ),
     )
-    expect(failed.model.report.save._tag).toBe('Failed')
+    expect(failed.model.report.save._tag).toBe('Stale')
     expect(
       contentOfKey(failed.model.report.contents, JURISDICTION).values[
         'jurisdiction-answer'

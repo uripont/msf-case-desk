@@ -52,6 +52,17 @@ const conflictText = (reason: string): string =>
     ),
   )
 
+const StaleShape = Schema.Struct({
+  _tag: Schema.Literal('Conflict'),
+  reason: Schema.Literal('stale_save'),
+})
+
+// NOTE: A save refused because the working copy's save counter has moved on:
+// the same author saved from another tab. It is told apart from other
+// refusals because the screen keeps the unsaved edit and offers a reload.
+export const isStaleSave = (error: unknown): boolean =>
+  Schema.is(StaleShape)(error)
+
 export const failureOf = (error: unknown): Failure =>
   Option.match(decodeErrorShape(error), {
     onNone: () => Failure.Unavailable(),

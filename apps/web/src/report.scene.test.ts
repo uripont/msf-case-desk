@@ -29,6 +29,7 @@ import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
 import {
   REPORT_ID,
+  SAVED_AT,
   SECOND_AUTHOR,
   detailOf,
   loadedReport,
@@ -241,9 +242,10 @@ describe('structured fields', () => {
         Report.Message.SucceededSaveSection({
           sectionId: 'case-details',
           saveCounter: 1,
+          savedAt: SAVED_AT,
         }),
       ),
-      expect(text('All changes saved.')).toExist(),
+      expect(text(/Saved at \d\d:\d\d/)).toExist(),
     )
   })
 
@@ -287,6 +289,7 @@ describe('branching', () => {
         Report.Message.SucceededSaveSection({
           sectionId: 'jurisdiction-materiality',
           saveCounter: 1,
+          savedAt: SAVED_AT,
         }),
       ),
       expect(text(/The report ends here/)).toExist(),
@@ -296,6 +299,7 @@ describe('branching', () => {
         Report.Message.SucceededSaveSection({
           sectionId: 'jurisdiction-materiality',
           saveCounter: 2,
+          savedAt: SAVED_AT,
         }),
       ),
       expect(text(/The report ends here/)).toBeAbsent(),

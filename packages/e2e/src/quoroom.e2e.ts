@@ -12,7 +12,7 @@
 // repository. Everything is synthetic.
 import { strict as assert } from 'node:assert'
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -656,7 +656,7 @@ const main = async (): Promise<void> => {
         await row.first().click()
       }
       const saved = async (): Promise<void> => {
-        await pilot.getByText('All changes saved.').waitFor()
+        await pilot.getByText(/Saved at \d\d:\d\d/).waitFor()
       }
 
       await pilot.getByLabel('Investigator', { exact: true }).fill('Synthetic Investigator')
@@ -723,7 +723,7 @@ const main = async (): Promise<void> => {
       const tool = (name: string) => page.getByRole('button', { name, exact: true })
       const settle = async (): Promise<void> => {
         await page.waitForTimeout(700)
-        await page.getByText('All changes saved.').waitFor()
+        await page.getByText(/Saved at \d\d:\d\d/).waitFor()
       }
       const storedContent = (): Promise<string> =>
         page.locator('quoroom-editor').evaluate(element => (element as unknown as { content: string }).content)
@@ -880,7 +880,7 @@ const main = async (): Promise<void> => {
       const figures = page.locator('quoroom-editor figure')
       const settle = async (): Promise<void> => {
         await page.waitForTimeout(700)
-        await page.getByText('All changes saved.').waitFor()
+        await page.getByText(/Saved at \d\d:\d\d/).waitFor()
       }
       type StoredChunk = { chunks: number; mime: string; width: number; height: number; base64: string }
       const storedChunk = async (imageId: string, index: number): Promise<StoredChunk> => {
@@ -1064,6 +1064,366 @@ const main = async (): Promise<void> => {
       await openSummary()
       await page.waitForFunction(() => document.querySelectorAll('quoroom-editor figure quoroom-image img').length === 3)
       await noSideScroll(page)
+    })
+
+    // NOTE: Stages 4e and 4f, at 375 px. Entries, *not applicable*, the save
+    // states, two tabs of one author, and a fixture that fills every item of
+    // both built-in templates (entered through the API in bulk, read back and
+    // compared with the expected JSON). The invented panel template cannot be
+    // reached from here (the build holds the built-in templates only); it is
+    // covered by the API tests with the same fixture generator.
+    type Json = Record<string, any>
+    let reportCalls = 0
+    const rpc = async (page: Page, tag: string, payload: Json): Promise<any> => {
+      reportCalls += 1
+      const response = await page.context().request.post(`${pilotUrl}/api/q/rpc`, {
+        headers: { 'content-type': 'application/json' },
+        data: JSON.stringify({ _tag: 'Request', id: String(reportCalls), tag, payload, headers: [] }),
+      })
+      assert.equal(response.status(), 200, `${tag}: HTTP ${response.status()}`)
+      const parsed: unknown = JSON.parse(await response.text())
+      const messages: Array<Json> = Array.isArray(parsed) ? parsed : [parsed as Json]
+      const exit = messages.find(message => message._tag === 'Exit')
+      assert.ok(exit !== undefined, `${tag}: no answer in ${JSON.stringify(messages).slice(0, 300)}`)
+      if (exit.exit._tag !== 'Success') {
+        throw new Error(`${tag} failed: ${JSON.stringify(exit.exit).slice(0, 400)}`)
+      }
+      return exit.exit.value
+    }
+    const fixture = (name: string): Json =>
+      JSON.parse(readFileSync(join(import.meta.dirname, '../fixtures', `${name}.content.json`), 'utf8'))
+    const reportIdOf = (page: Page): string => new URL(page.url()).pathname.split('/').pop() ?? ''
+    const openIn = async (page: Page, name: RegExp): Promise<void> => {
+      const row = page.getByRole('button', { name })
+      if (!(await row.first().isVisible())) {
+        await page.getByRole('button', { name: /^Sections/ }).click()
+      }
+      await row.first().click()
+    }
+    const settled = async (page: Page): Promise<void> => {
+      await page.waitForTimeout(400)
+      await page.getByText(/Saved at \d\d:\d\d/).waitFor()
+    }
+    const storedSection = async (page: Page, sectionId: string): Promise<Json> =>
+      (await rpc(page, 'GetWorkingCopySection', { reportId: reportIdOf(page), sectionId })).content
+    // NOTE: Entry IDs are made by the browser, so they are replaced by their
+    // place before a UI-built content is compared.
+    const withoutEntryIds = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(withoutEntryIds)
+        : value !== null && typeof value === 'object'
+          ? Object.fromEntries(
+              Object.entries(value).map(([key, inner]) => [key, key === 'id' ? 'ID' : withoutEntryIds(inner)]),
+            )
+          : value
+    const instructionsOf = (template: Json): Array<string> => {
+      const out: Array<string> = []
+      const walk = (node: unknown): void => {
+        if (Array.isArray(node)) {
+          node.forEach(walk)
+        } else if (node !== null && typeof node === 'object') {
+          for (const [key, inner] of Object.entries(node)) {
+            if (key === 'instruction' && typeof inner === 'string') {
+              out.push(inner)
+            } else {
+              walk(inner)
+            }
+          }
+        }
+      }
+      walk(template)
+      return out
+    }
+    const reportPathOfIntake = new URL(pilotPage?.url() ?? pilotUrl).pathname
+    let investigationPath = ''
+
+    await step('repeatable subsections on a phone: add, title, reorder, remove after a confirmation, numbering', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      await page.goto(`${pilotUrl}/reports`)
+      await page.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await page
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Investigation report (version 1)' })
+      await page.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0002')
+      await page.getByLabel('Case file title', { exact: true }).fill('Synthetic investigation file')
+      await page.getByRole('button', { name: 'Create report' }).click()
+      await page.getByRole('link', { name: 'Open report PIL-0002' }).click()
+      await page.getByRole('heading', { name: 'Investigation report', level: 1 }).waitFor()
+      investigationPath = new URL(page.url()).pathname
+      await page.getByText(/Saved at \d\d:\d\d/).waitFor()
+
+      await openIn(page, /Background, /)
+      await page.getByText('0 background topic entries.').waitFor()
+      await page.getByRole('button', { name: 'Add background topic' }).click()
+      await page.getByRole('textbox', { name: /Title of this background topic/ }).fill('Security context')
+      await settled(page)
+      await openIn(page, /Background, /)
+      await page.getByRole('button', { name: 'Add background topic' }).click()
+      await page.getByRole('textbox', { name: /Title of this background topic/ }).fill('Staffing history')
+      await settled(page)
+      await openIn(page, /Background, /)
+      await page.getByText('2 background topic entries.').waitFor()
+      await shot(page, 'entries-1-two-topics')
+
+      // The order, then the move buttons.
+      const titles = async (): Promise<Array<string>> => {
+        const content = await storedSection(page, 'background')
+        return content.sections['background-topic'].entries.map((entry: Json) => entry.title)
+      }
+      assert.deepEqual(await titles(), ['Security context', 'Staffing history'])
+      await page.getByRole('button', { name: 'Move Staffing history up' }).click()
+      await settled(page)
+      assert.deepEqual(await titles(), ['Staffing history', 'Security context'])
+
+      // A removal asks first, and cancelling removes nothing.
+      await page.getByRole('button', { name: 'Remove Security context' }).click()
+      await page.getByRole('heading', { name: 'Remove Security context?' }).waitFor()
+      await shot(page, 'entries-2-confirm')
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await page.getByRole('heading', { name: 'Remove Security context?' }).waitFor({ state: 'detached' })
+      assert.deepEqual(await titles(), ['Staffing history', 'Security context'])
+      await page.getByRole('button', { name: 'Remove Security context' }).click()
+      await page.getByRole('button', { name: 'Remove', exact: true }).click()
+      await settled(page)
+      assert.deepEqual(await titles(), ['Staffing history'])
+      await page.getByText('1 background topic entry.').waitFor().catch(() => undefined)
+      await noSideScroll(page)
+
+      // An entry opens as a section of its own, with the title the author chose.
+      await page.getByRole('navigation', { name: 'Subsections' }).getByRole('button', { name: /Staffing history, / }).click()
+      await page.getByRole('heading', { name: /Staffing history/, level: 2 }).waitFor()
+      await shot(page, 'entries-3-entry')
+
+      // The nested subsections of an allegation, and the numbering.
+      await openIn(page, /Facts and findings, /)
+      await page.getByText(/^0 allegation entries\. Add 1 more/).waitFor()
+      await page.getByRole('button', { name: 'Add allegation' }).click()
+      await settled(page)
+      await openIn(page, /Facts and findings, /)
+      await page.getByRole('button', { name: 'Add allegation' }).click()
+      await settled(page)
+      await page.getByRole('button', { name: 'Remove Allegation 2' }).click()
+      await page.getByRole('button', { name: 'Remove', exact: true }).click()
+      await settled(page)
+      await page.getByRole('navigation', { name: 'Subsections' }).getByRole('button', { name: /Allegation 1, / }).click()
+      await page.getByRole('button', { name: 'Add key element' }).click()
+      await settled(page)
+      await shot(page, 'entries-4-nested')
+      const facts = await storedSection(page, 'facts-findings')
+      const blocks = facts.sections['allegation-block'].entries
+      assert.equal(blocks.length, 1)
+      assert.equal(blocks[0].sections['key-element'].entries.length, 1)
+    })
+
+    await step('not applicable on a phone: a reason is required, what was written is kept, and it can be undone', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      await openIn(page, /Recommendation, /)
+      await page.getByRole('navigation', { name: 'Subsections' }).getByRole('button', { name: /For individuals, / }).click()
+      await page.getByRole('heading', { name: /For individuals/, level: 2 }).waitFor()
+      await page.getByRole('button', { name: 'Mark For individuals as not applicable' }).click()
+      await page.getByRole('button', { name: 'Mark as not applicable' }).click()
+      await page.getByText('Write a reason before marking this as not applicable.').waitFor()
+      await shot(page, 'na-1-reason-required')
+      await page.getByRole('textbox', { name: 'Why is this not applicable?' }).fill('No individual is recommended.')
+      await page.getByRole('button', { name: 'Mark as not applicable' }).click()
+      await page.getByText('No individual is recommended.').waitFor()
+      await settled(page)
+      await shot(page, 'na-2-marked')
+      const recommendation = (await storedSection(page, 'recommendation')).sections['recommend-individuals']
+      assert.equal(recommendation.notApplicable.reason, 'No individual is recommended.')
+
+      await page.reload()
+      await page.getByRole('heading', { name: 'Investigation report', level: 1 }).waitFor()
+      await openIn(page, /Recommendation, /)
+      await page.getByRole('navigation', { name: 'Subsections' }).getByRole('button', { name: /For individuals, / }).click()
+      await page.getByText('No individual is recommended.').waitFor()
+      await page.getByRole('button', { name: 'Mark For individuals as applicable again' }).click()
+      await settled(page)
+      await page.getByText('No individual is recommended.').waitFor({ state: 'detached' })
+      const restored = (await storedSection(page, 'recommendation')).sections?.['recommend-individuals']
+      assert.equal(restored?.notApplicable, undefined, 'the mark was not cleared')
+      await noSideScroll(page)
+    })
+
+    await step('the save state is shown: saved at a time with a counter, offline, and a warning before leaving', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      await openIn(page, /Background, /)
+      await page.getByRole('navigation', { name: 'Subsections' }).getByRole('button', { name: /Staffing history, / }).click()
+      await page.getByText(/^Save \d+$/).waitFor()
+      const counter = async (): Promise<number> =>
+        Number(((await page.getByText(/^Save \d+$/).textContent()) ?? '').replace('Save ', ''))
+      const before = await counter()
+      const titleBox = page.getByRole('textbox', { name: /Title of this background topic/ })
+      await titleBox.fill('Staffing history, revised')
+      await settled(page)
+      assert.ok((await counter()) > before, 'the save counter did not move')
+
+      // Offline: the edit waits, the state says so, and it is sent when the network returns.
+      await page.context().setOffline(true)
+      await page.getByText('Offline', { exact: true }).waitFor()
+      await titleBox.fill('Staffing history, edited offline')
+      await page.getByText('Offline', { exact: true }).waitFor()
+      await shot(page, 'save-1-offline')
+      // A page with unsaved edits asks before it is closed.
+      let dialogType = ''
+      page.once('dialog', dialog => {
+        dialogType = dialog.type()
+        void dialog.dismiss()
+      })
+      await page.close({ runBeforeUnload: true })
+      await page.waitForTimeout(300)
+      assert.equal(dialogType, 'beforeunload', 'leaving with unsaved edits did not ask')
+      assert.equal(page.isClosed(), false, 'the page closed although the author stayed')
+      await page.context().setOffline(false)
+      await page.getByText(/Saved at \d\d:\d\d/).waitFor({ timeout: 20_000 })
+      await page.waitForTimeout(300)
+      const content = await storedSection(page, 'background')
+      assert.equal(content.sections['background-topic'].entries[0].title, 'Staffing history, edited offline')
+      // Once saved, leaving asks nothing.
+      let asked = false
+      page.once('dialog', dialog => {
+        asked = true
+        void dialog.dismiss()
+      })
+      await page.reload()
+      await page.getByRole('heading', { name: 'Investigation report', level: 1 }).waitFor()
+      assert.equal(asked, false, 'a saved page asked before leaving')
+    })
+
+    await step('two tabs of one author: the second save is refused, nothing is overwritten, the edit is kept', async () => {
+      const first = pilotPage
+      assert.ok(first !== undefined, 'no pilot page')
+      const second = await first.context().newPage()
+      await second.goto(`${pilotUrl}${investigationPath}`)
+      await second.getByRole('heading', { name: 'Investigation report', level: 1 }).waitFor()
+      await openIn(second, /Background, /)
+      await second.getByText(/Saved at \d\d:\d\d/).waitFor()
+
+      // The first tab saves first.
+      await openIn(first, /Background, /)
+      await first.getByRole('button', { name: 'Add background topic' }).click()
+      await first.getByRole('textbox', { name: /Title of this background topic/ }).fill('Written in the first tab')
+      await settled(first)
+
+      // The second tab edits an old copy.
+      await second.getByRole('button', { name: 'Add background topic' }).click()
+      await second.getByRole('textbox', { name: /Title of this background topic/ }).fill('Written in the second tab')
+      await second.getByRole('heading', { name: 'This working copy changed in another tab' }).waitFor()
+      await shot(second, 'tabs-1-other-tab')
+      assert.equal(
+        await second.getByRole('textbox', { name: /Title of this background topic/ }).inputValue(),
+        'Written in the second tab',
+        'the local edit was lost',
+      )
+      const stored = JSON.stringify(await storedSection(first, 'background'))
+      assert.ok(stored.includes('Written in the first tab'), 'the first tab edit is not stored')
+      assert.ok(!stored.includes('Written in the second tab'), 'the refused edit was stored')
+
+      // Reload the saved version: the edit is kept, to copy or put back.
+      await second.getByRole('button', { name: 'Reload the saved version' }).click()
+      await second.getByRole('heading', { name: 'Edits that were not saved' }).waitFor()
+      const kept = await second.getByRole('textbox', { name: 'Background' }).inputValue()
+      assert.ok(kept.includes('Written in the second tab') || kept.includes('Staffing history'), 'the kept edit shows nothing')
+      await shot(second, 'tabs-2-kept')
+      await second.getByRole('button', { name: 'Put my version of Background back' }).click()
+      await settled(second)
+      const after = JSON.stringify(await storedSection(second, 'background'))
+      assert.ok(after.includes('Written in the second tab'), 'the kept edit was not put back')
+      await noSideScroll(second)
+      await second.close()
+    })
+
+    await step('a report that fills every item of the investigation template is stored as expected, with no instruction text', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      const reportId = reportIdOf(page)
+      const expected = fixture('investigation')
+      const copy = await rpc(page, 'StartWorkingCopy', { reportId })
+      let saveCounter: number = copy.saveCounter
+      for (const [sectionId, content] of Object.entries(expected.sections as Json)) {
+        const saved = await rpc(page, 'SaveSection', { reportId, sectionId, saveCounter, content })
+        saveCounter = saved.saveCounter
+      }
+      await page.reload()
+      await page.getByRole('heading', { name: 'Investigation report', level: 1 }).waitFor()
+      await openIn(page, /Facts and findings, /)
+      await page.getByText('2 allegation entries.').waitFor()
+      await shot(page, 'fixture-1-investigation')
+      const stored: Json = {}
+      for (const sectionId of Object.keys(expected.sections as Json)) {
+        stored[sectionId] = await storedSection(page, sectionId)
+      }
+      assert.deepEqual(stored, expected.sections)
+      const version = await rpc(page, 'GetTemplateVersion', {
+        templateId: expected.templateId,
+        version: expected.templateVersion,
+        reportId,
+      })
+      const instructions = instructionsOf(version.template)
+      assert.ok(instructions.length > 5, 'no instruction texts were found to scan for')
+      const text = JSON.stringify(stored)
+      for (const instruction of instructions) {
+        assert.ok(!text.includes(instruction), `stored content holds an instruction text: ${instruction.slice(0, 40)}`)
+      }
+      assert.deepEqual(withoutEntryIds(stored), withoutEntryIds(expected.sections))
+    })
+
+    await step('a repeated item on a phone, and a report that fills every item of the intake template is stored as expected', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      await page.goto(`${pilotUrl}${reportPathOfIntake}`)
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await openIn(page, /Allegations and regulatory framework, /)
+      await page.getByText(/^\d+ allegation entr(y|ies)\./).waitFor()
+      await page.getByRole('button', { name: 'Add allegation' }).click()
+      await page.getByLabel('Type of allegation', { exact: true }).last().fill('Synthetic type')
+      await settled(page)
+      await page.getByRole('button', { name: 'Add allegation' }).click()
+      await settled(page)
+      await shot(page, 'items-1-allegations')
+      await page.getByRole('button', { name: 'Move Allegation 2 up' }).click()
+      await settled(page)
+      await page.getByRole('button', { name: 'Remove Allegation 2' }).click()
+      await page.getByRole('heading', { name: 'Remove Allegation 2?' }).waitFor()
+      await page.getByRole('button', { name: 'Remove', exact: true }).click()
+      await settled(page)
+      const one = await storedSection(page, 'allegations')
+      assert.equal(one.values['allegation-list'].entries.length, 1)
+      await noSideScroll(page)
+
+      const reportId = reportIdOf(page)
+      const expected = fixture('intake')
+      // NOTE: The committee's conclusion is written while the report is being
+      // concluded, which this check does not reach; a drafting author is refused.
+      const { 'committee-conclusion': _conclusion, ...drafted } = expected.sections as Json
+      expected.sections = drafted
+      const copy = await rpc(page, 'StartWorkingCopy', { reportId })
+      let saveCounter: number = copy.saveCounter
+      for (const [sectionId, content] of Object.entries(expected.sections as Json)) {
+        const saved = await rpc(page, 'SaveSection', { reportId, sectionId, saveCounter, content })
+        saveCounter = saved.saveCounter
+      }
+      await page.reload()
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await openIn(page, /Allegations and regulatory framework, /)
+      await page.getByText('2 allegation entries.').waitFor()
+      const stored: Json = {}
+      for (const sectionId of Object.keys(expected.sections as Json)) {
+        stored[sectionId] = await storedSection(page, sectionId)
+      }
+      assert.deepEqual(stored, expected.sections)
+      const version = await rpc(page, 'GetTemplateVersion', {
+        templateId: expected.templateId,
+        version: expected.templateVersion,
+        reportId,
+      })
+      const text = JSON.stringify(stored)
+      for (const instruction of instructionsOf(version.template)) {
+        assert.ok(!text.includes(instruction), `stored content holds an instruction text: ${instruction.slice(0, 40)}`)
+      }
     })
   } finally {
     await browser?.close()

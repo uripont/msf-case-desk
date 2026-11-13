@@ -1,0 +1,619 @@
+{
+  "schemaVersion": 1,
+  "templateId": "ethics-intake",
+  "templateVersion": 1,
+  "sections": {
+    "case-details": {
+      "values": {
+        "received-date": {
+          "type": "date",
+          "date": "2026-03-04"
+        },
+        "investigator": {
+          "type": "text",
+          "text": "Synthetic text for investigator"
+        },
+        "intake-date": {
+          "type": "date",
+          "date": "2026-03-04"
+        },
+        "linked-cases": {
+          "type": "text",
+          "text": "Synthetic text for linked-cases"
+        },
+        "linked-reason": {
+          "type": "text",
+          "text": "Synthetic text for linked-reason"
+        },
+        "complainant-kind": {
+          "type": "select",
+          "optionIds": [
+            "known",
+            "anonymous"
+          ]
+        },
+        "complainant": {
+          "type": "people",
+          "personIds": [
+            "person-1"
+          ]
+        },
+        "subjects": {
+          "type": "people",
+          "personIds": [
+            "person-1",
+            "person-2"
+          ]
+        },
+        "reporting-mechanism": {
+          "type": "text",
+          "text": "Synthetic text for reporting-mechanism"
+        }
+      },
+      "sections": {}
+    },
+    "summary": {
+      "values": {
+        "summary-text": {
+          "type": "rich_text",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Synthetic text for summary-text"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "sections": {}
+    },
+    "allegations": {
+      "values": {
+        "allegation-list": {
+          "type": "repeated",
+          "entries": [
+            {
+              "id": "e1",
+              "values": {
+                "allegation-type": {
+                  "type": "text",
+                  "text": "Synthetic text for allegation-type"
+                },
+                "allegation-framework": {
+                  "type": "rich_text",
+                  "doc": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Synthetic text for allegation-framework"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "e2",
+              "values": {
+                "allegation-type": {
+                  "type": "text",
+                  "text": "Synthetic text for allegation-type"
+                },
+                "allegation-framework": {
+                  "type": "rich_text",
+                  "doc": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Synthetic text for allegation-framework"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "sections": {}
+    },
+    "jurisdiction-materiality": {
+      "values": {},
+      "sections": {
+        "jurisdiction": {
+          "values": {
+            "jurisdiction-answer": {
+              "type": "select",
+              "optionIds": [
+                "yes"
+              ]
+            },
+            "jurisdiction-explanation": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for jurisdiction-explanation"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "materiality": {
+          "values": {
+            "materiality-answer": {
+              "type": "select",
+              "optionIds": [
+                "yes"
+              ]
+            },
+            "materiality-explanation": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for materiality-explanation"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        }
+      }
+    },
+    "witnesses": {
+      "values": {
+        "witness-list": {
+          "type": "repeated",
+          "entries": [
+            {
+              "id": "e3",
+              "values": {
+                "witness-person": {
+                  "type": "people",
+                  "personIds": [
+                    "person-1"
+                  ]
+                },
+                "witness-role": {
+                  "type": "text",
+                  "text": "Synthetic text for witness-role"
+                }
+              }
+            },
+            {
+              "id": "e4",
+              "values": {
+                "witness-person": {
+                  "type": "people",
+                  "personIds": [
+                    "person-1"
+                  ]
+                },
+                "witness-role": {
+                  "type": "text",
+                  "text": "Synthetic text for witness-role"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "sections": {}
+    },
+    "results": {
+      "values": {},
+      "sections": {
+        "research-results": {
+          "values": {
+            "research-results-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for research-results-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "related-cases": {
+          "values": {
+            "related-cases-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for related-cases-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "other-background": {
+          "values": {
+            "other-background-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for other-background-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        }
+      }
+    },
+    "context-risks": {
+      "values": {},
+      "sections": {
+        "evidence-risk": {
+          "values": {
+            "evidence-risk-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for evidence-risk-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "working-environment": {
+          "values": {
+            "working-environment-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for working-environment-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "cultural-issues": {
+          "values": {
+            "cultural-issues-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for cultural-issues-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "logistics-security": {
+          "values": {
+            "logistics-security-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for logistics-security-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        },
+        "technical-issues": {
+          "values": {
+            "technical-issues-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for technical-issues-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        }
+      }
+    },
+    "assessment": {
+      "values": {
+        "assessment-list": {
+          "type": "repeated",
+          "entries": [
+            {
+              "id": "e5",
+              "values": {
+                "assessment-text": {
+                  "type": "rich_text",
+                  "doc": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Synthetic text for assessment-text"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "e6",
+              "values": {
+                "assessment-text": {
+                  "type": "rich_text",
+                  "doc": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Synthetic text for assessment-text"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "concluding-statement": {
+          "type": "select",
+          "optionIds": [
+            "investigate"
+          ]
+        },
+        "assessment-explanation": {
+          "type": "rich_text",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Synthetic text for assessment-explanation"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "sections": {}
+    },
+    "recommendation": {
+      "values": {
+        "recommendation-list": {
+          "type": "repeated",
+          "entries": [
+            {
+              "id": "e7",
+              "values": {
+                "recommendation-option": {
+                  "type": "select",
+                  "optionIds": [
+                    "investigate"
+                  ]
+                },
+                "recommendation-comment": {
+                  "type": "text",
+                  "text": "Synthetic text for recommendation-comment"
+                }
+              }
+            },
+            {
+              "id": "e8",
+              "values": {
+                "recommendation-option": {
+                  "type": "select",
+                  "optionIds": [
+                    "investigate"
+                  ]
+                },
+                "recommendation-comment": {
+                  "type": "text",
+                  "text": "Synthetic text for recommendation-comment"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "sections": {}
+    },
+    "sign-off": {
+      "values": {
+        "sign-investigator": {
+          "type": "signature",
+          "name": "Synthetic Signer sign-investigator",
+          "date": "2026-03-05"
+        },
+        "sign-case-manager": {
+          "type": "signature",
+          "name": "Synthetic Signer sign-case-manager",
+          "date": "2026-03-05"
+        }
+      },
+      "sections": {}
+    },
+    "committee-conclusion": {
+      "values": {
+        "conclusion-date": {
+          "type": "date",
+          "date": "2026-03-04"
+        },
+        "conclusion-members": {
+          "type": "rich_text",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Synthetic text for conclusion-members"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "conclusion-decision": {
+          "type": "rich_text",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Synthetic text for conclusion-decision"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "conclusion-votes": {
+          "type": "rich_text",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Synthetic text for conclusion-votes"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "sections": {}
+    }
+  }
+}

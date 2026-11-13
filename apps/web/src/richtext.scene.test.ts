@@ -19,7 +19,7 @@ import { authorModel } from './quoroom.fixtures'
 import { serializeRichText } from './quoroom/editor/richText'
 import { editorElement } from './quoroom/editor/spec'
 import * as Report from './quoroom/report'
-import { REPORT_ID, loadedReport } from './report.fixtures'
+import { REPORT_ID, SAVED_AT, loadedReport } from './report.fixtures'
 import { view } from './view'
 
 const reportModelFor = (options: Parameters<typeof loadedReport>[1] = {}) =>
@@ -83,9 +83,10 @@ describe('the editor slot', () => {
         Report.Message.SucceededSaveSection({
           sectionId: 'summary',
           saveCounter: 1,
+          savedAt: SAVED_AT,
         }),
       ),
-      expect(text('All changes saved.')).toExist(),
+      expect(text(/Saved at \d\d:\d\d/)).toExist(),
     )
   })
 

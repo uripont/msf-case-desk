@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "templateId": "test-panel",
+  "templateVersion": 1,
+  "sections": {
+    "overview": {
+      "values": {
+        "overview-text": {
+          "type": "rich_text",
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Synthetic text for overview-text"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "panel-topic": {
+          "type": "text",
+          "text": "Synthetic text for panel-topic"
+        }
+      },
+      "sections": {}
+    },
+    "items-reviewed": {
+      "values": {
+        "finding-list": {
+          "type": "repeated",
+          "entries": [
+            {
+              "id": "e1",
+              "values": {
+                "finding-title": {
+                  "type": "text",
+                  "text": "Synthetic text for finding-title"
+                },
+                "finding-body": {
+                  "type": "rich_text",
+                  "doc": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Synthetic text for finding-body"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "e2",
+              "values": {
+                "finding-title": {
+                  "type": "text",
+                  "text": "Synthetic text for finding-title"
+                },
+                "finding-body": {
+                  "type": "rich_text",
+                  "doc": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Synthetic text for finding-body"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "sections": {
+        "remarks": {
+          "values": {
+            "remarks-text": {
+              "type": "rich_text",
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Synthetic text for remarks-text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sections": {}
+        }
+      }
+    },
+    "outcome": {
+      "values": {
+        "outcome-choice": {
+          "type": "select",
+          "optionIds": [
+            "accept"
+          ]
+        },
+        "outcome-date": {
+          "type": "date",
+          "date": "2026-03"
+        }
+      },
+      "sections": {}
+    }
+  }
+}

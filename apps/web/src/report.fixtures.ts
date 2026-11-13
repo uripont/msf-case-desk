@@ -61,6 +61,9 @@ export const detailOf = (
   authors: [FIRST_AUTHOR],
 })
 
+// NOTE: 2026-03-04 14:32 UTC, a fixed time for the save text.
+export const SAVED_AT = Date.UTC(2026, 2, 4, 14, 32)
+
 export const loadedReport = (
   template: Template,
   options: Readonly<{
@@ -89,6 +92,13 @@ export const loadedReport = (
     },
   ],
   saveCounter: options.saveCounter ?? 0,
+  savedAt: SAVED_AT,
+  copy: {
+    baseDraft: 0,
+    latestDraft: 0,
+    behind: false,
+    hasUnsharedChanges: false,
+  },
   maybeImageUsage: Option.none(),
   unitMembers: [
     {

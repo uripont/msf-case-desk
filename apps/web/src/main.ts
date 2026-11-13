@@ -1226,7 +1226,7 @@ const submitLogin = (model: Model) => ({
 
 export const CLOCK_TICK_MINUTES = 1
 
-export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
+const appSubscriptions = Subscription.make<Model, Message>()(_entry => ({
   clock: Subscription.persistentEntry(
     Stream.tick(Duration.minutes(CLOCK_TICK_MINUTES)).pipe(
       Stream.mapEffect(() => Clock.currentTimeMillis),
@@ -1241,6 +1241,19 @@ export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
     }).pipe(Stream.debounce(Duration.millis(LAYOUT_SETTLE_MS))),
   ),
 }))
+
+const reportSubscriptions = Subscription.lift(Report.subscriptions)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.report),
+  toParentMessage: message => Message.GotReportMessage({ message }),
+})
+
+export const subscriptions = Subscription.aggregate(
+  appSubscriptions,
+  reportSubscriptions,
+)
 
 // VIEW TRANSITION
 

@@ -56,6 +56,7 @@ const change = (content: string, version: number) =>
   reportMessage(
     Report.Message.ChangedRichText({
       sectionKey: SUMMARY,
+      steps: [],
       itemId: ITEM,
       content,
       version,
