@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { Array, Effect, Option, Schema } from 'effect'
+import { Array, Effect, Option, Record, Schema } from 'effect'
 import { Command, Dom, Submodel, Update } from 'foldkit'
 import { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
@@ -33,8 +33,15 @@ import {
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'
 import { withQuoroom } from './api'
+import {
+  EMPTY_RICH_TEXT_JSON,
+  parseRichTextJson,
+  serializeRichText,
+} from './editor/richText'
+import { EditorState, RichTextSelection, editorKey } from './editor/state'
 import { Failure, failureOf } from './failure'
 import { type CaseValues, itemField } from './fields'
+import { IMAGE_LIMITS_TEXT, remainingBytes, usageText } from './images/plan'
 import { FormState, formStatus, isSubmitting } from './formState'
 import {
   failureAlert,
@@ -56,7 +63,11 @@ import { LoadState } from './unit'
 // content on every change, so a branch that ends the report, and the answer
 // that restores it, show at once.
 //
-// Rich text and repeated entries are placeholders until stages 4c and 4e.
+// Rich text is edited in the editor element (stage 4c), loaded lazily the
+// first time a section with a rich-text item is shown. Its changes arrive as
+// canonical JSON text with a version, are decoded again here, and are saved
+// through the same per-section save as every other item. Repeated entries are
+// placeholders until stage 4e.
 
 export const SECTION_HEADING_ID = 'section-heading'
 
@@ -68,6 +79,13 @@ export const SaveStatus = defineTaggedUnion({
   Failed: { failure: Failure },
 })
 export type SaveStatus = typeof SaveStatus.Type
+
+// NOTE: What the server says the report's images use (`ListImages`), shown
+// above the editor and used to refuse a picture that cannot fit.
+export const ImageUsage = Schema.Struct({
+  usedBytes: Schema.Int,
+  limitBytes: Schema.Int,
+})
 
 export const Model = Schema.Struct({
   origin: Schema.String,
@@ -87,6 +105,11 @@ export const Model = Schema.Struct({
   coAuthorChoice: Schema.String,
   coAuthorForm: FormState,
   maybeNotice: Schema.Option(Schema.String),
+  editor: EditorState,
+  editorVersions: Schema.Record(Schema.String, Schema.Int),
+  maybeSelection: Schema.Option(RichTextSelection),
+  maybeRefusal: Schema.Option(Schema.String),
+  maybeImageUsage: Schema.Option(ImageUsage),
 })
 export type Model = typeof Model.Type
 
@@ -108,6 +131,11 @@ export const initialModel = Model.make({
   coAuthorChoice: '',
   coAuthorForm: FormState.Editing(),
   maybeNotice: Option.none(),
+  editor: EditorState.NotLoaded(),
+  editorVersions: {},
+  maybeSelection: Option.none(),
+  maybeRefusal: Option.none(),
+  maybeImageUsage: Option.none(),
 })
 
 export const LoadedReport = Schema.Struct({
@@ -118,6 +146,7 @@ export const LoadedReport = Schema.Struct({
   people: PeopleList,
   saveCounter: Schema.Int,
   unitMembers: Schema.Array(UnitMember),
+  maybeImageUsage: Schema.Option(ImageUsage),
 })
 export type LoadedReport = typeof LoadedReport.Type
 
@@ -145,6 +174,25 @@ export const Message = defineMessageUnion({
   SucceededAddCoAuthor: { account: AccountRef },
   FailedAddCoAuthor: { failure: Failure },
   CompletedFocusSectionHeading: {},
+  SucceededLoadEditor: {},
+  FailedLoadEditor: {},
+  ClickedRetryLoadEditor: {},
+  ChangedRichText: {
+    sectionKey: Schema.String,
+    itemId: Schema.String,
+    content: Schema.String,
+    version: Schema.Int,
+  },
+  AddedImage: {},
+  SucceededLoadImageUsage: { usage: ImageUsage },
+  FailedLoadImageUsage: {},
+  SelectedRichTextRange: {
+    sectionKey: Schema.String,
+    itemId: Schema.String,
+    from: Schema.Number,
+    to: Schema.Number,
+    text: Schema.String,
+  },
 })
 export type Message = typeof Message.Type
 
@@ -180,9 +228,21 @@ export const LoadReport = Command.define('LoadReport', {
         const unitMembers = yield* client
           .ListUnitMembers({ unit: detail.summary.caseFile.unit })
           .pipe(Effect.catch(() => Effect.succeed([])))
+        // NOTE: Image space is a nicety; a report is opened without it if the
+        // server cannot say (a member who may not read the working copy).
+        const maybeImageUsage = yield* client.ListImages({ reportId }).pipe(
+          Effect.map(list =>
+            Option.some({
+              usedBytes: list.referencedBytes,
+              limitBytes: list.limitBytes,
+            }),
+          ),
+          Effect.catch(() => Effect.succeed(Option.none())),
+        )
         return {
           detail,
           template,
+          maybeImageUsage,
           unitName:
             units.find(unit => unit.id === detail.summary.caseFile.unit)
               ?.name ?? '',
@@ -236,6 +296,23 @@ export const SaveSection = Command.define('SaveSection', {
     ),
 })
 
+export const LoadImageUsage = Command.define('LoadImageUsage', {
+  args: { reportId: Schema.String },
+  messages: [Message.SucceededLoadImageUsage, Message.FailedLoadImageUsage],
+  execute: ({ reportId }) =>
+    withQuoroom(client => client.ListImages({ reportId })).pipe(
+      Effect.map(list =>
+        Message.SucceededLoadImageUsage({
+          usage: {
+            usedBytes: list.referencedBytes,
+            limitBytes: list.limitBytes,
+          },
+        }),
+      ),
+      Effect.catch(() => Effect.succeed(Message.FailedLoadImageUsage())),
+    ),
+})
+
 export const AddCoAuthor = Command.define('AddCoAuthor', {
   args: { reportId: Schema.String, accountId: Schema.String },
   messages: [Message.SucceededAddCoAuthor, Message.FailedAddCoAuthor],
@@ -257,6 +334,14 @@ export const FocusSectionHeading = Command.define('FocusSectionHeading', {
   execute: Dom.focus(`#${SECTION_HEADING_ID}`, { makeFocusable: true }).pipe(
     Effect.catch(() => Effect.void),
     Effect.as(Message.CompletedFocusSectionHeading()),
+  ),
+})
+
+export const LoadEditor = Command.define('LoadEditor', {
+  messages: [Message.SucceededLoadEditor, Message.FailedLoadEditor],
+  execute: Effect.tryPromise(() => import('./editor/element')).pipe(
+    Effect.as(Message.SucceededLoadEditor()),
+    Effect.catch(() => Effect.succeed(Message.FailedLoadEditor())),
   ),
 })
 
@@ -418,20 +503,94 @@ const withAuthor = (
     : Array.append(detail.authors, account),
 })
 
+const REFUSED_RICH_TEXT =
+  'That change to the text uses something Quoroom cannot store, so it was not saved.'
+
+const applyItemChange = (
+  model: Model,
+  sectionKey: string,
+  itemId: string,
+  maybeValue: Option.Option<ItemValue>,
+): Update.Return<Model, Message> =>
+  isEntryKey(sectionKey)
+    ? { model }
+    : startSave(
+        withDirty(
+          modifyFields(model, {
+            contents: contents =>
+              withItemValue(
+                contents,
+                sectionKey,
+                itemId,
+                Option.getOrUndefined(maybeValue),
+              ),
+          }),
+          topSectionIdOfKey(sectionKey),
+        ),
+      )
+
+export const showsEditableRichText = (model: Model): boolean =>
+  Option.match(
+    Option.all({ detail: model.maybeDetail, template: model.maybeTemplate }),
+    {
+      onNone: () => false,
+      onSome: ({ detail, template }) => {
+        const outline = outlineOf(template, model)
+        const key = selectedKeyOf(model, outline.rows)
+        const section = sectionOfKey(template, key)
+        return (
+          section !== undefined &&
+          outline.states.get(key) !== 'ended' &&
+          editability(
+            template,
+            detail.summary.state,
+            detail.permissions,
+            topSectionIdOfKey(key),
+          ).kind === 'editable' &&
+          Array.some(section.items, item => item.type === 'rich_text')
+        )
+      },
+    },
+  )
+
+const requestEditor = (model: Model): Update.Return<Model, Message> =>
+  EditorState.guards.NotLoaded(model.editor) && showsEditableRichText(model)
+    ? {
+        model: modifyFields(model, { editor: () => EditorState.Loading() }),
+        commands: [LoadEditor()],
+      }
+    : { model }
+
+const selectSection =
+  (key: string): Update.Step<Model, Message> =>
+  stepModel => ({
+    model: modifyFields(stepModel, {
+      maybeSelectedKey: () => Option.some(key),
+      isNavigatorOpen: () => false,
+      maybeSelection: () => Option.none(),
+    }),
+    commands: [FocusSectionHeading()],
+  })
+
 export const update = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
-    SucceededLoadReport: ({ loaded }) => ({
-      model: modifyFields(model, {
-        load: () => LoadState.Loaded(),
-        maybeDetail: () => Option.some(loaded.detail),
-        maybeTemplate: () => Option.some(loaded.template),
-        unitName: () => loaded.unitName,
-        contents: () => loaded.contents,
-        people: () => loaded.people,
-        saveCounter: () => loaded.saveCounter,
-        unitMembers: () => loaded.unitMembers,
-      }),
-    }),
+    SucceededLoadReport: ({ loaded }) =>
+      Update.combine(model, [
+        stepModel => ({
+          model: modifyFields(stepModel, {
+            load: () => LoadState.Loaded(),
+            maybeDetail: () => Option.some(loaded.detail),
+            maybeTemplate: () => Option.some(loaded.template),
+            unitName: () => loaded.unitName,
+            contents: () => loaded.contents,
+            people: () => loaded.people,
+            saveCounter: () => loaded.saveCounter,
+            unitMembers: () => loaded.unitMembers,
+            maybeImageUsage: () => loaded.maybeImageUsage,
+          }),
+        }),
+        requestEditor,
+      ]),
     FailedLoadReport: ({ failure }) => ({
       model: modifyFields(model, { load: () => LoadState.Failed({ failure }) }),
     }),
@@ -439,33 +598,60 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, { load: () => LoadState.Loading() }),
       commands: [LoadReport({ reportId: model.reportId })],
     }),
-    SelectedSection: ({ key }) => ({
-      model: modifyFields(model, {
-        maybeSelectedKey: () => Option.some(key),
-        isNavigatorOpen: () => false,
-      }),
-      commands: [FocusSectionHeading()],
-    }),
+    SelectedSection: ({ key }) =>
+      Update.combine(model, [selectSection(key), requestEditor]),
     ToggledNavigator: () => ({
       model: modifyFields(model, { isNavigatorOpen: open => !open }),
     }),
     ChangedItem: ({ sectionKey, itemId, maybeValue }) =>
-      isEntryKey(sectionKey)
-        ? { model }
-        : startSave(
-            withDirty(
-              modifyFields(model, {
-                contents: contents =>
-                  withItemValue(
-                    contents,
-                    sectionKey,
-                    itemId,
-                    Option.getOrUndefined(maybeValue),
-                  ),
-              }),
-              topSectionIdOfKey(sectionKey),
-            ),
+      applyItemChange(model, sectionKey, itemId, maybeValue),
+    SucceededLoadEditor: () => ({
+      model: modifyFields(model, { editor: () => EditorState.Ready() }),
+    }),
+    FailedLoadEditor: () => ({
+      model: modifyFields(model, { editor: () => EditorState.Failed() }),
+    }),
+    ClickedRetryLoadEditor: () => ({
+      model: modifyFields(model, { editor: () => EditorState.Loading() }),
+      commands: [LoadEditor()],
+    }),
+    ChangedRichText: ({ sectionKey, itemId, content, version }) =>
+      Option.match(parseRichTextJson(content), {
+        onNone: () => ({
+          model: modifyFields(model, {
+            maybeRefusal: () => Option.some(REFUSED_RICH_TEXT),
+          }),
+        }),
+        onSome: doc =>
+          applyItemChange(
+            modifyFields(model, {
+              editorVersions: versions =>
+                Record.set(versions, editorKey(sectionKey, itemId), version),
+              maybeRefusal: () => Option.none(),
+            }),
+            sectionKey,
+            itemId,
+            serializeRichText(doc) === EMPTY_RICH_TEXT_JSON
+              ? Option.none()
+              : Option.some({ type: 'rich_text', doc }),
           ),
+      }),
+    AddedImage: () => ({
+      model,
+      commands: [LoadImageUsage({ reportId: model.reportId })],
+    }),
+    SucceededLoadImageUsage: ({ usage }) => ({
+      model: modifyFields(model, { maybeImageUsage: () => Option.some(usage) }),
+    }),
+    FailedLoadImageUsage: () => ({ model }),
+    SelectedRichTextRange: ({ sectionKey, itemId, from, to, text }) => ({
+      model: modifyFields(model, {
+        maybeSelection: () =>
+          from === to || text === ''
+            ? Option.none()
+            : Option.some({ sectionKey, itemId, from, to, text }),
+      }),
+    }),
     SucceededSaveSection: ({ saveCounter }) =>
       startSave(
         modifyFields(model, {
@@ -821,6 +1007,35 @@ const sectionBody = (
                       itemId,
                       maybeValue,
                     }),
+                  richText: {
+                    editor: model.editor,
+                    versionOf: itemId =>
+                      model.editorVersions[editorKey(row.key, itemId)] ?? 0,
+                    onChange: (itemId, content, version) =>
+                      Message.ChangedRichText({
+                        sectionKey: row.key,
+                        itemId,
+                        content,
+                        version,
+                      }),
+                    onSelection: (itemId, range) =>
+                      Message.SelectedRichTextRange({
+                        sectionKey: row.key,
+                        itemId,
+                        ...range,
+                      }),
+                    onRetryLoad: Message.ClickedRetryLoadEditor(),
+                    reportId: model.reportId,
+                    remaining: Option.match(model.maybeImageUsage, {
+                      onNone: () => -1,
+                      onSome: usage => remainingBytes(usage),
+                    }),
+                    usageText: Option.match(model.maybeImageUsage, {
+                      onNone: () => IMAGE_LIMITS_TEXT,
+                      onSome: usageText,
+                    }),
+                    onImage: () => Message.AddedImage(),
+                  },
                 },
                 item,
                 values[item.id],
@@ -901,6 +1116,16 @@ const sectionView = (
         ),
     },
   )
+
+const refusalNote = (model: Model, h: HtmlBuilder<Message>): Html =>
+  Option.match(model.maybeRefusal, {
+    onNone: () => h.empty,
+    onSome: reason =>
+      h.p(
+        [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+        [reason],
+      ),
+  })
 
 const saveIndicator = (model: Model, h: HtmlBuilder<Message>): Html =>
   SaveStatus.match(model.save, {
@@ -1061,6 +1286,7 @@ const loadedView = (
             ],
           ),
           saveIndicator(model, h),
+          refusalNote(model, h),
         ],
       ),
       endedBanner(outline.end, h),

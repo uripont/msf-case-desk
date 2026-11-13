@@ -31,8 +31,9 @@ describe('workerd build imports', () => {
     ).toEqual([join(api, 'seed/builtin-templates.sql')])
   })
 
-  test('demo keeps accounts, grants and demo cases', () => {
+  test('demo embeds the templates, then accounts, grants and demo cases', () => {
     expect(workerdImportFiles('demo', paths, everything).map(f => f.split('/').pop())).toEqual([
+      'builtin-templates.sql',
       'users.sql',
       'grants-workerd.sql',
       'demo-cases.sql',

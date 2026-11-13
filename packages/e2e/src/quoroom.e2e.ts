@@ -16,6 +16,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { brotliCompressSync, gzipSync } from 'node:zlib'
 
 import { type Browser, type Page, chromium } from 'playwright-core'
 
@@ -158,6 +159,85 @@ const stop = (child: ChildProcess | undefined): void => {
     // already gone
   }
 }
+
+// NOTE: Helpers for the image step (stage 4d). Everything is generated; no
+// real photograph is ever used.
+const jpegSize = (bytes: Buffer): { width: number; height: number } | undefined => {
+  let at = 2
+  while (at + 4 < bytes.length) {
+    if (bytes[at] !== 0xff) {
+      return undefined
+    }
+    const marker = bytes[at + 1] ?? 0
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) }
+    }
+    at += 2 + bytes.readUInt16BE(at + 2)
+  }
+  return undefined
+}
+
+// NOTE: An EXIF segment with an invented GPS-like text, put right after the
+// start of a JPEG, to see that it does not survive the re-encoding.
+const withExif = (jpeg: Buffer, marker: string): Buffer => {
+  const payload = Buffer.concat([Buffer.from('Exif\0\0'), Buffer.from(marker)])
+  const segment = Buffer.alloc(4)
+  segment.writeUInt16BE(0xffe1, 0)
+  segment.writeUInt16BE(payload.length + 2, 2)
+  return Buffer.concat([jpeg.subarray(0, 2), segment, payload, jpeg.subarray(2)])
+}
+
+const syntheticImage = (
+  page: Page,
+  options: { width: number; height: number; kind: 'photo' | 'transparent' | 'noise'; quality: number },
+): Promise<string> =>
+  page.evaluate(async ({ width, height, kind, quality }) => {
+    const canvas = new OffscreenCanvas(width, height)
+    const context = canvas.getContext('2d')
+    if (context === null) {
+      throw new Error('no canvas')
+    }
+    if (kind === 'photo') {
+      const gradient = context.createLinearGradient(0, 0, width, height)
+      gradient.addColorStop(0, '#264653')
+      gradient.addColorStop(0.5, '#e9c46a')
+      gradient.addColorStop(1, '#e76f51')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, width, height)
+      context.fillStyle = '#ffffff'
+      context.beginPath()
+      context.arc(width / 2, height / 2, height / 4, 0, Math.PI * 2)
+      context.fill()
+    } else if (kind === 'transparent') {
+      context.clearRect(0, 0, width, height)
+      context.fillStyle = '#d62828'
+      context.beginPath()
+      context.arc(width / 2, height / 2, height / 3, 0, Math.PI * 2)
+      context.fill()
+    } else {
+      const pixels = context.createImageData(width, height)
+      for (let at = 0; at < pixels.data.length; at += 65_536) {
+        crypto.getRandomValues(pixels.data.subarray(at, Math.min(at + 65_536, pixels.data.length)))
+      }
+      for (let at = 3; at < pixels.data.length; at += 4) {
+        pixels.data[at] = 255
+      }
+      // NOTE: one translucent pixel makes the re-encoded picture a PNG, and
+      // noise does not compress, so it stays over 1 MB.
+      pixels.data[3] = 128
+      context.putImageData(pixels, 0, 0)
+    }
+    const blob = await canvas.convertToBlob(
+      kind !== 'photo' ? { type: 'image/png' } : { type: 'image/jpeg', quality },
+    )
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    let binary = ''
+    for (let at = 0; at < bytes.length; at += 32_768) {
+      binary += String.fromCharCode(...bytes.subarray(at, at + 32_768))
+    }
+    return btoa(binary)
+  }, options)
+
 
 const main = async (): Promise<void> => {
   mkdirSync(shots, { recursive: true })
@@ -605,6 +685,385 @@ const main = async (): Promise<void> => {
       assert.ok(await pilot.getByRole('radio', { name: 'Yes' }).isChecked(), 'the answer was not kept')
       assert.equal(await pilot.getByText('The report ends here').count(), 0)
       await shot(pilot, 'report-4-reloaded')
+    })
+
+    // NOTE: Stage 4c, at 375 px: the rich-text editor. The editor chunk is not
+    // requested until a section with a rich-text item is shown; the author
+    // types, makes text bold, a list, a link (an unsafe address is refused), a
+    // table with an added row and a resized column, undoes, and after a reload
+    // the stored content is the same string.
+    await step('rich text on a phone: format, list, link, table, resize, undo, reload', async () => {
+      const first = pilotPage
+      assert.ok(first !== undefined, 'no pilot page')
+      const reportPath = new URL(first.url()).pathname
+      const page = first
+      const requested: Array<string> = []
+      page.on('request', request => requested.push(request.url()))
+      const isEditorChunk = (url: string): boolean => /\/assets\/element-[^/]+\.js$/.test(url)
+      await page.goto(`${pilotUrl}${reportPath}`)
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      assert.equal(requested.filter(isEditorChunk).length, 0, 'the editor chunk was requested early')
+      assert.equal(await page.locator('quoroom-editor').count(), 0)
+
+      const openSection = async (name: RegExp): Promise<void> => {
+        const row = page.getByRole('button', { name })
+        if (!(await row.first().isVisible())) {
+          await page.getByRole('button', { name: /^Sections/ }).click()
+        }
+        await row.first().click()
+      }
+      const openSummary = async (): Promise<void> => {
+        await openSection(/Summary of the complaint/)
+        await page.getByRole('textbox', { name: 'Summary' }).waitFor()
+      }
+      await openSummary()
+      assert.equal(requested.filter(isEditorChunk).length, 1, 'the editor chunk was not requested once')
+
+      const editor = page.getByRole('textbox', { name: 'Summary' })
+      const tool = (name: string) => page.getByRole('button', { name, exact: true })
+      const settle = async (): Promise<void> => {
+        await page.waitForTimeout(700)
+        await page.getByText('All changes saved.').waitFor()
+      }
+      const storedContent = (): Promise<string> =>
+        page.locator('quoroom-editor').evaluate(element => (element as unknown as { content: string }).content)
+
+      await editor.click()
+      await page.keyboard.type('Plain ')
+      await tool('Bold').click()
+      await page.keyboard.type('strong')
+      await tool('Bold').click()
+      await page.keyboard.type(' end')
+      await page.keyboard.press('Enter')
+
+      await tool('Bulleted list').click()
+      await page.keyboard.type('one')
+      await page.keyboard.press('Enter')
+      await page.keyboard.type('two')
+      await page.keyboard.press('Enter')
+      await page.keyboard.press('Enter')
+      await page.keyboard.type('Visit site')
+      await page.locator('quoroom-editor').evaluate(element => {
+        const seen: Array<unknown> = []
+        Object.assign(element, { seen })
+        element.addEventListener('selection', event => {
+          if (event instanceof CustomEvent) {
+            seen.push(event.detail)
+          }
+        })
+      })
+      await page.keyboard.press('Shift+ArrowLeft')
+      await page.keyboard.press('Shift+ArrowLeft')
+      await page.keyboard.press('Shift+ArrowLeft')
+      await page.keyboard.press('Shift+ArrowLeft')
+
+      await page.waitForTimeout(400)
+      await tool('Link').click()
+      await page.getByLabel('Link address').fill('javascript:alert(1)')
+      await page.getByRole('button', { name: 'Apply link' }).click()
+      await page.getByText('Use an address that starts with https://').waitFor()
+      await page.getByLabel('Link address').fill('example.org')
+      await page.getByRole('button', { name: 'Apply link' }).click()
+      await page.getByRole('link', { name: 'site' }).waitFor()
+      assert.equal(
+        await page.getByRole('link', { name: 'site' }).getAttribute('href'),
+        'https://example.org',
+      )
+      await page.waitForFunction(() => document.activeElement?.classList.contains('quoroom-prose'))
+      await page.waitForTimeout(400)
+      await page.locator('quoroom-editor p', { hasText: 'Visit' }).click({ position: { x: 300, y: 8 } })
+      await page.waitForTimeout(400)
+      await page.keyboard.press('Enter')
+
+      await tool('Insert table').click()
+      await page.keyboard.type('H1')
+      await page.keyboard.press('Tab')
+      await page.keyboard.type('H2')
+      await page.keyboard.press('Tab')
+      await page.keyboard.type('H3')
+      await page.keyboard.press('Tab')
+      await page.keyboard.type('cell')
+      assert.equal(await page.locator('quoroom-editor table tr').count(), 3)
+      await page.waitForTimeout(600)
+      await tool('Add row below').click()
+      assert.equal(await page.locator('quoroom-editor table tr').count(), 4)
+      await shot(page, 'richtext-1-table')
+      await page.waitForTimeout(600)
+
+      const firstHeader = page.locator('quoroom-editor th').first()
+      const before = await firstHeader.boundingBox()
+      assert.ok(before !== null, 'no header cell')
+      await page.mouse.move(before.x + before.width - 1, before.y + before.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(before.x + before.width + 59, before.y + before.height / 2, { steps: 8 })
+      await page.mouse.up()
+      const after = await firstHeader.boundingBox()
+      assert.ok(after !== null && after.width > before.width + 20, 'the column did not widen')
+      await noSideScroll(page)
+      await page.waitForTimeout(600)
+
+      await page.locator('quoroom-editor p', { hasText: 'Plain' }).first().click()
+      await settle()
+      const withTable = await storedContent()
+      const resized = JSON.parse(withTable)
+      const table = resized.doc?.content?.find((block: { type: string }) => block.type === 'table') ?? resized.content?.find((block: { type: string }) => block.type === 'table')
+      assert.ok(table !== undefined, 'no table in the stored content')
+      assert.ok(Array.isArray(table.content[0].content[0].attrs?.colwidth), 'the column width was not stored')
+      await shot(page, 'richtext-2-resized')
+
+      await tool('Undo').click()
+      const undone = await firstHeader.boundingBox()
+      assert.ok(undone !== null && undone.width < after.width - 10, `undo did not undo the resize: ${before.width} ${after.width} ${undone?.width}`)
+      assert.equal(await page.locator('quoroom-editor table tr').count(), 4)
+      await page.waitForTimeout(600)
+      await tool('Undo').click()
+      assert.equal(await page.locator('quoroom-editor table tr').count(), 3, 'undo did not remove the added row')
+      await tool('Redo').click()
+      assert.equal(await page.locator('quoroom-editor table tr').count(), 4)
+
+      const selected = await page.locator('quoroom-editor').evaluate(element => {
+        const seen = (element as unknown as { seen: Array<{ text: string }> }).seen
+        return seen.map(detail => detail.text)
+      })
+      assert.ok(selected.includes('site'), `the selection was not reported: ${JSON.stringify(selected)}`)
+
+      await page.locator('quoroom-editor p', { hasText: 'Plain' }).first().click()
+      await settle()
+      const stored = await storedContent()
+      assert.ok(!stored.includes('"target"') && !stored.includes('"rel"') && !stored.includes('"align"'), 'editor defaults leaked into the content')
+      assert.ok(stored.includes('"href":"https://example.org"'), `the link was not stored: ${stored.slice(0, 600)}`)
+      await shot(page, 'richtext-3-final')
+
+      await page.reload()
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await openSummary()
+      await page.getByText('strong').first().waitFor()
+      assert.equal(await page.locator('quoroom-editor table tr').count(), 4)
+      assert.equal(await storedContent(), stored, 'the content changed across a reload')
+      assert.equal(await page.locator('quoroom-editor strong').first().innerText(), 'strong')
+      await shot(page, 'richtext-4-reloaded')
+
+      const chunkUrl = requested.find(isEditorChunk) ?? (await page.evaluate(() => performance.getEntriesByType('resource').map(entry => entry.name).find(name => /\/assets\/element-[^/]+\.js$/.test(name)))) ?? ''
+      assert.ok(chunkUrl !== '', 'no editor chunk url')
+      const bytes = Buffer.from(await (await fetch(chunkUrl)).arrayBuffer())
+      const gzip = gzipSync(bytes, { level: 9 }).length
+      const brotli = brotliCompressSync(bytes).length
+      console.log(`     editor chunk: ${bytes.length} bytes, ${gzip} gzip, ${brotli} brotli`)
+      assert.ok(gzip < 250 * 1024, `the editor chunk is ${gzip} bytes gzip`)
+    })
+
+    // NOTE: Stage 4d, at 375 px: images. A large synthetic JPEG with an EXIF
+    // segment is chosen (4000 x 3000) and is stored at 1600 x 1200, under 1 MB,
+    // with no EXIF; a transparent PNG stays a PNG with alpha; one is marked safe
+    // to share, with alt text and a caption; after a reload both are shown and
+    // the flags are kept; an image that is still over 1 MB after re-encoding is
+    // refused with a message; a full database is explained and not retried; a
+    // chunk that fails once is sent again; a column is widened and narrowed with
+    // the toolbar.
+    await step('images on a phone: resize, strip, transparency, safe flag, limits, retry, column buttons', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      const reportPath = new URL(page.url()).pathname
+      const reportId = reportPath.split('/').pop() ?? ''
+      await page.goto(`${pilotUrl}${reportPath}`)
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const openSummary = async (): Promise<void> => {
+        const row = page.getByRole('button', { name: /Summary of the complaint/ })
+        if (!(await row.first().isVisible())) {
+          await page.getByRole('button', { name: /^Sections/ }).click()
+        }
+        await row.first().click()
+        await page.getByRole('textbox', { name: 'Summary' }).waitFor()
+      }
+      await openSummary()
+      const tool = (name: string) => page.getByRole('button', { name, exact: true })
+      const figures = page.locator('quoroom-editor figure')
+      const settle = async (): Promise<void> => {
+        await page.waitForTimeout(700)
+        await page.getByText('All changes saved.').waitFor()
+      }
+      type StoredChunk = { chunks: number; mime: string; width: number; height: number; base64: string }
+      const storedChunk = async (imageId: string, index: number): Promise<StoredChunk> => {
+        const response = await page
+          .context()
+          .request.get(`${pilotUrl}/api/images/${imageId}/${index}?context=working_copy&report=${reportId}`)
+        assert.equal(response.status(), 200, `chunk ${index} of ${imageId}`)
+        return (await response.json()) as StoredChunk
+      }
+      const storedChunks = async (imageId: string): Promise<{ bytes: Buffer; mime: string; width: number; height: number }> => {
+        const first = await storedChunk(imageId, 0)
+        const rest: Array<StoredChunk> = []
+        for (let index = 1; index < first.chunks; index += 1) {
+          rest.push(await storedChunk(imageId, index))
+        }
+        return {
+          bytes: Buffer.concat([first, ...rest].map(chunk => Buffer.from(chunk.base64, 'base64'))),
+          mime: first.mime,
+          width: first.width,
+          height: first.height,
+        }
+      }
+      const addFile = async (file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> => {
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), tool('Insert image').click()])
+        await chooser.setFiles(file)
+      }
+
+      await page.getByRole('textbox', { name: 'Summary' }).click()
+      await page.keyboard.press('Control+End')
+
+      // The large photo, with an EXIF segment.
+      const exifMarker = 'SYNTHETIC-GPS-52.5200N-13.4050E'
+      const photo = withExif(
+        Buffer.from(await syntheticImage(page, { width: 4000, height: 3000, kind: 'photo', quality: 0.92 }), 'base64'),
+        exifMarker,
+      )
+      assert.ok(photo.includes(exifMarker), 'the test photo has no EXIF')
+      await addFile({ name: 'synthetic-photo.jpg', mimeType: 'image/jpeg', buffer: photo })
+      await page.getByText('Picture added.').waitFor()
+      await figures.first().locator('quoroom-image img').waitFor()
+      const photoId = (await figures.first().getAttribute('data-image-id')) ?? ''
+      assert.ok(photoId !== '')
+      const storedPhoto = await storedChunks(photoId)
+      assert.equal(storedPhoto.mime, 'image/jpeg')
+      assert.deepEqual(jpegSize(storedPhoto.bytes), { width: 1600, height: 1200 }, 'the photo was not resized to 1600 x 1200')
+      assert.ok(storedPhoto.bytes.length <= 1_000_000, `the stored photo is ${storedPhoto.bytes.length} bytes`)
+      assert.ok(!storedPhoto.bytes.includes('Exif'), 'EXIF survived')
+      assert.ok(!storedPhoto.bytes.includes(exifMarker), 'the GPS text survived')
+      assert.equal(storedPhoto.width, 1600)
+      assert.equal(storedPhoto.height, 1200)
+      console.log(`     photo: ${photo.length} bytes in, ${storedPhoto.bytes.length} bytes stored`)
+      await shot(page, 'images-1-photo')
+
+      // The transparent PNG.
+      await addFile({
+        name: 'synthetic-logo.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(await syntheticImage(page, { width: 600, height: 400, kind: 'transparent', quality: 1 }), 'base64'),
+      })
+      await page.getByText('Picture added.').waitFor()
+      await page.waitForFunction(() => document.querySelectorAll('quoroom-editor figure').length === 2)
+      await page.waitForFunction(() => document.querySelectorAll('quoroom-editor figure quoroom-image img').length === 2)
+      const pngId = (await figures.nth(1).getAttribute('data-image-id')) ?? ''
+      assert.ok(pngId !== '' && pngId !== photoId)
+      const storedPng = await storedChunks(pngId)
+      assert.equal(storedPng.mime, 'image/png')
+      assert.deepEqual([...storedPng.bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+      assert.ok([4, 6].includes(storedPng.bytes[25] ?? 0), `the PNG has no alpha channel (colour type ${storedPng.bytes[25]})`)
+      assert.equal(storedPng.bytes.readUInt32BE(16), 600, 'the PNG was resized although small')
+      assert.equal(storedPng.bytes.readUInt32BE(20), 400)
+      const corner = await figures.nth(1).locator('quoroom-image img').evaluate(async element => {
+        if (!(element instanceof HTMLImageElement)) {
+          return -1
+        }
+        const bitmap = await createImageBitmap(element)
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+        const context = canvas.getContext('2d')
+        context?.drawImage(bitmap, 0, 0)
+        return context?.getImageData(2, 2, 1, 1).data[3] ?? -1
+      })
+      assert.equal(corner, 0, 'the transparent corner is not transparent')
+
+      // Alt text, caption, and marking the PNG safe to share.
+      assert.equal(await figures.first().getByRole('button', { name: 'Safe to share' }).getAttribute('aria-pressed'), 'false')
+      await figures.first().getByLabel('Description of the image (alt text)').fill('A synthetic gradient')
+      await page.keyboard.press('Tab')
+      await figures.first().locator('figcaption').click()
+      await page.keyboard.type('Caption of the photo')
+      await figures.nth(1).getByRole('button', { name: 'Safe to share' }).click()
+      assert.equal(await figures.nth(1).getByRole('button', { name: 'Safe to share' }).getAttribute('aria-pressed'), 'true')
+      await figures.nth(1).getByText('Marked safe to share.').waitFor()
+      await figures.first().getByText('Not marked safe to share. Withheld from redacted views.').waitFor()
+      await page.getByText(/Images in this report: .* of 20\.0 MB used/).waitFor()
+      await noSideScroll(page)
+      await shot(page, 'images-2-both')
+      await settle()
+
+      // After a reload both are shown, and the flags, the alt text and the caption are kept.
+      await page.reload()
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await openSummary()
+      await page.waitForFunction(() => document.querySelectorAll('quoroom-editor figure quoroom-image img').length === 2)
+      const widths = await page
+        .locator('quoroom-editor figure quoroom-image img')
+        .evaluateAll(images => images.map(image => (image instanceof HTMLImageElement ? image.naturalWidth : 0)))
+      assert.deepEqual(widths, [1600, 600])
+      assert.equal(await figures.first().getByRole('button', { name: 'Safe to share' }).getAttribute('aria-pressed'), 'false')
+      assert.equal(await figures.nth(1).getByRole('button', { name: 'Safe to share' }).getAttribute('aria-pressed'), 'true')
+      assert.equal(await figures.first().getByLabel('Description of the image (alt text)').inputValue(), 'A synthetic gradient')
+      assert.equal(await figures.first().locator('figcaption').innerText(), 'Caption of the photo')
+      assert.equal(await figures.first().locator('quoroom-image img').getAttribute('alt'), 'A synthetic gradient')
+      await shot(page, 'images-3-reloaded')
+
+      // An image that is still over 1 MB after re-encoding is refused.
+      await page.getByRole('textbox', { name: 'Summary' }).click()
+      await page.keyboard.press('Control+End')
+      await addFile({
+        name: 'synthetic-noise.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(await syntheticImage(page, { width: 1600, height: 1200, kind: 'noise', quality: 0.9 }), 'base64'),
+      })
+      const refusal = page.locator('quoroom-editor .quoroom-image-alert')
+      await refusal.getByText(/still .* MB after it was made smaller, and the limit is 1\.0 MB/).waitFor()
+      assert.equal(await figures.count(), 2, 'a refused image was inserted')
+      await shot(page, 'images-4-refused')
+
+      // A full database is explained and not retried.
+      const small = Buffer.from(await syntheticImage(page, { width: 300, height: 200, kind: 'photo', quality: 0.8 }), 'base64')
+      const posts: Array<string> = []
+      await page.route('**/api/images?*', route => {
+        posts.push(route.request().method())
+        return route.fulfill({ status: 507, contentType: 'application/json', body: JSON.stringify({ code: 'database_full', message: 'database full' }) })
+      })
+      await addFile({ name: 'synthetic-small.jpg', mimeType: 'image/jpeg', buffer: small })
+      await refusal.getByText(/storage of this environment is full/).waitFor()
+      assert.equal(posts.length, 1, 'a full database was retried')
+      assert.equal(await page.getByRole('button', { name: 'Send the picture again' }).isVisible(), false)
+      assert.equal(await figures.count(), 2)
+      await page.unroute('**/api/images?*')
+
+      // A chunk that fails once is sent again by itself.
+      let failures = 0
+      await page.route('**/api/images?*', route => {
+        if (failures === 0) {
+          failures += 1
+          return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'unknown', message: 'unavailable' }) })
+        }
+        return route.continue()
+      })
+      await addFile({ name: 'synthetic-small.jpg', mimeType: 'image/jpeg', buffer: small })
+      await page.getByText('Picture added.').waitFor()
+      await page.waitForFunction(() => document.querySelectorAll('quoroom-editor figure').length === 3)
+      assert.equal(failures, 1)
+      await page.unroute('**/api/images?*')
+      await settle()
+
+      // Widen and narrow a column with the toolbar (no mouse drag).
+      const header = page.locator('quoroom-editor th').first()
+      await header.scrollIntoViewIfNeeded()
+      await header.click()
+      const before = await header.boundingBox()
+      assert.ok(before !== null, 'no header cell')
+      await tool('Make column wider').click()
+      const wider = await header.boundingBox()
+      assert.ok(wider !== null && wider.width >= before.width + 30, `the column did not widen: ${before.width} -> ${wider?.width}`)
+      await tool('Make column wider').click()
+      const widest = await header.boundingBox()
+      assert.ok(widest !== null && widest.width >= wider.width + 30, 'a second step did not widen it again')
+      await tool('Make column narrower').click()
+      await tool('Make column narrower').click()
+      const back = await header.boundingBox()
+      assert.ok(back !== null && Math.abs(back.width - wider.width + 40) < 6 && back.width <= before.width + 6, `narrowing did not undo widening: ${before.width} ${widest.width} ${back?.width}`)
+      await noSideScroll(page)
+      await settle()
+      await shot(page, 'images-5-column-buttons')
+      const storedText = await page.locator('quoroom-editor').evaluate(element => (element as unknown as { content: string }).content)
+      assert.ok(storedText.includes('colwidth'), 'the column width was not stored')
+
+      await page.reload()
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await openSummary()
+      await page.waitForFunction(() => document.querySelectorAll('quoroom-editor figure quoroom-image img').length === 3)
+      await noSideScroll(page)
     })
   } finally {
     await browser?.close()

@@ -159,3 +159,289 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The rich-text editor element (stage 4c). It draws its own toolbar. */
+.quoroom-editor {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  border: 1px solid var(--color-msf-line);
+  background: var(--color-msf-paper);
+}
+
+.quoroom-editor [hidden] {
+  display: none;
+}
+
+.quoroom-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-msf-line);
+  background: var(--color-msf-mist);
+  padding: 0.25rem;
+}
+
+.quoroom-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.quoroom-tool,
+.quoroom-block-style,
+.quoroom-link-input {
+  min-height: 2.75rem;
+  border: 1px solid var(--color-msf-line);
+  background: var(--color-msf-paper);
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--color-msf-ink);
+}
+
+.quoroom-tool {
+  min-width: 2.75rem;
+  cursor: pointer;
+}
+
+.quoroom-tool[aria-pressed='true'] {
+  border-color: var(--color-msf-ink);
+  background: var(--color-msf-ink);
+  color: var(--color-msf-paper);
+}
+
+.quoroom-tool:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.quoroom-tool:focus-visible,
+.quoroom-block-style:focus-visible,
+.quoroom-link-input:focus-visible {
+  outline: 2px solid var(--color-msf-red);
+  outline-offset: 2px;
+}
+
+.quoroom-link-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--color-msf-line);
+  padding: 0.5rem;
+}
+
+.quoroom-link-label {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.quoroom-link-message,
+.quoroom-editor-status {
+  margin: 0;
+  padding: 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-msf-alert);
+}
+
+.quoroom-link-message:empty,
+.quoroom-editor-status:empty {
+  display: none;
+}
+
+.quoroom-surface {
+  min-width: 0;
+}
+
+.quoroom-surface:focus-within {
+  outline: 2px solid var(--color-msf-red);
+  outline-offset: -2px;
+}
+
+.quoroom-prose {
+  min-height: 9rem;
+  padding: 0.75rem;
+  outline: none;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.quoroom-prose > * + * {
+  margin-top: 0.75rem;
+}
+
+.quoroom-prose h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.quoroom-prose h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.quoroom-prose h3,
+.quoroom-prose h4 {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.quoroom-prose ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.quoroom-prose ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
+.quoroom-prose a {
+  color: var(--color-msf-red);
+  text-decoration: underline;
+}
+
+.quoroom-prose .tableWrapper {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.quoroom-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.quoroom-prose th,
+.quoroom-prose td {
+  position: relative;
+  border: 1px solid var(--color-msf-line);
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.quoroom-prose th {
+  background: var(--color-msf-mist);
+  font-weight: 600;
+}
+
+.quoroom-prose .selectedCell {
+  background: color-mix(in srgb, var(--color-msf-red) 15%, transparent);
+}
+
+.quoroom-prose .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: -2px;
+  width: 4px;
+  background: var(--color-msf-red);
+  pointer-events: none;
+}
+
+.quoroom-prose.resize-cursor {
+  cursor: col-resize;
+}
+
+.quoroom-figure {
+  margin: 0;
+  border: 1px solid var(--color-msf-line);
+}
+
+.quoroom-figure-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.quoroom-figure-image {
+  display: block;
+  min-height: 3rem;
+  background: var(--color-msf-mist);
+  text-align: center;
+  font-size: 1rem;
+  color: var(--color-msf-grey);
+}
+
+.quoroom-image-picture {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.quoroom-image-message {
+  margin: 0;
+  padding: 1.5rem 0.75rem;
+  font-size: 1rem;
+}
+
+.quoroom-image-message[role='alert'],
+.quoroom-image-alert {
+  color: var(--color-msf-alert);
+}
+
+.quoroom-image-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.quoroom-image-alert {
+  margin: 0;
+  padding: 0 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.quoroom-image-alert:empty {
+  display: none;
+}
+
+.quoroom-figure-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid var(--color-msf-line);
+  padding: 0.5rem;
+}
+
+.quoroom-figure-badge {
+  margin: 0;
+  flex: 1 1 100%;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.quoroom-figure[data-safe='false'] .quoroom-figure-badge {
+  color: var(--color-msf-grey);
+}
+
+.quoroom-figure-alt {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.quoroom-figure-caption:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-msf-grey);
+}
+
+.quoroom-figure figcaption {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}

@@ -1,3 +1,5 @@
+import { Option } from 'effect'
+
 import {
   INTAKE_TEMPLATE,
   INVESTIGATION_TEMPLATE,
@@ -87,6 +89,7 @@ export const loadedReport = (
     },
   ],
   saveCounter: options.saveCounter ?? 0,
+  maybeImageUsage: Option.none(),
   unitMembers: [
     {
       accountId: FIRST_AUTHOR.id,

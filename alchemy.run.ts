@@ -53,7 +53,8 @@ export default Alchemy.Stack(
     // applies migrations, before its new code goes live.
     // Accounts come from `pnpm users:add`, which writes password hashes to a
     // git-ignored file. The synthetic demo cases follow it, so they can name
-    // the demo account. Both are imported after the migrations.
+    // the demo account. Both are imported after the migrations, and the
+    // built-in templates (insert-if-absent, D22) before them.
     // `pnpm grant-admin --env demo` writes the first administrator's grants
     // to .local/grants-demo.sql (idempotent statements, no password).
     const usersSql = path.resolve(root, ".local/users.sql");
@@ -61,6 +62,7 @@ export default Alchemy.Stack(
     const database = yield* Cloudflare.D1.Database("Database", {
       migrations: path.resolve(root, "apps/api/migrations"),
       importFiles: [
+        path.resolve(root, "apps/api/seed/builtin-templates.sql"),
         ...(existsSync(usersSql) ? [usersSql] : []),
         ...(existsSync(grantsSql) ? [grantsSql] : []),
         path.resolve(root, "apps/api/seed/demo-cases.sql"),

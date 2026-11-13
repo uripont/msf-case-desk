@@ -9,6 +9,7 @@ import {
   type ItemValue,
   type PeopleItem,
   type Person,
+  type RichTextDoc,
   type SelectItem,
   type SignatureItem,
   type TextItem,
@@ -16,6 +17,10 @@ import {
 } from '@case-desk/domain'
 
 import { fieldClassName, focusRing, labelClassName } from '../style'
+import { richTextForItem } from './editor/richText'
+import { editorElement } from './editor/spec'
+import { EditorState } from './editor/state'
+import { richTextView } from './richTextView'
 
 // NOTE: One field for each kind of item the drafting screen edits without the
 // rich-text editor (D23). A field is a function of the item, its value and the
@@ -29,11 +34,30 @@ export type CaseValues = Readonly<{
   title: string
 }>
 
+export type RichTextContext<M> = Readonly<{
+  editor: EditorState
+  versionOf: (itemId: string) => number
+  onChange: (itemId: string, content: string, version: number) => M
+  onSelection: (
+    itemId: string,
+    range: Readonly<{ from: number; to: number; text: string }>,
+  ) => M
+  onRetryLoad: M
+  // NOTE: Images (stage 4d): the report they belong to, the bytes of image
+  // space left (-1 when unknown), the line that says what is used, and what an
+  // uploaded image reports.
+  reportId: string
+  remaining: number
+  usageText: string
+  onImage: () => M
+}>
+
 export type FieldContext<M> = Readonly<{
   caseValues: CaseValues
   people: ReadonlyArray<Person>
   isDisabled: boolean
   onChange: (itemId: string, maybeValue: Option.Option<ItemValue>) => M
+  richText: RichTextContext<M>
 }>
 
 export const fieldId = (itemId: string): string => `field-${itemId}`
@@ -450,20 +474,134 @@ const caseValueField = <M>(
     ),
   ])
 
-const richTextSlot = <M>(h: HtmlBuilder<M>, item: Item): Html =>
+const richTextDocOf = (
+  value: ItemValue | undefined,
+): Option.Option<RichTextDoc> =>
+  value?.type === 'rich_text' ? Option.some(value.doc) : Option.none()
+
+const editorBox = 'quoroom-editor-box min-w-0'
+
+const editorPending = <M>(h: HtmlBuilder<M>, item: Item, text: string): Html =>
+  h.div(
+    [
+      h.Id(fieldId(item.id)),
+      h.DataAttribute('slot', 'rich-text'),
+      h.Role('status'),
+      h.Class(
+        'flex min-h-24 items-center border border-dashed border-msf-line px-3 py-3 text-base text-msf-grey',
+      ),
+    ],
+    [text],
+  )
+
+const editorFailed = <M>(
+  h: HtmlBuilder<M>,
+  context: RichTextContext<M>,
+  item: Item,
+): Html =>
+  h.div(
+    [
+      h.Id(fieldId(item.id)),
+      h.DataAttribute('slot', 'rich-text'),
+      h.Class(
+        'flex flex-col items-start gap-3 border border-msf-alert px-3 py-3',
+      ),
+    ],
+    [
+      h.p(
+        [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+        ['The text editor could not be loaded. Nothing written is lost.'],
+      ),
+      h.button(
+        [
+          h.Type('button'),
+          h.Class(
+            clsx(
+              'min-h-11 cursor-pointer border border-msf-ink px-4 text-base font-medium',
+              focusRing,
+            ),
+          ),
+          h.OnClick(context.onRetryLoad),
+        ],
+        ['Try again'],
+      ),
+    ],
+  )
+
+const editorReady = <M>(
+  h: HtmlBuilder<M>,
+  context: RichTextContext<M>,
+  item: Item,
+  value: ItemValue | undefined,
+): Html => {
+  const editor = editorElement.withMessage(h)
+  return editor([
+    h.Id(fieldId(item.id)),
+    h.DataAttribute('slot', 'rich-text'),
+    h.Class(editorBox),
+    editor.Content(richTextForItem(richTextDocOf(value))),
+    editor.Version(context.versionOf(item.id)),
+    editor.Disabled(false),
+    editor.Label(item.label),
+    editor.Report(context.reportId),
+    editor.Remaining(context.remaining),
+    editor.OnImage(() => context.onImage()),
+    editor.OnChange(detail =>
+      context.onChange(item.id, detail.content, detail.version),
+    ),
+    editor.OnSelection(detail => context.onSelection(item.id, detail)),
+  ])
+}
+
+const richTextControl = <M>(
+  h: HtmlBuilder<M>,
+  context: FieldContext<M>,
+  item: Item,
+  value: ItemValue | undefined,
+): Html =>
+  context.isDisabled
+    ? Option.match(richTextDocOf(value), {
+        onNone: () =>
+          h.p(
+            [
+              h.Id(fieldId(item.id)),
+              h.DataAttribute('slot', 'rich-text'),
+              h.Class('text-base text-msf-grey'),
+            ],
+            ['Nothing written.'],
+          ),
+        onSome: doc =>
+          richTextView(h, doc, [
+            h.Id(fieldId(item.id)),
+            h.DataAttribute('slot', 'rich-text'),
+          ], context.richText.reportId),
+      })
+    : EditorState.match(context.richText.editor, {
+        NotLoaded: () => editorPending(h, item, 'The text editor opens here.'),
+        Loading: () => editorPending(h, item, 'Loading the text editor.'),
+        Failed: () => editorFailed(h, context.richText, item),
+        Ready: () => editorReady(h, context.richText, item, value),
+      })
+
+const richTextSlot = <M>(
+  h: HtmlBuilder<M>,
+  context: FieldContext<M>,
+  item: Item,
+  value: ItemValue | undefined,
+): Html =>
   frame(h, item, [
     h.p([h.Class(labelClassName)], [item.label]),
     ...hints(h, item),
-    h.div(
-      [
-        h.Id(fieldId(item.id)),
-        h.DataAttribute('slot', 'rich-text'),
-        h.Class(
-          'flex min-h-24 items-center border border-dashed border-msf-line px-3 py-3 text-base text-msf-grey',
+    richTextControl(h, context, item, value),
+    context.isDisabled
+      ? h.empty
+      : h.p(
+          [
+            h.DataAttribute('slot', 'image-usage'),
+            h.Class('text-sm text-msf-grey'),
+          ],
+          [context.richText.usageText],
         ),
-      ],
-      ['The text editor opens here in the next step. Nothing written is lost.'],
-    ),
   ])
 
 const repeatedSlot = <M>(h: HtmlBuilder<M>, item: Item): Html =>
@@ -499,7 +637,7 @@ export const itemField = <M>(
       signature: signatureItem =>
         signatureField(h, context, signatureItem, value),
       case_value: caseValueItem => caseValueField(h, context, caseValueItem),
-      rich_text: richTextItem => richTextSlot(h, richTextItem),
+      rich_text: richTextItem => richTextSlot(h, context, richTextItem, value),
       repeated: repeatedItem => repeatedSlot(h, repeatedItem),
     }),
   )

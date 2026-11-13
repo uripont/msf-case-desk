@@ -7,6 +7,7 @@ import {
   given,
   role,
   scene,
+  selector,
   text,
   type,
 } from 'foldkit/scene'
@@ -53,6 +54,11 @@ const reportModelFor = (
 const focused = Command.resolve(
   Report.FocusSectionHeading,
   Report.Message.CompletedFocusSectionHeading(),
+)
+
+const editorLoaded = Command.resolve(
+  Report.LoadEditor,
+  Report.Message.SucceededLoadEditor(),
 )
 
 const reportsMessage = (message: Reports.Message) =>
@@ -251,13 +257,16 @@ describe('structured fields', () => {
     )
   })
 
-  test('rich text items show a place for the editor', () => {
+  test('rich text items show the editor once it is loaded', () => {
     scene(
       { update, view },
       given(reportModelFor(INTAKE_TEMPLATE)),
       click(role('button', { name: /Summary of the complaint/ })),
       focused,
       expect(text(/A short account of the complaint/)).toExist(),
+      expect(text('Loading the text editor.')).toExist(),
+      editorLoaded,
+      expect(selector('quoroom-editor')).toExist(),
     )
   })
 })
@@ -271,6 +280,7 @@ describe('branching', () => {
       focused,
       click(role('button', { name: /Jurisdiction, / })),
       focused,
+      editorLoaded,
       click(role('radio', { name: /No/ })),
       Command.resolve(
         Report.SaveSection,
