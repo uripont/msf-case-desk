@@ -8,11 +8,18 @@ import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
 import { makeApp } from './app'
 import { layerSql } from './d1Repository'
-import { type SqlDatabase, type SqlStatement, type SqlValue } from './sql'
+import {
+  type SqlBatchResult,
+  type SqlRow,
+  type SqlStep,
+  type SqlStore,
+  type SqlStatement,
+  type SqlValue,
+} from './sql'
 
 type Row = Record<string, SqlValue>
 
-type Env = {
+export type Env = {
   readonly ASSETS: Fetcher
   readonly DATABASE: DurableObjectNamespace<LocalDatabase>
 }
@@ -60,10 +67,26 @@ export class LocalDatabase extends DurableObject<Env> {
   run(query: string, values: ReadonlyArray<SqlValue>): void {
     this.ctx.storage.sql.exec(query, ...values)
   }
+
+  // NOTE: one synchronous transaction: an error in any step rolls back every
+  // step and is rethrown to the caller. A step's changed-row count is the
+  // change in `total_changes()`, which also counts a RETURNING statement.
+  batch(steps: ReadonlyArray<SqlStep>): ReadonlyArray<SqlBatchResult> {
+    const sql = this.ctx.storage.sql
+    const total = (): number =>
+      sql.exec<{ n: number }>('SELECT total_changes() AS n').one().n
+    return this.ctx.storage.transactionSync(() =>
+      steps.map(step => {
+        const before = total()
+        const rows = sql.exec<SqlRow>(step.sql, ...step.values).toArray()
+        return { changes: total() - before, rows }
+      }),
+    )
+  }
 }
 
-const localDatabase = (env: Env): SqlDatabase => {
-  const stub = env.DATABASE.get(env.DATABASE.idFromName('case-desk'))
+export const localDatabase = (env: Env, name = 'case-desk'): SqlStore => {
+  const stub = env.DATABASE.get(env.DATABASE.idFromName(name))
   const statement = (
     query: string,
     values: ReadonlyArray<SqlValue>,
@@ -76,7 +99,10 @@ const localDatabase = (env: Env): SqlDatabase => {
       ([...(await stub.all(query, values))][0] ?? null) as T | null,
     run: () => stub.run(query, values),
   })
-  return { prepare: query => statement(query, []) }
+  return {
+    prepare: query => statement(query, []),
+    batch: async steps => [...(await stub.batch(steps))],
+  }
 }
 
 const isPageRequest = (request: Request): boolean =>

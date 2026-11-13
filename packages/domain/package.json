@@ -9,7 +9,8 @@
     "./testing/templates": "./src/testing/templates.ts",
     "./testing/content": "./src/testing/content.ts",
     "./testing/reports": "./src/testing/reports.ts",
-    "./testing/drafts": "./src/testing/drafts.ts"
+    "./testing/drafts": "./src/testing/drafts.ts",
+    "./testing/report-repository": "./src/testing/reportRepositoryContract.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

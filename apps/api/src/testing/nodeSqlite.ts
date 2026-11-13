@@ -2,7 +2,12 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { type SqlDatabase, type SqlStatement, type SqlValue } from '../sql'
+import {
+  type SqlRow,
+  type SqlStatement,
+  type SqlStore,
+  type SqlValue,
+} from '../sql'
 
 export const MIGRATIONS_DIR = join(import.meta.dirname, '../../migrations')
 
@@ -31,9 +36,31 @@ const statement = (
 // applied in order, as Alchemy applies them to D1.
 export const makeNodeSqlite = (
   migrations: ReadonlyArray<string> = migrationFiles(),
-): SqlDatabase & { readonly raw: DatabaseSync } => {
+): SqlStore & { readonly raw: DatabaseSync } => {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys = ON')
   migrations.forEach(migration => db.exec(migration))
-  return { raw: db, prepare: query => statement(db, query, []) }
+  const total = (): number =>
+    (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n
+  return {
+    raw: db,
+    prepare: query => statement(db, query, []),
+    // NOTE: a transaction, as D1's batch is one. The work is synchronous, so
+    // nothing else runs on the connection between BEGIN and COMMIT.
+    batch: steps => {
+      db.exec('BEGIN')
+      try {
+        const results = steps.map(step => {
+          const before = total()
+          const rows = db.prepare(step.sql).all(...step.values) as Array<SqlRow>
+          return { changes: total() - before, rows }
+        })
+        db.exec('COMMIT')
+        return Promise.resolve(results)
+      } catch (error) {
+        db.exec('ROLLBACK')
+        return Promise.reject(error)
+      }
+    },
+  }
 }
