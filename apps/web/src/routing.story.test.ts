@@ -25,7 +25,15 @@ import {
 } from './main'
 import { ADMIN_ME, SYNTHETIC_UNIT } from './quoroom.fixtures'
 import * as Admin from './quoroom/admin'
-import { AppRoute, needsSession, pathOf, urlToAppRoute } from './route'
+import * as Link from './quoroom/link'
+import {
+  AppRoute,
+  needsSession,
+  pathOf,
+  redactedFragmentOf,
+  urlToAppRoute,
+  withoutFragment,
+} from './route'
 
 const routeOf = (path: string) => urlToAppRoute(urlOf(path))
 
@@ -274,5 +282,85 @@ describe('the link page', () => {
   test('a link address without a session needs none', () => {
     const opened = openedAt('/link#abc')
     expect(Option.isSome(opened.model.maybeLink)).toBe(true)
+  })
+
+  const tokenOf = (model: ReturnType<typeof openedAt>['model']) =>
+    Option.map(model.maybeLink, link => Redacted.value(link.token))
+
+  test('a new link opened while on the link page replaces the model, reads the new token and removes the fragment', () => {
+    const first = openedAt('/link#token-one').model
+    const typed = update(
+      first,
+      Message.GotLinkMessage({
+        message: Link.Message.UpdatedPassword({
+          value: Redacted.make('half typed password'),
+        }),
+      }),
+    ).model
+    expect(
+      Option.map(typed.maybeLink, link => Redacted.value(link.password)),
+    ).toEqual(Option.some('half typed password'))
+
+    // NOTE: the address changes to the same page with another fragment; the
+    // runtime's Message carries it apart and Redacted.
+    const second = update(
+      typed,
+      Message.ChangedUrl({
+        url: urlOf('/link'),
+        fragment: Redacted.make('token-two'),
+      }),
+    )
+    expect(tokenOf(second.model)).toEqual(Option.some('token-two'))
+    expect(
+      Option.map(second.model.maybeLink, link => Redacted.value(link.password)),
+    ).toEqual(Option.some(''))
+    expect(namesOf(second)).toEqual(
+      expect.arrayContaining(['InspectLink', ReplaceUrl.name]),
+    )
+    expect(argsOf(second, ReplaceUrl.name)).toEqual({ url: '/link' })
+    expect(JSON.stringify(second.commands)).not.toContain('token-two')
+  })
+
+  test('the same holds for a click on a link address that carries a token', () => {
+    const first = openedAt('/link#token-one').model
+    const second = update(
+      first,
+      Message.ClickedLink({
+        request: UrlRequest.Internal({ url: urlOf('/link') }),
+        fragment: Redacted.make('token-two'),
+      }),
+    )
+    expect(tokenOf(second.model)).toEqual(Option.some('token-two'))
+    expect(argsOf(second, ReplaceUrl.name)).toEqual({ url: '/link' })
+  })
+
+  test('the address without its fragment, which the app leaves behind, changes nothing', () => {
+    const first = openedAt('/link#token-one').model
+    const echoed = update(first, Message.ChangedUrl({ url: urlOf('/link') }))
+    expect(echoed.model).toBe(first)
+    expect(tokenOf(echoed.model)).toEqual(Option.some('token-one'))
+  })
+
+  test('the Messages of the runtime never carry the fragment as text', () => {
+    const changed = Message.ChangedUrl({
+      url: urlOf('/link'),
+      fragment: Redacted.make('token-three'),
+    })
+    expect(JSON.stringify(changed)).not.toContain('token-three')
+    expect(String(changed)).not.toContain('token-three')
+  })
+})
+
+describe('splitting the address from its fragment', () => {
+  test('the address loses the fragment and the fragment comes out Redacted', () => {
+    const url = urlOf('/link#token-four')
+    expect(Option.isNone(withoutFragment(url).hash)).toBe(true)
+    expect(JSON.stringify(withoutFragment(url))).not.toContain('token-four')
+    const fragment = redactedFragmentOf(url)
+    expect(Option.map(fragment, value => Redacted.value(value))).toEqual(
+      Option.some('token-four'),
+    )
+    expect(JSON.stringify(fragment)).not.toContain('token-four')
+    expect(Option.isNone(redactedFragmentOf(urlOf('/link')))).toBe(true)
   })
 })

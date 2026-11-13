@@ -1,9 +1,8 @@
 import { Layer } from 'effect'
 
-import { runtimeModeOf } from '@case-desk/domain'
-
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'
+import { modeOf } from './runtimeMode'
 import { layerSql } from './d1Repository'
 import { QuoroomServicesLive } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
@@ -12,8 +11,15 @@ import { fromD1 } from './sql'
 export type Env = {
   readonly ASSETS: Fetcher
   readonly DB: D1Database
-  // NOTE: `demo` or `pilot` (D20), set by the stack. Unset means `demo`.
+  // NOTE: `demo` or `pilot` (D20), set by the stack. Unset means `pilot`; any
+  // other value is a configuration error (see `modeOf`).
   readonly RUNTIME_MODE?: string
+  // NOTE: Notification timings in minutes, set by the pilot stack (D12). Unset
+  // means the production values of `DEFAULT_NOTIFICATION_CONFIG`. Nothing reads
+  // them until the notification pass exists (stage 7).
+  readonly NOTIFY_REQUEST_DELAY_MINUTES?: string
+  readonly NOTIFY_FIRST_REMINDER_MINUTES?: string
+  readonly NOTIFY_FINAL_REMINDER_MINUTES?: string
 }
 
 const API_PREFIX = '/api/'
@@ -26,10 +32,14 @@ const handleApi = async (
   env: Env,
   context: ExecutionContext,
 ): Promise<Response> => {
+  const mode = modeOf(env.RUNTIME_MODE)
+  if (mode.refusal !== undefined) {
+    return withReferrerPolicy(mode.refusal)
+  }
   const app = makeApp(
     layerSql(env.DB),
     Layer.mergeAll(layerSqlReport(fromD1(env.DB)), QuoroomServicesLive),
-    runtimeModeOf(env.RUNTIME_MODE),
+    mode.mode,
   )
   try {
     return await app.handle(request)
@@ -38,7 +48,19 @@ const handleApi = async (
   }
 }
 
+// NOTE: PLACEHOLDER until stage 7. The stacks that have a cron (the pilot,
+// and test environments of it) call this on every schedule; it does nothing
+// and is safe to run any number of times. Stage 7 replaces the body with the
+// notification pass, which builds its own layer from `layerSql(env.DB)`.
+const runNotificationPass = async (
+  _env: Env,
+  _scheduledTime: number,
+): Promise<void> => {}
+
 export default {
+  scheduled: (controller, env, context) => {
+    context.waitUntil(runNotificationPass(env, controller.scheduledTime))
+  },
   fetch: (request, env, context) =>
     new URL(request.url).pathname.startsWith(API_PREFIX)
       ? handleApi(request, env, context)

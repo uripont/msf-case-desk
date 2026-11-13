@@ -29,11 +29,26 @@ pnpm users:add --email you@example.org --name "Your Name"
 
 It prints a generated password once (or pass `--password` with at least 10 characters). The account is saved as a password hash in `.local/users.sql`, which is git-ignored. The file is imported again on every deploy and start, so it only adds an account whose e-mail is not there yet: running it again for an existing e-mail changes nothing, and it never replaces a password. Both paths below import this file. Quoroom accounts are made in the app. The first administrator of an environment comes from `pnpm grant-admin --env <demo|pilot|workerd|test-N> --email … --name …`, which prints a one-time activation link (72 hours) and never a password; it appends idempotent SQL to `.local/grants-<env>.sql`, which the stack imports (the `workerd` build embeds `grants-workerd.sql`). `--reset` issues a reset link for an account that has a password.
 
+## Runtime mode
+
+The Worker reads the variable `RUNTIME_MODE`. It accepts exactly `demo` or `pilot`:
+
+- `pilot` (also what an unset or blank variable means, so a missing setting never opens the triage demo): the Quoroom features only. The legacy triage routes (`/api/login`, `/api/logout`, `/api/session` and the triage RPC) answer 404.
+- `demo`: the triage desk stays available next to Quoroom, with its synthetic cases. Ask for it explicitly. `alchemy.run.ts` sets it on `app`, and `pnpm workerd` sets it for the default mode.
+- anything else (`Demo`, `prod`, a typo): a configuration error. The Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request until it is fixed.
+
+If you run your own `workerd` or your own stack, set it yourself (workerd takes it from the environment through the binding in `apps/api/workerd/case-desk.capnp`).
+
+## Account guard for the pilot stack
+
+`pnpm pilot:*` and `pnpm test-env:*` refuse to run when `ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `ALCHEMY_CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY`, `CLOUDFLARE_EMAIL`, `CLOUDFLARE_ACCOUNT_EMAIL`, `CLOUDFLARE_AUTH_PROVIDER_NAME` or `ALCHEMY_HOME` is set, in the environment or in `.env`, to anything other than the default profile. Use the default Alchemy login. Only `--yes`, `--dry-run` and `--detailed` are passed on; `--profile` is refused.
+
 ## A. Run locally on workerd
 
 ```sh
 pnpm workerd            # http://127.0.0.1:8787
 pnpm workerd 8790       # or choose a port
+pnpm workerd --mode pilot   # no demo cases; the built-in templates and the first administrator only
 ```
 
 This builds the web app, bundles the Worker with the migrations, your accounts and the synthetic demo cases, and starts `workerd` with:

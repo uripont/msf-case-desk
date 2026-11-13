@@ -19,7 +19,8 @@ const caseDesk :Workerd.Worker = (
   bindings = [
     (name = "ASSETS", service = "assets"),
     (name = "DATABASE", durableObjectNamespace = "LocalDatabase"),
-    # The runtime mode, `demo` or `pilot` (D20). Unset means `demo`.
+    # The runtime mode, `demo` or `pilot` (D20). Unset means `pilot`; anything else but
+    # `demo` is refused by the Worker (every API request answers 500).
     (name = "RUNTIME_MODE", fromEnvironment = "RUNTIME_MODE"),
   ],
   durableObjectNamespaces = [

@@ -63,6 +63,7 @@ const world = async (network: NetworkPolicy = { kind: 'cloudflare' }, ipHeader =
       Layer.succeed(QuoroomConfig, DEFAULT_NOTIFICATION_CONFIG),
       Layer.succeed(QuoroomNetwork, network),
     ),
+    'demo',
   )
   worlds.push({ dispose: () => app.dispose() })
   const run = <A>(effect: Effect.Effect<A, unknown>) =>
@@ -138,7 +139,7 @@ const world = async (network: NetworkPolicy = { kind: 'cloudflare' }, ipHeader =
     }
   }
 
-  return { sql, reports, clock, run, browser }
+  return { app, sql, reports, clock, run, browser }
 }
 
 const failureOf = <A, E>(result: Result.Result<A, E>): E => {
@@ -229,6 +230,54 @@ describe('sign-in', () => {
     expect(failureOf(await guest.signIn('adam@case-desk.test'))).toMatchObject({ _tag: 'Throttled', retryAfterSeconds: 60 })
     // NOTE: somebody else, from another address, is not affected.
     expect((await w.browser('198.51.100.10').callPublic(c => c.SignIn({ email: 'adam@case-desk.test', password: PASSWORD }))).id).toBe('adam')
+  })
+})
+
+describe('legacy sign-in shares the throttle and the active check (D13)', () => {
+  const login = (w: Awaited<ReturnType<typeof world>>, email: string, password: string, ip = '203.0.113.7') =>
+    w.app.handle(
+      new Request('https://desk.test/api/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip },
+        body: JSON.stringify({ email, password }),
+      }),
+    )
+
+  test('failures through /api/login throttle the Quoroom SignIn too, and the legacy route itself', async () => {
+    const w = await world()
+    for (let i = 0; i < EMAIL_FAILURE_THRESHOLD; i += 1) {
+      expect((await login(w, 'alice@case-desk.test', 'wrong password entirely')).status).toBe(401)
+    }
+    const throttled = await login(w, 'alice@case-desk.test', PASSWORD)
+    expect(throttled.status).toBe(429)
+    expect(throttled.headers.get('set-cookie')).toBeNull()
+    expect(failureOf(await w.browser().signIn('alice@case-desk.test'))).toMatchObject({ _tag: 'Throttled' })
+  })
+
+  test('failures through the Quoroom SignIn throttle /api/login', async () => {
+    const w = await world()
+    for (let i = 0; i < EMAIL_FAILURE_THRESHOLD; i += 1) {
+      await w.browser().signIn('alice@case-desk.test', 'wrong password entirely')
+    }
+    expect((await login(w, 'alice@case-desk.test', PASSWORD)).status).toBe(429)
+  })
+
+  test('a deactivated account cannot sign in through /api/login, and answers like a wrong password', async () => {
+    const w = await world()
+    await w.run(w.reports.putProfile('alice', { phone: null, whatsappConsent: false, whatsappConsentAt: null, notifyOnApproval: false, active: false }, 2))
+    const refused = await login(w, 'alice@case-desk.test', PASSWORD)
+    const wrong = await login(w, 'adam@case-desk.test', 'wrong password entirely')
+    expect(refused.status).toBe(401)
+    expect(refused.headers.get('set-cookie')).toBeNull()
+    expect(await refused.json()).toEqual(await wrong.json())
+  })
+
+  test('a good sign-in through /api/login still works and sets the cookie', async () => {
+    const w = await world()
+    const ok = await login(w, 'alice@case-desk.test', PASSWORD)
+    expect(ok.status).toBe(200)
+    expect(ok.headers.get('set-cookie')).toContain(`${SESSION_COOKIE}=`)
+    expect(await ok.json()).toEqual({ user: { id: 'alice', email: 'alice@case-desk.test', name: 'Alice Author' } })
   })
 })
 

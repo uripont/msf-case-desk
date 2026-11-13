@@ -92,7 +92,12 @@ const person = async (browser: Browser): Promise<Page> => {
     viewport: { width: 375, height: 812 },
     deviceScaleFactor: 2,
   })
-  return context.newPage()
+  const page = await context.newPage()
+  if (process.env.E2E_DEBUG === '1') {
+    page.on('console', message => console.log(`[console ${message.type()}] ${message.text()}`))
+    page.on('pageerror', error => console.log(`[pageerror] ${error.message}`))
+  }
+  return page
 }
 
 const activate = async (page: Page, link: string, name: string): Promise<void> => {
@@ -161,6 +166,9 @@ const main = async (): Promise<void> => {
   const base = `http://127.0.0.1:${port}`
   let server: ChildProcess | undefined
   let pilotServer: ChildProcess | undefined
+  let pilotLink = ''
+  let pilotUrl = ''
+  let pilotPage: Page | undefined
   let browser: Browser | undefined
 
   try {
@@ -188,7 +196,7 @@ const main = async (): Promise<void> => {
       CASE_DESK_LOCAL_DIR: local,
     })
     mkdirSync(join(local, 'data'), { recursive: true })
-    server = startWorkerd(port, join(local, 'data'), {})
+    server = startWorkerd(port, join(local, 'data'), { RUNTIME_MODE: 'demo' })
     await waitForHealth(base)
 
     const launched = await chromium.launch({
@@ -454,40 +462,81 @@ const main = async (): Promise<void> => {
       await visitor.context().close()
     })
 
-    await step('in pilot mode the server says so, hides triage, and the app shows no triage', async () => {
+    // NOTE: a real pilot: a workerd bundle built with `--mode pilot` (no demo
+    // cases, no demo accounts), started with RUNTIME_MODE=pilot, and a first
+    // administrator from a generated grant file with an invented e-mail. The
+    // demo server above has read its bundle already, so building over it is safe.
+    await step('a pilot build: the server says so and the triage routes are gone', async () => {
+      const pilotLocal = join(local, 'pilot-local')
+      mkdirSync(pilotLocal, { recursive: true })
       const pilotPort = await freePort()
+      const pilotBase = `http://127.0.0.1:${pilotPort}`
+      const output = run('node', [
+        'apps/api/scripts/grant-admin.ts',
+        '--env',
+        'workerd',
+        '--email',
+        'pia.pilot@case-desk.test',
+        '--name',
+        'Pia Pilot',
+        '--origin',
+        pilotBase,
+        '--dir',
+        pilotLocal,
+      ])
+      pilotLink = output.split('\n').find(line => line.includes('/link#')) ?? ''
+      assert.ok(pilotLink !== '', 'grant-admin printed no link for the pilot')
+      run('node', ['apps/api/scripts/build-workerd.mjs', '--mode', 'pilot'], {
+        CASE_DESK_LOCAL_DIR: pilotLocal,
+      })
       const pilotData = join(local, 'pilot-data')
       mkdirSync(pilotData, { recursive: true })
       pilotServer = startWorkerd(pilotPort, pilotData, { RUNTIME_MODE: 'pilot' })
-      const pilotBase = `http://127.0.0.1:${pilotPort}`
       await waitForHealth(pilotBase)
+      pilotUrl = pilotBase
       const config = (await (await fetch(`${pilotBase}/api/config`)).json()) as {
         mode: string
       }
       assert.equal(config.mode, 'pilot')
-      const rpc = await fetch(`${pilotBase}/api/rpc`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ _tag: 'Request', id: '1', tag: 'ListCases', payload: null, headers: [] }),
-      })
-      assert.equal(rpc.status, 404)
+      for (const [path, method] of [
+        ['/api/rpc', 'POST'],
+        ['/api/login', 'POST'],
+        ['/api/logout', 'POST'],
+        ['/api/session', 'GET'],
+      ] as const) {
+        const answer = await fetch(`${pilotBase}${path}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          ...(method === 'POST' ? { body: '{}' } : {}),
+        })
+        assert.equal(answer.status, 404, path)
+      }
+    })
 
-      // NOTE: A signed-in account on the pilot app. The pilot data folder has
-      // no accounts, so the pilot config is given to the signed-in administrator
-      // of the demo server, which is the app's own behaviour for the mode.
-      await admin.route('**/api/config', async route => {
-        const response = await route.fetch()
-        const body = (await response.json()) as Record<string, unknown>
-        await route.fulfill({ response, json: { ...body, mode: 'pilot' } })
-      })
-      await admin.goto(base)
-      await admin.getByRole('link', { name: 'Home' }).waitFor()
-      assert.equal(await admin.getByRole('link', { name: 'New case' }).count(), 0)
-      assert.equal(await admin.getByRole('link', { name: 'Rules' }).count(), 0)
-      await admin.goto(`${base}/new-case`)
-      await admin.getByText('This page is not available').waitFor()
-      await shot(admin, 'pilot-no-triage')
-      await admin.unroute('**/api/config')
+    await step('the pilot administrator activates and signs in; triage is absent', async () => {
+      const pilot = await person(launched)
+      pilotPage = pilot
+      await activate(pilot, pilotLink, 'pilot-admin')
+      await pilot.getByRole('link', { name: 'Home' }).waitFor()
+      assert.equal(await pilot.getByRole('link', { name: 'New case' }).count(), 0)
+      assert.equal(await pilot.getByRole('link', { name: 'Rules' }).count(), 0)
+      await pilot.goto(`${pilotUrl}/new-case`)
+      await pilot.getByText('This page is not available').waitFor()
+      await shot(pilot, 'pilot-no-triage')
+    })
+
+    await step('the Quoroom screens work in the pilot', async () => {
+      const pilot = pilotPage
+      assert.ok(pilot !== undefined, 'no pilot page')
+      await pilot.goto(`${pilotUrl}/admin`)
+      await pilot.getByRole('heading', { name: 'Administration' }).waitFor()
+      await pilot.getByLabel('Unit name').fill('Pilot Unit')
+      await pilot.getByLabel('Unit code').fill('PIL')
+      await pilot.getByRole('button', { name: 'Create unit' }).click()
+      await pilot.getByRole('list', { name: 'Units' }).getByText('Pilot Unit').waitFor()
+      await pilot.goto(`${pilotUrl}/account`)
+      await pilot.getByRole('heading', { name: 'Your account' }).waitFor()
+      await shot(pilot, 'pilot-quoroom')
     })
   } finally {
     await browser?.close()

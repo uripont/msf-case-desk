@@ -78,7 +78,13 @@ import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
-import { AppRoute, fragmentOf, originOf, pathOf, urlToAppRoute } from './route'
+import {
+  AppRoute,
+  originOf,
+  pathOf,
+  redactedFragmentOf,
+  urlToAppRoute,
+} from './route'
 import {
   RulesField,
   RulesForm,
@@ -183,8 +189,16 @@ export const Message = defineMessageUnion({
   },
   FailedLoadDesk: { failure: ApiFailure },
   ClickedRetryLoad: {},
-  ClickedLink: { request: UrlRequest },
-  ChangedUrl: { url: Url },
+  // NOTE: the address without its fragment, and the fragment (a link token)
+  // apart and Redacted (`withoutFragment`, `entry.ts`).
+  ClickedLink: {
+    request: UrlRequest,
+    fragment: Schema.optionalKey(Schema.Redacted(Schema.String)),
+  },
+  ChangedUrl: {
+    url: Url,
+    fragment: Schema.optionalKey(Schema.Redacted(Schema.String)),
+  },
   CompletedPushUrl: {},
   CompletedReplaceUrl: {},
   CompletedLoadExternal: {},
@@ -316,22 +330,8 @@ export const initialModel = Model.make({
   centreFilter: 'All',
 })
 
-const openingLink = (url: Url): Update.Return<Model, Message> => {
-  const linkInit = Link.init(
-    Option.map(fragmentOf(url), fragment => Redacted.make(fragment)),
-  )
-  return {
-    model: modifyFields(initialModel, {
-      maybeLink: () => Option.some(linkInit.model),
-    }),
-    commands: [
-      ...Command.mapMessages(linkInit.commands ?? [], message =>
-        Message.GotLinkMessage({ message }),
-      ),
-      ReplaceUrl({ url: pathOf(AppRoute.Link()) }),
-    ],
-  }
-}
+const openingLink = (url: Url): Update.Return<Model, Message> =>
+  startLink(initialModel, redactedFragmentOf(url))
 
 export const init: Runtime.RoutingApplicationInit<Model, Message> = url => {
   const route = urlToAppRoute(url)
@@ -835,28 +835,38 @@ const resume = (model: Model): Update.Return<Model, Message> =>
     },
   })
 
-const goTo = (model: Model, url: Url): Update.Return<Model, Message> => {
+// NOTE: a link opened: a new model for the token (the old one, with whatever
+// was typed in it, is replaced), and the fragment removed from the address.
+const startLink = (
+  model: Model,
+  fragment: Option.Option<Redacted.Redacted<string>>,
+): Update.Return<Model, Message> => {
+  const linkInit = Link.init(fragment)
+  return {
+    model: modifyFields(model, {
+      maybeLink: () => Option.some(linkInit.model),
+    }),
+    commands: [
+      ...Command.mapMessages(linkInit.commands ?? [], message =>
+        Message.GotLinkMessage({ message }),
+      ),
+      ReplaceUrl({ url: pathOf(AppRoute.Link()) }),
+    ],
+  }
+}
+
+const goTo = (
+  model: Model,
+  url: Url,
+  fragment: Option.Option<Redacted.Redacted<string>>,
+): Update.Return<Model, Message> => {
   const route = urlToAppRoute(url)
+  // NOTE: a link with a token always starts over, also when a link page is
+  // already open: the new token wins.
   const linked: Update.Return<Model, Message> = AppRoute.guards.Link(route)
-    ? Option.match(model.maybeLink, {
-        onSome: () => ({ model }),
-        onNone: () => {
-          const linkInit = Link.init(
-            Option.map(fragmentOf(url), fragment => Redacted.make(fragment)),
-          )
-          return {
-            model: modifyFields(model, {
-              maybeLink: () => Option.some(linkInit.model),
-            }),
-            commands: [
-              ...Command.mapMessages(linkInit.commands ?? [], message =>
-                Message.GotLinkMessage({ message }),
-              ),
-              ReplaceUrl({ url: pathOf(AppRoute.Link()) }),
-            ],
-          }
-        },
-      })
+    ? Option.isNone(fragment) && Option.isSome(model.maybeLink)
+      ? { model }
+      : startLink(model, fragment)
     : { model: modifyFields(model, { maybeLink: () => Option.none() }) }
   const routed = modifyFields(linked.model, {
     route: () => route,
@@ -884,6 +894,15 @@ const goTo = (model: Model, url: Url): Update.Return<Model, Message> => {
 
 const isSameRoute = (a: AppRoute, b: AppRoute): boolean =>
   pathOf(a) === pathOf(b)
+
+// NOTE: an address that carries a token, on the link page.
+const opensLink = (
+  url: Url,
+  fragment: Redacted.Redacted<string> | undefined,
+): boolean =>
+  AppRoute.guards.Link(urlToAppRoute(url)) &&
+  fragment !== undefined &&
+  Redacted.value(fragment).length > 0
 
 // UPDATE
 
@@ -978,13 +997,14 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, { deskLoad: () => DeskLoad.Loading() }),
       commands: [LoadDesk()],
     }),
-    ClickedLink: ({ request }) =>
+    ClickedLink: ({ request, fragment }) =>
       UrlRequest.match<Update.Return<Model, Message>>(request, {
         Internal: ({ url }) =>
-          isSameRoute(urlToAppRoute(url), model.route)
+          isSameRoute(urlToAppRoute(url), model.route) &&
+          !opensLink(url, fragment)
             ? { model }
             : (() => {
-                const went = goTo(model, url)
+                const went = goTo(model, url, Option.fromNullishOr(fragment))
                 return {
                   model: went.model,
                   commands: [
@@ -998,10 +1018,10 @@ export const update = (model: Model, message: Message) =>
           commands: [LoadExternal({ href })],
         }),
       }),
-    ChangedUrl: ({ url }) =>
-      isSameRoute(urlToAppRoute(url), model.route)
+    ChangedUrl: ({ url, fragment }) =>
+      isSameRoute(urlToAppRoute(url), model.route) && !opensLink(url, fragment)
         ? { model }
-        : goTo(model, url),
+        : goTo(model, url, Option.fromNullishOr(fragment)),
     CompletedPushUrl: () => ({ model }),
     CompletedReplaceUrl: () => ({ model }),
     CompletedLoadExternal: () => ({ model }),

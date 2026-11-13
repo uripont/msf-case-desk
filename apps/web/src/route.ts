@@ -1,4 +1,4 @@
-import { Option, Schema, pipe } from 'effect'
+import { Option, Redacted, Schema, pipe } from 'effect'
 import { Route } from 'foldkit'
 import { defineRouteUnion } from 'foldkit/route'
 import { type Url } from 'foldkit/url'
@@ -123,3 +123,17 @@ export const originOf = (url: Url): string =>
 
 export const fragmentOf = (url: Url): Option.Option<string> =>
   Option.filter(url.hash, hash => hash.length > 0)
+
+// NOTE: A Message never carries a fragment: the runtime hands over the whole
+// URL, and the fragment of `/link` is the token. So the entry point splits it
+// off before the Message is made: the Message gets the address without it, and
+// the token apart, `Redacted`, so the Message history and DevTools never show it.
+export const withoutFragment = (url: Url): Url => ({
+  ...url,
+  hash: Option.none(),
+})
+
+export const redactedFragmentOf = (
+  url: Url,
+): Option.Option<Redacted.Redacted<string>> =>
+  Option.map(fragmentOf(url), fragment => Redacted.make(fragment))

@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, type FontFamily, type Theme } from '@case-desk/domain'
+import { DEFAULT_THEME, type FontFamily, type PublicTheme } from '@case-desk/domain'
 
 // NOTE: The look of the deployment (D24). `/api/config` gives the theme, and
 // the app applies it as CSS custom properties on its root element. The class
@@ -20,7 +20,7 @@ const FONT_STACKS: Readonly<Record<FontFamily, string>> = {
 
 export const fontStackOf = (font: FontFamily): string => FONT_STACKS[font]
 
-export const themeStyle = (theme: Theme): Record<string, string> => ({
+export const themeStyle = (theme: PublicTheme): Record<string, string> => ({
   '--color-msf-red': theme.colors.primary,
   '--color-msf-black': theme.colors.text,
   '--color-msf-ink': theme.colors.text,

@@ -7,9 +7,7 @@ import { modifyFields } from 'foldkit/struct'
 
 import {
   AccountRow,
-  ActivationLink,
   CapabilityName,
-  GrantResult,
   Unit,
 } from '@case-desk/domain'
 
@@ -17,10 +15,13 @@ import { withQuoroom } from './api'
 import { Failure, failureOf } from './failure'
 import { FormState, formStatus, isSubmitting } from './formState'
 import {
+  GivenLink,
   IssuedLink,
   copyToClipboard,
+  givenLinkOf,
   issuedLinkOf,
   issuedLinkPanel,
+  maybeGivenLinkOf,
 } from './issuedLink'
 import {
   failureAlert,
@@ -106,7 +107,10 @@ export const Message = defineMessageUnion({
   SelectedGrantCapability: { value: Schema.String },
   SelectedGrantUnit: { value: Schema.String },
   SubmittedGrant: {},
-  SucceededGrantCapability: { result: GrantResult },
+  SucceededGrantCapability: {
+    account: AccountRow,
+    link: Schema.Option(GivenLink),
+  },
   FailedGrantCapability: { failure: Failure },
   ClickedRevoke: {
     accountId: Schema.String,
@@ -116,7 +120,7 @@ export const Message = defineMessageUnion({
   SucceededRevokeCapability: { account: AccountRow },
   FailedRevokeCapability: { failure: Failure },
   ClickedIssueReset: { accountId: Schema.String, name: Schema.String },
-  SucceededIssueReset: { name: Schema.String, link: ActivationLink },
+  SucceededIssueReset: { name: Schema.String, link: GivenLink },
   FailedIssueReset: { failure: Failure },
   ClickedCopyLink: {},
   CompletedCopyLink: {},
@@ -176,7 +180,12 @@ export const GrantCapability = Command.define('GrantCapability', {
         }),
       }),
     ).pipe(
-      Effect.map(result => Message.SucceededGrantCapability({ result })),
+      Effect.map(result =>
+        Message.SucceededGrantCapability({
+          account: result.account,
+          link: maybeGivenLinkOf(result.link),
+        }),
+      ),
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedGrantCapability({ failure: failureOf(error) }),
@@ -217,7 +226,9 @@ export const IssueReset = Command.define('IssueReset', {
   messages: [Message.SucceededIssueReset, Message.FailedIssueReset],
   execute: ({ accountId, name }) =>
     withQuoroom(client => client.IssueReset({ accountId })).pipe(
-      Effect.map(link => Message.SucceededIssueReset({ name, link })),
+      Effect.map(link =>
+        Message.SucceededIssueReset({ name, link: givenLinkOf(link) }),
+      ),
       Effect.catch(error =>
         Effect.succeed(Message.FailedIssueReset({ failure: failureOf(error) })),
       ),
@@ -262,7 +273,7 @@ const replaceAccount = (
 const linkOf = (
   model: Model,
   name: string,
-  link: ActivationLink,
+  link: GivenLink,
 ): Option.Option<IssuedLink> =>
   Option.some(issuedLinkOf(model.origin, name, link))
 
@@ -342,20 +353,18 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     SubmittedGrant: () => submitGrant(model),
-    SucceededGrantCapability: ({ result }) => ({
+    SucceededGrantCapability: ({ account, link }) => ({
       model: modifyFields(clearedNotices(model), {
-        accounts: accounts => replaceAccount(accounts, result.account),
+        accounts: accounts => replaceAccount(accounts, account),
         grantEmail: () => '',
         grantName: () => '',
         grantForm: () => FormState.Editing(),
         maybeLink: () =>
-          result.link === undefined
-            ? Option.none()
-            : linkOf(model, result.account.name, result.link),
+          Option.flatMap(link, given => linkOf(model, account.name, given)),
         maybeNotice: () =>
-          result.link === undefined
+          Option.isNone(link)
             ? Option.some(
-                `${result.account.name} already had an account, so no link was made. They now hold the capability.`,
+                `${account.name} already had an account, so no link was made. They now hold the capability.`,
               )
             : Option.none(),
       }),

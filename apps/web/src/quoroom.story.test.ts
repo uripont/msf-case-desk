@@ -25,6 +25,7 @@ import {
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { Failure } from './quoroom/failure'
+import { givenLinkOf } from './quoroom/issuedLink'
 import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
 
@@ -221,6 +222,41 @@ const activationLink = {
   expiresAt: 5_000,
 } as const
 
+describe('link tokens in Messages', () => {
+  const token = Redacted.value(SYNTHETIC_TOKEN)
+
+  test('a link the server issued is Redacted in every Message that carries one', () => {
+    const given = givenLinkOf(activationLink)
+    const reset = Admin.Message.SucceededIssueReset({ name: 'Known Person', link: given })
+    const messages = [
+      reset,
+      Admin.Message.SucceededGrantCapability({
+        account: {
+          id: 'account-9',
+          email: 'new@case-desk.test',
+          name: 'New Author',
+          active: true,
+          grants: [],
+        },
+        link: Option.some(given),
+      }),
+      Unit.Message.SucceededInviteToUnit({ name: 'Second Author', link: Option.some(given) }),
+      Unit.Message.SucceededAddReviewer({ name: 'Second Reviewer', link: Option.some(given) }),
+    ]
+    for (const message of messages) {
+      expect(JSON.stringify(message)).not.toContain(token)
+      expect(String(message)).not.toContain(token)
+    }
+    expect(JSON.stringify(given)).not.toContain(token)
+    // NOTE: the Model still gets the usable link, Redacted too.
+    const issued = run(adminLoaded, [adminMessage(reset)]).model
+    expect(
+      Option.map(issued.admin.maybeLink, link => Redacted.value(link.url)),
+    ).toEqual(Option.some(`https://quoroom.test/link#${token}`))
+    expect(JSON.stringify(issued.admin.maybeLink)).not.toContain(token)
+  })
+})
+
 describe('the administrator', () => {
   test('a unit with no name is refused before it is sent', () => {
     const submitted = run(adminLoaded, [
@@ -267,16 +303,14 @@ describe('the administrator', () => {
       Command.resolve(
         Admin.GrantCapability,
         Admin.Message.SucceededGrantCapability({
-          result: {
-            account: {
-              id: 'account-9',
-              email: 'new@case-desk.test',
-              name: 'New Author',
-              active: true,
-              grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
-            },
-            link: activationLink,
+          account: {
+            id: 'account-9',
+            email: 'new@case-desk.test',
+            name: 'New Author',
+            active: true,
+            grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
           },
+          link: Option.some(givenLinkOf(activationLink)),
         }),
       ),
       model(next => {
@@ -292,15 +326,14 @@ describe('the administrator', () => {
     const granted = run(adminLoaded, [
       adminMessage(
         Admin.Message.SucceededGrantCapability({
-          result: {
-            account: {
-              id: 'account-9',
-              email: 'known@case-desk.test',
-              name: 'Known Person',
-              active: true,
-              grants: [{ capability: 'admin' }],
-            },
+          account: {
+            id: 'account-9',
+            email: 'known@case-desk.test',
+            name: 'Known Person',
+            active: true,
+            grants: [{ capability: 'admin' }],
           },
+          link: Option.none(),
         }),
       ),
     ]).model
@@ -313,7 +346,7 @@ describe('the administrator', () => {
       adminMessage(
         Admin.Message.SucceededIssueReset({
           name: 'Known Person',
-          link: { ...activationLink, purpose: 'reset' },
+          link: givenLinkOf({ ...activationLink, purpose: 'reset' }),
         }),
       ),
     ]).model
@@ -362,10 +395,7 @@ describe('the author', () => {
       unitMessage(
         Unit.Message.SucceededInviteToUnit({
           name: 'Second Author',
-          result: {
-            account: { id: 'account-8', name: 'Second Author' },
-            link: activationLink,
-          },
+          link: Option.some(givenLinkOf(activationLink)),
         }),
       ),
     )
@@ -378,7 +408,7 @@ describe('the author', () => {
       unitMessage(
         Unit.Message.SucceededInviteToUnit({
           name: 'Known Person',
-          result: { account: { id: 'account-7', name: 'Known Person' } },
+          link: Option.none(),
         }),
       ),
     ]).model

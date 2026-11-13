@@ -28,6 +28,11 @@
     "demo:refresh": "pnpm --filter @case-desk/api demo:seed",
     "workerd": "sh scripts/workerd.sh",
     "smoke": "node scripts/smoke.mjs",
+    "pilot:plan": "node scripts/pilot-stack.mjs pilot-plan",
+    "pilot:deploy": "node scripts/pilot-stack.mjs pilot-deploy",
+    "pilot:destroy": "node scripts/pilot-stack.mjs pilot-destroy",
+    "test-env:up": "node scripts/pilot-stack.mjs up",
+    "test-env:down": "node scripts/pilot-stack.mjs down",
     "alerts:plan": "alchemy plan alchemy.alerts.run.ts",
     "alerts:deploy": "alchemy deploy alchemy.alerts.run.ts",
     "alerts:destroy": "alchemy destroy alchemy.alerts.run.ts"

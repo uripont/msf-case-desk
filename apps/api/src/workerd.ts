@@ -5,12 +5,12 @@
 import { DurableObject } from 'cloudflare:workers'
 import { Layer } from 'effect'
 
-import { runtimeModeOf } from '@case-desk/domain'
 // @ts-expect-error: provided by the bundler from the migrations and seed files.
 import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'
+import { modeOf } from './runtimeMode'
 import { layerSql } from './d1Repository'
 import { type NetworkPolicy, QuoroomServicesFor } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
@@ -32,7 +32,8 @@ export type Env = {
   // address, if the operator controls one. Without it the per-address sign-in
   // limit is one shared bucket (see `clientAddress`).
   readonly TRUSTED_PROXY_HEADER?: string
-  // NOTE: `demo` or `pilot` (D20), set in the workerd config. Unset means `demo`.
+  // NOTE: `demo` or `pilot` (D20), set in the workerd config. Unset means `pilot`;
+  // any other value is a configuration error (see `modeOf`).
   readonly RUNTIME_MODE?: string
 }
 
@@ -184,10 +185,14 @@ export default {
       proxyHeader === ''
         ? { kind: 'self_hosted' }
         : { kind: 'header', name: proxyHeader }
+    const mode = modeOf(env.RUNTIME_MODE)
+    if (mode.refusal !== undefined) {
+      return withReferrerPolicy(mode.refusal)
+    }
     const app = makeApp(
       layerSql(database),
       Layer.mergeAll(layerSqlReport(database), QuoroomServicesFor(network)),
-      runtimeModeOf(env.RUNTIME_MODE),
+      mode.mode,
     )
     try {
       return await app.handle(request)

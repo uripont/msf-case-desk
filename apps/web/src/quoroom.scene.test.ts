@@ -13,6 +13,7 @@ import { describe, test } from 'vitest'
 
 import { SYNTHETIC_ME, atPage } from './fixtures'
 import { Message, update } from './main'
+import { givenLinkOf } from './quoroom/issuedLink'
 import {
   SYNTHETIC_TOKEN,
   SYNTHETIC_UNIT,
@@ -158,20 +159,20 @@ describe('administration scene', () => {
       Command.resolve(
         Admin.GrantCapability,
         Admin.Message.SucceededGrantCapability({
-          result: {
-            account: {
-              id: 'account-9',
-              email: 'new@case-desk.test',
-              name: 'New Author',
-              active: true,
-              grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
-            },
-            link: {
+          account: {
+            id: 'account-9',
+            email: 'new@case-desk.test',
+            name: 'New Author',
+            active: true,
+            grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
+          },
+          link: Option.some(
+            givenLinkOf({
               purpose: 'activate',
               token: Redacted.value(SYNTHETIC_TOKEN),
               expiresAt: 5_000,
-            },
-          },
+            }),
+          ),
         }),
       ),
       expect(role('heading', { name: 'One-time link' })).toExist(),
@@ -210,7 +211,7 @@ describe('unit scene', () => {
         Unit.InviteToUnit,
         Unit.Message.SucceededInviteToUnit({
           name: 'Known Person',
-          result: { account: { id: 'account-7', name: 'Known Person' } },
+          link: Option.none(),
         }),
       ),
       Command.resolve(
@@ -258,14 +259,8 @@ describe('unit scene', () => {
       Command.resolve(
         Unit.AddReviewer,
         Unit.Message.SucceededAddReviewer({
-          added: {
-            accountId: 'account-6',
-            unit: SYNTHETIC_UNIT.id,
-            name: 'Rae Viewer',
-            email: 'rae@case-desk.test',
-            phone: '+34600000000',
-            whatsappConsent: true,
-          },
+          name: 'Rae Viewer',
+          link: Option.none(),
         }),
       ),
       Command.resolve(

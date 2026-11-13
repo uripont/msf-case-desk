@@ -199,3 +199,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | --- | --- | --- | --- |
 | `GetDownloads` | report_author | `read_draft` |  |
 | `GetApprovalRecordData` | report_author | `read_grid` |  |
+
+## `/api/config`
+
+Signed-out and unauthenticated: only `mode` and `theme` with `schemaVersion`, `organisationName`, `colors` and `fonts`. PDF header and footer text is not here; it comes from the session-gated `GetTheme`.

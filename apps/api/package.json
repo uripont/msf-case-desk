@@ -10,7 +10,8 @@
     "format": "oxfmt",
     "users:add": "node scripts/add-user.ts",
     "grant-admin": "node scripts/grant-admin.ts",
-    "demo:seed": "UPDATE_DEMO_SEED=1 vitest run src/demoSeed.test.ts"
+    "demo:seed": "UPDATE_DEMO_SEED=1 vitest run src/demoSeed.test.ts",
+    "templates:sql": "UPDATE_BUILTIN_TEMPLATES=1 vitest run src/builtinTemplatesSql.test.ts"
   },
   "dependencies": {
     "@case-desk/domain": "workspace:*",

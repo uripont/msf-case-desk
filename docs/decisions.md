@@ -261,3 +261,31 @@ Stack `Spike0c`, stage `test_spike0c`, alchemy file `alchemy.spike0c.run.ts` (de
 ## `playwright-core` for the browser check (stage 3)
 
 `packages/e2e` is the one place that drives a real browser. It uses `playwright-core` 1.65.0 (no bundled browsers) with the system Chromium (`/usr/bin/chromium`, or `E2E_CHROMIUM`), so nothing is downloaded. It is a dev dependency of that package only, has no `test` script (so `pnpm test` and `pnpm check` do not need a browser) and starts its own workerd on a free port with a temporary data folder. Run it with `pnpm --filter @case-desk/e2e e2e`.
+
+## Bundled fonts for the theme (stage 3c)
+
+The theme (D24) offers a fixed set of fonts served from the app itself, with no request to a font provider. Three packages were added to `apps/web`, pinned exactly, all under the SIL Open Font License:
+
+- `@fontsource/inter` 5.3.0 (body)
+- `@fontsource/source-serif-4` 5.3.1 (body, serif)
+- `@fontsource/noto-sans` 5.3.0 (body, with Greek and Cyrillic)
+
+They join `@fontsource-variable/hanken-grotesk` 5.3.0 (headings). None depends on `effect`. The same files feed the PDF renderer (spike 2, D16). The MSF logo is not in the repository: the unused `apps/web/public/brand` folder was removed in stage 3d. Frozen iterations are built from their tags, so `iter2` is unaffected.
+
+## The pilot stack and the test environments (stage 3d)
+
+`alchemy.pilot.run.ts` is a separate stack named `Quoroom`, apart from the demo stack (`TriageDesk`, stage `live_uripont`), so deploying or destroying one never touches the other.
+
+- **Stages.** Only `pilot` (Worker `pilot`) or `test_<name>` (Worker `test-<name>-pilot`). The file throws for any other stage, including the `ALCHEMY_STAGE=live_uripont` in `.env`.
+- **Commands.** `pnpm pilot:plan|deploy|destroy` always pass `--stage pilot` and refuse `--stage`, `--config` and `--env-file`. `pnpm test-env:up <test_name> [--fast]` deploys with `--yes` and prints the URL; `pnpm test-env:down <test_name>` destroys it. Both refuse a stage that does not match `test_[a-z0-9]+` (so `pilot` and `live_uripont` are refused). `--fast` sets `QUOROOM_FAST_TIMINGS=1`: reminders 10 and 3 minutes before the deadline instead of 48 h and 4 h. The pilot stage ignores it.
+- **Database.** Its own D1 with `jurisdiction: "eu"` (never change it after the first deploy: it replaces the database), the migrations, `apps/api/seed/builtin-templates.sql` (insert-if-absent, generated from the domain by `pnpm --filter @case-desk/api templates:sql`, kept in sync by a test), and `.local/grants-<env>.sql` if present (`pnpm grant-admin --env pilot|test-<name>`). No demo cases, no `users.sql`.
+- **Runtime mode (D20).** `RUNTIME_MODE` accepts exactly `demo` or `pilot`. Unset or blank is `pilot` (fail closed); any other value is a configuration error: the Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request (`modeOf` in `apps/api/src/runtimeMode.ts`). The demo stack sets `RUNTIME_MODE=demo` explicitly on `app` (`iter2` is a frozen snapshot that does not read it), `pnpm workerd` exports it, and tests pass the mode to `makeApp`. In a pilot the legacy `/api/login`, `/api/logout` and `/api/session` answer 404; in the demo, `/api/login` shares the D13 throttle and the `active` check with the Quoroom `SignIn` (`authenticate`).
+- **Worker.** `RUNTIME_MODE=pilot`, the `NOTIFY_*_MINUTES` timings as variables, a Cron Trigger (every 5 minutes on `pilot`, every minute on test stages) that calls `scheduled`. Until stage 7, `scheduled` runs a placeholder that does nothing (`runNotificationPass` in `apps/api/src/worker.ts`).
+- **Observability.** Workers Logs on, invocation logs off (they record the URL), traces off, Issues on. Logs keep what the code writes, errors included; no request body is ever logged. Stage 10 checks this with a search for invented text.
+- **workerd.** `pnpm workerd --mode demo|pilot` (default demo). Pilot embeds the built-in templates and `grants-workerd.sql` only, keeps its data in `.local/workerd-data-pilot`, and starts workerd with `RUNTIME_MODE=pilot`.
+- **Free plan.** One Cron Trigger and one D1 database per environment; a test environment is always destroyed after use.
+- **Pilot stack guards.** `scripts/pilot-stack.mjs` passes only `--yes`, `-y`, `--dry-run` and `--detailed` to alchemy and refuses `--profile`, `-p` and every other flag. It always passes `--profile default` and refuses to run when `ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID` or another account-selecting variable (nine names in `scripts/pilot-guards.mjs`) is set, in the environment or in `.env`, to anything but the default. The message names the variable, never its value. `test-env:down` also removes `.local/grants-test-<name>.sql`.
+- **First-admin imports apply once.** Each generated grant file carries a unique import ID recorded in `applied_imports` (migration 0005); its statements run only when the ID is absent, so a re-run on every deploy or workerd start cannot undo a revocation. `grant-admin --reset` checks the local workerd database (account exists, has a password, is active); for D1 it prints that the link works only if the account exists and is active.
+- **Referrer-Policy on static assets.** `apps/web/public/_headers` sets `Referrer-Policy: no-referrer` for all paths, because assets bypass the Worker (`runWorkerFirst: ["/api/*"]`). A test builds the web app and checks `dist/_headers`.
+- **`/api/config` is minimal.** It serves the mode and the public theme only (colours, fonts, organisation name). PDF header and footer text is read through the session-gated `GetTheme`.
+- **Legacy sign-in.** `/api/login`, `/api/logout` and `/api/session` are 404 in a pilot. In the demo, `/api/login` uses the same throttle and `active` check as the Quoroom `SignIn` (`quoroom/signin.ts`).

@@ -4,7 +4,7 @@ import {
   CONFIG_PATH,
   DEFAULT_RULES,
   RPC_PATH,
-  type Repository,
+  Repository,
   type RuntimeMode,
 } from '@case-desk/domain'
 
@@ -19,10 +19,14 @@ import {
   makeQuoroomPublicHandler,
   makeQuoroomRpcHandler,
 } from './quoroom/server'
+import { authenticate } from './quoroom/signin'
 import { makeRpcHandler } from './server'
 import {
   Credentials,
+  SESSION_MS,
   clearedSessionCookie,
+  hashToken,
+  newToken,
   sessionCookie,
   sessionUser,
   signIn,
@@ -52,8 +56,8 @@ const isJsonPost = (request: Request): boolean =>
 // image route at `/api/images`; without it the app is exactly iteration 2.
 export const makeApp = (
   repository: Layer.Layer<Repository>,
-  quoroom?: QuoroomDeps,
-  mode: RuntimeMode = 'demo',
+  quoroom: QuoroomDeps | undefined,
+  mode: RuntimeMode,
 ) => {
   const config =
     quoroom === undefined ? undefined : makeConfigHandler(quoroom, mode)
@@ -78,25 +82,79 @@ export const makeApp = (
       ),
     )
 
+  // NOTE: the demo's legacy sign-in. With the Quoroom services it goes
+  // through the same throttle and `active` check as the Quoroom `SignIn`
+  // (`authenticate`), so neither is an unthrottled oracle for the other.
+  // Without them (the frozen iteration 2 setup) it is the old sign-in.
+  const quoroomLogin = (
+    credentials: Credentials,
+    request: Request,
+    deps: QuoroomDeps,
+  ): Promise<Response> =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* Repository
+        const headers = Object.fromEntries(request.headers.entries())
+        const { account, now } = yield* authenticate(
+          credentials.email,
+          credentials.password,
+          headers,
+        )
+        const token = newToken()
+        const expiresAt = now + SESSION_MS
+        yield* repo.createSession({
+          tokenHash: yield* Effect.promise(() => hashToken(token)),
+          userId: account.id as never,
+          createdAt: now,
+          expiresAt,
+        })
+        return json(
+          { user: { id: account.id, email: account.email, name: account.name } },
+          200,
+          { 'set-cookie': sessionCookie(token, expiresAt) },
+        )
+      }).pipe(
+        Effect.catch((error: unknown) => {
+          const tag = (error as { _tag?: string })._tag
+          if (tag === 'Throttled') {
+            const wait = (error as { retryAfterSeconds: number }).retryAfterSeconds
+            return Effect.succeed(
+              json({ error: 'Throttled', retryAfterSeconds: wait }, 429, {
+                'retry-after': String(wait),
+              }),
+            )
+          }
+          if (tag === 'InvalidCredentials') {
+            return Effect.succeed(json({ error: 'InvalidCredentials' }, 401))
+          }
+          return Effect.succeed(json({ error: 'StorageUnavailable' }, 503))
+        }),
+        Effect.provide(Layer.mergeAll(repository, deps)),
+      ) as Effect.Effect<Response>,
+    )
+
   const login = async (request: Request): Promise<Response> => {
     if (!isJsonPost(request)) {
       return json({ error: 'BadRequest' }, 400)
     }
-    return Option.match(decodeCredentials(await readJson(request)), {
-      onNone: () => Promise.resolve(json({ error: 'BadRequest' }, 400)),
-      onSome: credentials =>
-        run(
-          Effect.map(signIn(credentials), maybeSignIn =>
-            Option.match(maybeSignIn, {
-              onNone: () => json({ error: 'InvalidCredentials' }, 401),
-              onSome: ({ user, token, expiresAt }) =>
-                json({ user }, 200, {
-                  'set-cookie': sessionCookie(token, expiresAt),
-                }),
+    const decoded = decodeCredentials(await readJson(request))
+    if (Option.isNone(decoded)) {
+      return json({ error: 'BadRequest' }, 400)
+    }
+    if (quoroom !== undefined) {
+      return quoroomLogin(decoded.value, request, quoroom)
+    }
+    return run(
+      Effect.map(signIn(decoded.value), maybeSignIn =>
+        Option.match(maybeSignIn, {
+          onNone: () => json({ error: 'InvalidCredentials' }, 401),
+          onSome: ({ user, token, expiresAt }) =>
+            json({ user }, 200, {
+              'set-cookie': sessionCookie(token, expiresAt),
             }),
-          ),
-        ),
-    })
+        }),
+      ),
+    )
   }
 
   const logout = (request: Request): Promise<Response> => {
@@ -135,14 +193,17 @@ export const makeApp = (
         json({ status: 'ok', rulesVersion: DEFAULT_RULES.version }),
       )
     }
-    if (pathname === '/api/login') {
-      return login(request)
-    }
-    if (pathname === '/api/logout') {
-      return logout(request)
-    }
-    if (pathname === '/api/session') {
-      return session(request)
+    // NOTE: the legacy routes belong to the triage demo; a pilot has none
+    // of them (D20).
+    if (pathname === '/api/login' || pathname === '/api/logout' || pathname === '/api/session') {
+      if (mode === 'pilot') {
+        return Promise.resolve(json({ error: 'NotFound' }, 404))
+      }
+      return pathname === '/api/login'
+        ? login(request)
+        : pathname === '/api/logout'
+          ? logout(request)
+          : session(request)
     }
     if (config !== undefined && pathname === CONFIG_PATH) {
       return config(request)

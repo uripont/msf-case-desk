@@ -7,9 +7,7 @@ import { modifyFields } from 'foldkit/struct'
 
 import {
   CommitteeRecord,
-  InviteResult,
   Reviewer,
-  ReviewerAdded,
   Unit,
   UnitMember,
 } from '@case-desk/domain'
@@ -18,10 +16,12 @@ import { withQuoroom } from './api'
 import { Failure, failureOf, failureText } from './failure'
 import { FormState, formStatus, isSubmitting } from './formState'
 import {
+  GivenLink,
   IssuedLink,
   copyToClipboard,
   issuedLinkOf,
   issuedLinkPanel,
+  maybeGivenLinkOf,
 } from './issuedLink'
 import {
   checkboxField,
@@ -124,14 +124,20 @@ export const Message = defineMessageUnion({
   UpdatedInviteName: { value: Schema.String },
   UpdatedInviteEmail: { value: Schema.String },
   SubmittedInvite: {},
-  SucceededInviteToUnit: { name: Schema.String, result: InviteResult },
+  SucceededInviteToUnit: {
+    name: Schema.String,
+    link: Schema.Option(GivenLink),
+  },
   FailedInviteToUnit: { failure: Failure },
   UpdatedReviewerName: { value: Schema.String },
   UpdatedReviewerEmail: { value: Schema.String },
   UpdatedReviewerPhone: { value: Schema.String },
   ToggledReviewerConsent: {},
   SubmittedReviewer: {},
-  SucceededAddReviewer: { added: ReviewerAdded },
+  SucceededAddReviewer: {
+    name: Schema.String,
+    link: Schema.Option(GivenLink),
+  },
   FailedAddReviewer: { failure: Failure },
   UpdatedCommitteeName: { value: Schema.String },
   SubmittedCommittee: {},
@@ -190,7 +196,12 @@ export const InviteToUnit = Command.define('InviteToUnit', {
   messages: [Message.SucceededInviteToUnit, Message.FailedInviteToUnit],
   execute: ({ unit, name, email }) =>
     withQuoroom(client => client.InviteToUnit({ unit, name, email })).pipe(
-      Effect.map(result => Message.SucceededInviteToUnit({ name, result })),
+      Effect.map(result =>
+        Message.SucceededInviteToUnit({
+          name,
+          link: maybeGivenLinkOf(result.link),
+        }),
+      ),
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedInviteToUnit({ failure: failureOf(error) }),
@@ -221,7 +232,12 @@ export const AddReviewer = Command.define('AddReviewer', {
         }),
       }),
     ).pipe(
-      Effect.map(added => Message.SucceededAddReviewer({ added })),
+      Effect.map(added =>
+        Message.SucceededAddReviewer({
+          name: added.name,
+          link: maybeGivenLinkOf(added.link),
+        }),
+      ),
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedAddReviewer({ failure: failureOf(error) }),
@@ -386,17 +402,15 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     SubmittedInvite: () => submitInvite(model),
-    SucceededInviteToUnit: ({ name, result }) => ({
+    SucceededInviteToUnit: ({ name, link: given }) => ({
       model: modifyFields(noticesCleared(model), {
         inviteName: () => '',
         inviteEmail: () => '',
         inviteForm: () => FormState.Editing(),
         maybeLink: () =>
-          Option.map(Option.fromNullishOr(result.link), link =>
-            issuedLinkOf(model.origin, name, link),
-          ),
+          Option.map(given, link => issuedLinkOf(model.origin, name, link)),
         maybeNotice: () =>
-          result.link === undefined
+          Option.isNone(given)
             ? Option.some(
                 `${name} already has an account, so no link was made. They are now part of this unit.`,
               )
@@ -430,7 +444,7 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     SubmittedReviewer: () => submitReviewer(model),
-    SucceededAddReviewer: ({ added }) => ({
+    SucceededAddReviewer: ({ name, link: given }) => ({
       model: modifyFields(noticesCleared(model), {
         reviewerName: () => '',
         reviewerEmail: () => '',
@@ -438,13 +452,11 @@ export const update = (model: Model, message: Message) =>
         reviewerConsent: () => false,
         reviewerForm: () => FormState.Editing(),
         maybeLink: () =>
-          Option.map(Option.fromNullishOr(added.link), link =>
-            issuedLinkOf(model.origin, added.name, link),
-          ),
+          Option.map(given, link => issuedLinkOf(model.origin, name, link)),
         maybeNotice: () =>
-          added.link === undefined
+          Option.isNone(given)
             ? Option.some(
-                `${added.name} already has an account, so no link was made. They are now registered as a reviewer in this unit.`,
+                `${name} already has an account, so no link was made. They are now registered as a reviewer in this unit.`,
               )
             : Option.none(),
       }),

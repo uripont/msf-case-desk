@@ -43,6 +43,7 @@ const input = (token: string, mode: 'activate' | 'reset', id = 'a1') => ({
   now: NOW,
   accountId: `acc-${id}`,
   invitationId: `inv-${token}`,
+  importId: `imp-${token}`,
   tokenHash: `hash-of-${token}`,
   mode,
 })
@@ -58,6 +59,7 @@ const world = () => {
       makeTestIds(),
       Layer.succeed(QuoroomConfig, DEFAULT_NOTIFICATION_CONFIG),
     ),
+    'demo',
   )
   open.push(() => app.dispose())
   const jar = new Map<string, string>()
@@ -194,6 +196,31 @@ describe('pnpm grant-admin (D21)', () => {
     const stale = await w.publicCall(c => c.InspectLink({ token: second.token }))
     expect(Result.isFailure(stale)).toBe(true)
     expect(rows(w.sql, 'SELECT COUNT(*) AS n FROM audit_events WHERE action LIKE \'account.operator%\'')).toEqual([{ n: 1 }])
+  })
+
+  test('a block applies once: after a revocation a re-run does not grant again', async () => {
+    const w = world()
+    const { sql } = await issued('7'.repeat(64), 'activate')
+    w.sql.raw.exec(sql)
+    expect(rows(w.sql, 'SELECT capability FROM capability_grants')).toHaveLength(2)
+    w.sql.raw.exec(`DELETE FROM capability_grants WHERE capability = 'template_editor'`)
+    // NOTE: a redeploy or a restart of workerd imports the same file again.
+    w.sql.raw.exec(sql)
+    w.sql.raw.exec(sql)
+    expect(rows(w.sql, 'SELECT capability FROM capability_grants')).toEqual([{ capability: 'admin' }])
+    expect(rows(w.sql, 'SELECT id FROM applied_imports')).toEqual([{ id: 'imp-' + '7'.repeat(64) }])
+  })
+
+  test('a block applied twice without a revocation leaves one account, one grant of each and one link', async () => {
+    const w = world()
+    const { sql } = await issued('6'.repeat(64), 'activate')
+    w.sql.raw.exec(sql)
+    w.sql.raw.exec(sql)
+    expect(rows(w.sql, 'SELECT id FROM users')).toHaveLength(1)
+    expect(rows(w.sql, 'SELECT capability FROM capability_grants')).toHaveLength(2)
+    expect(rows(w.sql, 'SELECT id FROM invitations')).toHaveLength(1)
+    expect(rows(w.sql, "SELECT id FROM audit_events WHERE action LIKE 'account.operator%'")).toHaveLength(1)
+    expect(rows(w.sql, 'SELECT id FROM applied_imports')).toHaveLength(1)
   })
 
   test('--reset gives a link for an account that has a password, and ends its sessions', async () => {

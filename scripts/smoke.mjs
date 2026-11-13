@@ -30,8 +30,17 @@ const expect = (condition, message) => {
   }
 }
 
-const rpc = (tag, cookie) =>
-  fetch(`${base}/api/rpc`, {
+// NOTE: In pilot mode (D20) the triage procedures at /api/rpc refuse everyone,
+// so the "no session" check asks a Quoroom procedure instead. Deployments from
+// before /api/config existed are demo.
+const config = await fetch(`${base}/api/config`)
+  .then(response => (response.ok ? response.json() : {}))
+  .catch(() => ({}))
+const pilot = config.mode === 'pilot'
+if (pilot) console.log('mode pilot: the triage desk is off, checking the Quoroom API instead')
+
+const rpc = (tag, cookie, path = '/api/rpc') =>
+  fetch(`${base}${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -59,7 +68,8 @@ const signedOut = async cookie => {
     cookie ? { headers: { cookie } } : {},
   )
   const body = await response.json().catch(() => ({}))
-  return response.status === 401 || body.user === null
+  // NOTE: a pilot has no legacy session route (404); the next check covers it.
+  return response.status === 401 || body.user === null || (pilot && response.status === 404)
 }
 
 await check('there is no session without signing in', async () => {
@@ -67,7 +77,8 @@ await check('there is no session without signing in', async () => {
 })
 
 await check('the API refuses requests without a session', async () => {
-  expect((await rpc('ListCases')).includes('Unauthorised'), 'not refused')
+  const refused = pilot ? await rpc('GetMe', undefined, '/api/q/rpc') : await rpc('ListCases')
+  expect(refused.includes('Unauthorised'), 'not refused')
 })
 
 const email = process.env.SMOKE_EMAIL

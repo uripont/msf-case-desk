@@ -84,7 +84,9 @@ export default Alchemy.Stack(
       rootDir: path.resolve(root, "apps/web"),
       main: path.resolve(root, "apps/api/src/worker.ts"),
       assets: { runWorkerFirst: ["/api/*"] },
-      env: { DB: database },
+      // The demo is asked for explicitly: a Worker with no RUNTIME_MODE is a
+      // pilot (D20). Iteration 2 above is frozen and does not read it.
+      env: { DB: database, RUNTIME_MODE: "demo" },
       observability,
     });
 

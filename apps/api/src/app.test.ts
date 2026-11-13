@@ -27,6 +27,8 @@ const makeTestApp = async () =>
         },
       ],
     }),
+    undefined,
+    'demo',
   )
 
 const memoryLayer = async (seed: Parameters<typeof makeMemoryRepository>[0]) =>

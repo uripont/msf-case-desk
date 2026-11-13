@@ -11,7 +11,7 @@ import { DUMMY_HASH, verifyPassword } from './password'
 
 export const SESSION_COOKIE = 'case_desk_session'
 export const SESSION_DAYS = 14
-const SESSION_MS = SESSION_DAYS * 24 * 3_600_000
+export const SESSION_MS = SESSION_DAYS * 24 * 3_600_000
 
 export const Credentials = Schema.Struct({
   email: Email,
@@ -29,7 +29,7 @@ const toHex = (bytes: ArrayBuffer): string =>
 export const hashToken = (token: string): Promise<string> =>
   crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)).then(toHex)
 
-const newToken = (): string =>
+export const newToken = (): string =>
   toHex(crypto.getRandomValues(new Uint8Array(32)).buffer)
 
 export type SignIn = Readonly<{

@@ -6,6 +6,7 @@ import {
   DEFAULT_THEME,
   type RuntimeMode,
   Theme,
+  publicThemeOf,
 } from '@case-desk/domain'
 
 import { type QuoroomDeps } from './server'
@@ -36,10 +37,10 @@ export const readConfig = (mode: RuntimeMode) =>
       image !== null && image.complete && image.owner.kind === 'theme'
         ? {
             mode,
-            theme,
+            theme: publicThemeOf(theme),
             logo: { id: image.id, mime: image.mime, chunks: image.chunkCount },
           }
-        : { mode, theme }
+        : { mode, theme: publicThemeOf(theme) }
     return config
   })
 
