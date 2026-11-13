@@ -39,6 +39,11 @@ const conflictText = (reason: string): string =>
     Match.when('already_exists', () => 'That already exists.'),
     Match.when('duplicate', () => 'That is already in the list.'),
     Match.when(
+      'stale_save',
+      () =>
+        'This report was saved from another tab or window. Reload this page to continue.',
+    ),
+    Match.when(
       'changed_meanwhile',
       () => 'Someone changed this meanwhile. Reload and try again.',
     ),

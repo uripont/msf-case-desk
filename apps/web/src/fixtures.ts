@@ -40,6 +40,7 @@ export const PAGE_PATHS = {
   Rules: '/rules',
   Account: '/account',
   Unit: '/unit',
+  Reports: '/reports',
   Admin: '/admin',
 } as const
 

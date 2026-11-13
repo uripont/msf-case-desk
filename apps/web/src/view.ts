@@ -38,6 +38,8 @@ import {
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import * as Link from './quoroom/link'
+import * as Report from './quoroom/report'
+import * as Reports from './quoroom/reports'
 import * as Unit from './quoroom/unit'
 import { AppRoute, isTriageRoute, pathOf } from './route'
 import { rulesPage } from './rulesView'
@@ -192,7 +194,10 @@ const pageLinksFor = (
       ]
     : [{ route: AppRoute.Desk(), label: 'Home' }]),
   ...(hasCapability(me, 'author')
-    ? [{ route: AppRoute.Unit(), label: 'My unit' }]
+    ? [
+        { route: AppRoute.Unit(), label: 'My unit' },
+        { route: AppRoute.Reports(), label: 'Reports' },
+      ]
     : []),
   ...(hasCapability(me, 'admin')
     ? [{ route: AppRoute.Admin(), label: 'Administration' }]
@@ -803,6 +808,7 @@ const deskPageView = (
         Desk: () => loadedDesk(model, h),
         Account: () => loadedDesk(model, h),
         Unit: () => loadedDesk(model, h),
+        Reports: () => loadedDesk(model, h),
         Admin: () => loadedDesk(model, h),
         Link: () => loadedDesk(model, h),
         Report: () => loadedDesk(model, h),
@@ -914,12 +920,21 @@ const pageView = (
           }),
         ],
         Link: () => [welcomePage(model, h)],
+        Reports: () => [
+          h.submodel({
+            slotId: 'reports',
+            model: model.reports,
+            view: Reports.view,
+            toParentMessage: message => Message.GotReportsMessage({ message }),
+          }),
+        ],
         Report: ({ reportId }) => [
-          unavailablePage(
-            'Report',
-            `Report ${reportId} opens here once reports are available.`,
-            h,
-          ),
+          h.submodel({
+            slotId: `report-${reportId}`,
+            model: model.report,
+            view: Report.view,
+            toParentMessage: message => Message.GotReportMessage({ message }),
+          }),
         ],
         Revision: ({ reportId, revision }) => [
           unavailablePage(

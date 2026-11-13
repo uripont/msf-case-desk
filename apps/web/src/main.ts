@@ -77,6 +77,8 @@ import * as Admin from './quoroom/admin'
 import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as Link from './quoroom/link'
+import * as Report from './quoroom/report'
+import * as Reports from './quoroom/reports'
 import * as Unit from './quoroom/unit'
 import {
   AppRoute,
@@ -154,6 +156,8 @@ export const Model = Schema.Struct({
   account: Account.Model,
   admin: Admin.Model,
   unit: Unit.Model,
+  reports: Reports.Model,
+  report: Report.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
   ruleSets: Schema.Array(RuleSet),
@@ -210,6 +214,8 @@ export const Message = defineMessageUnion({
   GotAccountMessage: { message: Account.Message },
   GotAdminMessage: { message: Admin.Message },
   GotUnitMessage: { message: Unit.Message },
+  GotReportsMessage: { message: Reports.Message },
+  GotReportMessage: { message: Report.Message },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
   UpdatedLoginEmail: { value: Schema.String },
@@ -317,6 +323,8 @@ export const initialModel = Model.make({
   account: Account.initialModel,
   admin: Admin.initialModel,
   unit: Unit.initialModel,
+  reports: Reports.initialModel,
+  report: Report.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
   ruleSets: [],
@@ -693,6 +701,8 @@ const signedOut = (model: Model): Model =>
     account: () => Account.initialModel,
     admin: () => Admin.initialModel,
     unit: () => Unit.initialModel,
+    reports: () => Reports.initialModel,
+    report: () => Report.initialModel,
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
     ruleSets: () => [],
@@ -758,6 +768,22 @@ const foldUnit = Update.foldChild({
   toParentMessage: message => Message.GotUnitMessage({ message }),
 })
 
+const foldReports = Update.foldChild({
+  update: Reports.update,
+  read: (model: Model) => Option.some(model.reports),
+  write: (model, nextReports) =>
+    modifyFields(model, { reports: () => nextReports }),
+  toParentMessage: message => Message.GotReportsMessage({ message }),
+})
+
+const foldReport = Update.foldChild({
+  update: Report.update,
+  read: (model: Model) => Option.some(model.report),
+  write: (model, nextReport) =>
+    modifyFields(model, { report: () => nextReport }),
+  toParentMessage: message => Message.GotReportMessage({ message }),
+})
+
 const enterAccount = Update.foldChildStep({
   update: Account.enter,
   read: (model: Model) => Option.some(model.account),
@@ -783,6 +809,23 @@ const enterUnit = (origin: string) =>
     toParentMessage: message => Message.GotUnitMessage({ message }),
   })
 
+const enterReports = Update.foldChildStep({
+  update: Reports.enter,
+  read: (model: Model) => Option.some(model.reports),
+  write: (model, nextReports) =>
+    modifyFields(model, { reports: () => nextReports }),
+  toParentMessage: message => Message.GotReportsMessage({ message }),
+})
+
+const enterReport = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (_child: Report.Model) => Report.enter(origin, reportId),
+    read: (model: Model) => Option.some(model.report),
+    write: (model, nextReport) =>
+      modifyFields(model, { report: () => nextReport }),
+    toParentMessage: message => Message.GotReportMessage({ message }),
+  })
+
 const enterRoute = (
   model: Model,
   route: AppRoute,
@@ -794,8 +837,9 @@ const enterRoute = (
     Account: () => enterAccount(model),
     Admin: () => enterAdmin(model.origin)(model),
     Unit: () => enterUnit(model.origin)(model),
+    Reports: () => enterReports(model),
     Link: () => ({ model }),
-    Report: () => ({ model }),
+    Report: ({ reportId }) => enterReport(model.origin, reportId)(model),
     Revision: () => ({ model }),
     NotFound: () => ({ model }),
   })
@@ -1039,6 +1083,8 @@ export const update = (model: Model, message: Message) =>
     GotAccountMessage: ({ message }) => foldAccount(model, message),
     GotAdminMessage: ({ message }) => foldAdmin(model, message),
     GotUnitMessage: ({ message }) => foldUnit(model, message),
+    GotReportsMessage: ({ message }) => foldReports(model, message),
+    GotReportMessage: ({ message }) => foldReport(model, message),
     SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({

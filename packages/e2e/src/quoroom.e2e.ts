@@ -538,6 +538,74 @@ const main = async (): Promise<void> => {
       await pilot.getByRole('heading', { name: 'Your account' }).waitFor()
       await shot(pilot, 'pilot-quoroom')
     })
+
+    // NOTE: Stage 4a and 4b, at 375 px: an author makes a case file and an
+    // intake report, fills structured fields in two sections, ends the report
+    // with a branch answer and restores it, reloads, and finds the values kept.
+    await step('an author writes an intake report on a phone and the values persist', async () => {
+      const pilot = pilotPage
+      assert.ok(pilot !== undefined, 'no pilot page')
+      await pilot.goto(`${pilotUrl}/admin`)
+      await pilot.getByRole('heading', { name: 'Administration' }).waitFor()
+      await pilot.getByLabel('E-mail', { exact: true }).fill('pia.pilot@case-desk.test')
+      await pilot.getByLabel('Name', { exact: true }).fill('Pia Pilot')
+      await pilot.getByLabel('Capability', { exact: true }).selectOption('author')
+      await pilot.getByLabel('Unit', { exact: true }).selectOption({ label: 'Pilot Unit (PIL)' })
+      await pilot.getByRole('button', { name: 'Give capability' }).click()
+      await pilot.getByText('Author in Pilot Unit').first().waitFor()
+
+      await pilot.goto(`${pilotUrl}/reports`)
+      await pilot.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pilot
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Intake and initial assessment (version 1)' })
+      await pilot.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0001')
+      await pilot.getByLabel('Case file title', { exact: true }).fill('Synthetic pilot case file')
+      await shot(pilot, 'reports-1-start')
+      await pilot.getByRole('button', { name: 'Create report' }).click()
+      await pilot.getByRole('link', { name: 'Open report PIL-0001' }).waitFor()
+      await shot(pilot, 'reports-2-created')
+      await pilot.getByRole('link', { name: 'Open report PIL-0001' }).click()
+      await pilot.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+
+      const openSection = async (name: RegExp): Promise<void> => {
+        const row = pilot.getByRole('button', { name })
+        if (!(await row.first().isVisible())) {
+          await pilot.getByRole('button', { name: /^Sections/ }).click()
+        }
+        await row.first().click()
+      }
+      const saved = async (): Promise<void> => {
+        await pilot.getByText('All changes saved.').waitFor()
+      }
+
+      await pilot.getByLabel('Investigator', { exact: true }).fill('Synthetic Investigator')
+      await pilot.getByLabel('Date the project received the case', { exact: true }).fill('2026-03-04')
+      await saved()
+      await shot(pilot, 'report-1-case-details')
+
+      await openSection(/Jurisdiction, /)
+      await pilot.getByRole('radio', { name: 'No' }).check()
+      await pilot.getByText('The report ends here').first().waitFor()
+      await saved()
+      await shot(pilot, 'report-2-ended')
+      await pilot.getByRole('radio', { name: 'Yes' }).check()
+      await pilot.getByText('The report ends here').first().waitFor({ state: 'detached' })
+      await saved()
+      await shot(pilot, 'report-3-restored')
+
+      await pilot.reload()
+      await pilot.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      assert.equal(await pilot.getByLabel('Investigator', { exact: true }).inputValue(), 'Synthetic Investigator')
+      assert.equal(
+        await pilot.getByLabel('Date the project received the case', { exact: true }).inputValue(),
+        '2026-03-04',
+      )
+      await openSection(/Jurisdiction, /)
+      assert.ok(await pilot.getByRole('radio', { name: 'Yes' }).isChecked(), 'the answer was not kept')
+      assert.equal(await pilot.getByText('The report ends here').count(), 0)
+      await shot(pilot, 'report-4-reloaded')
+    })
   } finally {
     await browser?.close()
     stop(server)

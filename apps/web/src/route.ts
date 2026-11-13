@@ -18,6 +18,7 @@ export const AppRoute = defineRouteUnion({
   Rules: {},
   Account: {},
   Unit: {},
+  Reports: {},
   Admin: {},
   Link: {},
   Report: { reportId: Schema.String },
@@ -37,6 +38,10 @@ const accountRouter = pipe(
   Route.mapTo(AppRoute.Account),
 )
 const unitRouter = pipe(Route.literal('unit'), Route.mapTo(AppRoute.Unit))
+const reportsRouter = pipe(
+  Route.literal('reports'),
+  Route.mapTo(AppRoute.Reports),
+)
 const adminRouter = pipe(Route.literal('admin'), Route.mapTo(AppRoute.Admin))
 const linkRouter = pipe(Route.literal('link'), Route.mapTo(AppRoute.Link))
 const reportRouter = pipe(
@@ -59,6 +64,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     rulesRouter,
     accountRouter,
     unitRouter,
+    reportsRouter,
     adminRouter,
     linkRouter,
     revisionRouter,
@@ -74,6 +80,7 @@ export const pathOf = (route: AppRoute): string =>
     Rules: () => rulesRouter(),
     Account: () => accountRouter(),
     Unit: () => unitRouter(),
+    Reports: () => reportsRouter(),
     Admin: () => adminRouter(),
     Link: () => linkRouter(),
     Report: ({ reportId }) => reportRouter({ reportId }),
@@ -92,6 +99,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Rules: () => true,
     Account: () => true,
     Unit: () => true,
+    Reports: () => true,
     Admin: () => true,
     Link: () => false,
     Report: () => true,
@@ -108,6 +116,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Rules: () => true,
     Account: () => false,
     Unit: () => false,
+    Reports: () => false,
     Admin: () => false,
     Link: () => false,
     Report: () => false,
