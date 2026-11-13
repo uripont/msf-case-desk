@@ -19,6 +19,8 @@ const caseDesk :Workerd.Worker = (
   bindings = [
     (name = "ASSETS", service = "assets"),
     (name = "DATABASE", durableObjectNamespace = "LocalDatabase"),
+    # The runtime mode, `demo` or `pilot` (D20). Unset means `demo`.
+    (name = "RUNTIME_MODE", fromEnvironment = "RUNTIME_MODE"),
   ],
   durableObjectNamespaces = [
     (className = "LocalDatabase", uniqueKey = "case-desk-local-database", enableSql = true),

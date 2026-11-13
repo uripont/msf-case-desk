@@ -7,17 +7,18 @@ import { SEED_CASES } from '@case-desk/domain'
 import {
   SYNTHETIC_ME,
   SYNTHETIC_USER,
+  configuredModel,
   loadedModel,
+  openedAt,
   signedOutModel,
 } from './fixtures'
 import {
   CheckSession,
   LoadDesk,
   Message,
+  ReplaceUrl,
   SignIn,
   SignOut,
-  init,
-  initialModel,
   update,
 } from './main'
 import { Failure } from './quoroom/failure'
@@ -26,7 +27,7 @@ const password = Redacted.make('synthetic-password')
 
 describe('sign-in', () => {
   test('starting the app checks for a session first', () => {
-    const started = init()
+    const started = openedAt('/')
     expect(started.model.session._tag).toBe('Checking')
     expect(started.commands?.map(command => command.name)).toContain(
       CheckSession.name,
@@ -36,7 +37,7 @@ describe('sign-in', () => {
   test('an existing session goes straight to the desk', () => {
     story(
       update,
-      given(initialModel),
+      given(configuredModel),
       message(Message.SucceededCheckSession({ me: SYNTHETIC_ME })),
       model(next => {
         expect(next.session).toEqual({ _tag: 'SignedIn', me: SYNTHETIC_ME })
@@ -125,6 +126,7 @@ describe('sign-in', () => {
         expect(next.cases).toEqual([])
       }),
       Command.resolve(SignOut, Message.CompletedSignOut()),
+      Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
     )
   })
 

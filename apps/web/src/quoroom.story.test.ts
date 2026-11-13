@@ -2,16 +2,14 @@ import { Option, Redacted } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
-import { SYNTHETIC_ME } from './fixtures'
+import { SYNTHETIC_ME, clickedPage, openedAt } from './fixtures'
 import {
   FocusElement,
+  LoadConfig,
   LoadDesk,
   Message,
-  Place,
-  ReadLocation,
-  ReturnToRoot,
+  ReplaceUrl,
   Session,
-  init,
   initialModel,
   update,
 } from './main'
@@ -29,9 +27,6 @@ import * as Admin from './quoroom/admin'
 import { Failure } from './quoroom/failure'
 import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
-
-const linkPlace = (maybeToken: Option.Option<Redacted.Redacted<string>>) =>
-  Place.LinkPage({ maybeToken })
 
 const strongPassword = Redacted.make('a-long-synthetic-password')
 
@@ -56,7 +51,7 @@ const unitMessage = (message: Unit.Message) =>
   Message.GotUnitMessage({ message })
 
 const inspectedAs = (purpose: 'activate' | 'reset') =>
-  run(linkPageModel(linkPlace(Option.some(SYNTHETIC_TOKEN))), [
+  run(linkPageModel(Option.some(SYNTHETIC_TOKEN)), [
     linkMessage(
       Link.Message.SucceededInspectLink({
         info: {
@@ -70,52 +65,45 @@ const inspectedAs = (purpose: 'activate' | 'reset') =>
   ]).model
 
 describe('opening a link', () => {
-  test('starting the app also reads the address', () => {
-    expect(init().commands?.map(command => command.name)).toContain(
-      ReadLocation.name,
-    )
-  })
-
   test('an ordinary address leaves the link screen closed', () => {
-    const opened = update(
-      initialModel,
-      Message.CompletedReadLocation({
-        origin: 'https://quoroom.test',
-        place: Place.Elsewhere(),
-      }),
-    )
+    const opened = openedAt('/')
     expect(Option.isNone(opened.model.maybeLink)).toBe(true)
     expect(opened.model.origin).toBe('https://quoroom.test')
   })
 
-  test('a link address opens the link screen and checks the token', () => {
-    const opened = update(
-      initialModel,
-      Message.CompletedReadLocation({
-        origin: 'https://quoroom.test',
-        place: linkPlace(Option.some(SYNTHETIC_TOKEN)),
-      }),
-    )
+  test('a link address opens the link screen, checks the token and removes the fragment', () => {
+    const opened = openedAt(`/link#${Redacted.value(SYNTHETIC_TOKEN)}`)
     expect(Option.isSome(opened.model.maybeLink)).toBe(true)
-    expect(namesOf(opened)).toEqual([Link.InspectLink.name])
+    expect(namesOf(opened)).toEqual(
+      expect.arrayContaining([
+        Link.InspectLink.name,
+        ReplaceUrl.name,
+        LoadConfig.name,
+      ]),
+    )
+    expect(
+      opened.commands?.find(c => c.name === ReplaceUrl.name)?.args,
+    ).toEqual({
+      url: '/link',
+    })
   })
 
   test('a link address without a token reads as an unusable link', () => {
-    const opened = linkPageModel(linkPlace(Option.none()))
+    const opened = linkPageModel(Option.none())
     expect(Option.map(opened.maybeLink, link => link.state._tag)).toEqual(
       Option.some('Unusable'),
     )
   })
 
   test('the token is never held as plain text', () => {
-    const opened = linkPageModel(linkPlace(Option.some(SYNTHETIC_TOKEN)))
+    const opened = linkPageModel(Option.some(SYNTHETIC_TOKEN))
     expect(JSON.stringify(opened)).not.toContain(
       Redacted.value(SYNTHETIC_TOKEN),
     )
   })
 
   test('a used or expired link is reported as unusable', () => {
-    const failed = run(linkPageModel(linkPlace(Option.some(SYNTHETIC_TOKEN))), [
+    const failed = run(linkPageModel(Option.some(SYNTHETIC_TOKEN)), [
       linkMessage(
         Link.Message.FailedInspectLink({ failure: Failure.LinkInvalid() }),
       ),
@@ -147,12 +135,12 @@ describe('opening a link', () => {
         expect(Option.isNone(next.maybeLink)).toBe(true)
       }),
       Command.expectHas(LoadDesk()),
-      Command.expectHas(ReturnToRoot()),
+      Command.expectHas(ReplaceUrl({ url: '/' })),
       Command.resolve(
         LoadDesk,
         Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
       ),
-      Command.resolve(ReturnToRoot, Message.CompletedReturnToRoot()),
+      Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
     )
   })
 
@@ -186,28 +174,26 @@ describe('opening a link', () => {
 
 describe('the new pages load when entered', () => {
   test('the account page loads the account', () => {
-    expect(
-      namesOf(update(adminModel, Message.ClickedPage({ page: 'Account' }))),
-    ).toEqual(
+    expect(namesOf(update(adminModel, clickedPage('Account')))).toEqual(
       expect.arrayContaining([Account.LoadAccount.name, FocusElement.name]),
     )
   })
 
   test('the administration page loads units and accounts', () => {
-    expect(
-      namesOf(update(adminModel, Message.ClickedPage({ page: 'Admin' }))),
-    ).toContain(Admin.LoadAdmin.name)
+    expect(namesOf(update(adminModel, clickedPage('Admin')))).toContain(
+      Admin.LoadAdmin.name,
+    )
   })
 
   test('the unit page loads the units of the author', () => {
-    expect(
-      namesOf(update(authorModel, Message.ClickedPage({ page: 'Unit' }))),
-    ).toContain(Unit.LoadUnits.name)
+    expect(namesOf(update(authorModel, clickedPage('Unit')))).toContain(
+      Unit.LoadUnits.name,
+    )
   })
 
   test('signing out forgets the new pages', () => {
     const entered = run(adminModel, [
-      Message.ClickedPage({ page: 'Admin' }),
+      clickedPage('Admin'),
       adminMessage(
         Admin.Message.SucceededLoadAdmin({
           units: [SYNTHETIC_UNIT],
@@ -223,7 +209,7 @@ describe('the new pages load when entered', () => {
 })
 
 const adminLoaded = run(adminModel, [
-  Message.ClickedPage({ page: 'Admin' }),
+  clickedPage('Admin'),
   adminMessage(
     Admin.Message.SucceededLoadAdmin({ units: [SYNTHETIC_UNIT], accounts: [] }),
   ),
@@ -338,7 +324,7 @@ describe('the administrator', () => {
 })
 
 const unitLoaded = run(authorModel, [
-  Message.ClickedPage({ page: 'Unit' }),
+  clickedPage('Unit'),
   unitMessage(Unit.Message.SucceededLoadUnits({ units: [SYNTHETIC_UNIT] })),
 ]).model
 
@@ -355,7 +341,7 @@ const typedReviewer = (extra: ReadonlyArray<Unit.Message>): Step =>
 describe('the author', () => {
   test('the first unit is chosen and its people are loaded', () => {
     const chosen = update(
-      update(authorModel, Message.ClickedPage({ page: 'Unit' })).model,
+      update(authorModel, clickedPage('Unit')).model,
       unitMessage(Unit.Message.SucceededLoadUnits({ units: [SYNTHETIC_UNIT] })),
     )
     expect(chosen.model.unit.selectedUnit).toBe(SYNTHETIC_UNIT.id)

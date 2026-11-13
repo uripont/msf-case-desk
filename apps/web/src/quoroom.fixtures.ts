@@ -1,9 +1,14 @@
-import { Redacted } from 'effect'
+import { Option, Redacted } from 'effect'
 
 import { MeView } from '@case-desk/domain'
 
-import { SYNTHETIC_ME, loadedModel } from './fixtures'
-import { Message, Place, initialModel, update } from './main'
+import {
+  SYNTHETIC_ME,
+  configuredAt,
+  configuredModel,
+  loadedModel,
+} from './fixtures'
+import { Message, update } from './main'
 
 // NOTE: Synthetic accounts for the Quoroom screens. The link tokens are made
 // up and match nothing.
@@ -28,23 +33,22 @@ export const signedInAs = (me: MeView) =>
   [
     Message.SucceededCheckSession({ me }),
     Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-    Message.CompletedReadLocation({
-      origin: 'https://quoroom.test',
-      place: Place.Elsewhere(),
-    }),
-  ].reduce((model, message) => update(model, message).model, initialModel)
+  ].reduce((model, message) => update(model, message).model, configuredModel)
 
 export const adminModel = signedInAs(ADMIN_ME)
 
 export const authorModel = signedInAs(AUTHOR_ME)
 
-export const linkPageModel = (maybeToken: typeof Place.Type) =>
-  update(
-    initialModel,
-    Message.CompletedReadLocation({
-      origin: 'https://quoroom.test',
-      place: maybeToken,
+// NOTE: the app opened on a link address, with the token in the fragment as a
+// real link has it, or none.
+export const linkPageModel = (
+  maybeToken: Option.Option<Redacted.Redacted<string>>,
+) =>
+  configuredAt(
+    Option.match(maybeToken, {
+      onNone: () => '/link',
+      onSome: token => `/link#${Redacted.value(token)}`,
     }),
-  ).model
+  )
 
 export const desk = loadedModel

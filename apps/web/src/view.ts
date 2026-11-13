@@ -6,6 +6,7 @@ import {
   type MeView,
   PRIORITIES,
   type Priority,
+  type RuntimeMode,
   type SlaStatus,
   type TriagedCase,
   describeReason,
@@ -13,32 +14,35 @@ import {
 } from '@case-desk/domain'
 
 import { type ApiFailure } from './api'
-import { BRAND } from './brand'
+import { PRODUCT_NAME } from './brand'
 import { entryPage } from './entryView'
 import { formatInstant, formatSla, formatSlaShort, humanise } from './format'
 import { loginPage } from './loginView'
 import {
   CENTRE_FILTERS,
   type CentreFilter,
-  DESK_PAGES,
+  ConfigLoad,
   DeskLoad,
   Message,
   type Model,
   PAGE_HEADING_ID,
-  type Page,
   Session,
   dueSoonCountOf,
   maybeSelectedOf,
+  modeOf,
   overdueCountOf,
   rulesOf,
+  themeOf,
   visibleQueueOf,
 } from './main'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
+import { AppRoute, isTriageRoute, pathOf } from './route'
 import { rulesPage } from './rulesView'
 import { focusRing, outlineButtonClassName, textButtonClassName } from './style'
+import { themeStyle } from './theme'
 import { hoverAttributes, markGlyphClassName, timeAxis } from './timeAxis'
 
 // COPY
@@ -139,10 +143,34 @@ const centreTab = (
   )
 }
 
-const wordmark = (h: HtmlBuilder<Message>): Html =>
-  h.p(
-    [h.Class('pb-2 text-xl font-black tracking-tight text-msf-black md:pb-3')],
-    [BRAND.productName],
+const wordmark = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.div(
+    [h.Class('flex items-center gap-4 pb-2 md:pb-3')],
+    [
+      Option.match(model.maybeLogoSrc, {
+        onNone: () => h.empty,
+        onSome: src =>
+          h.img([
+            h.Src(src),
+            h.Alt(`${themeOf(model).organisationName} logo`),
+            h.Class('block h-10 w-auto'),
+          ]),
+      }),
+      h.p(
+        [
+          h.Class(
+            'flex flex-wrap items-baseline gap-x-3 text-xl font-black tracking-tight text-msf-black',
+          ),
+        ],
+        [
+          PRODUCT_NAME,
+          h.span(
+            [h.Class('text-base font-normal text-msf-grey')],
+            [themeOf(model).organisationName],
+          ),
+        ],
+      ),
+    ],
   )
 
 const hasCapability = (
@@ -150,30 +178,37 @@ const hasCapability = (
   capability: 'admin' | 'author' | 'template_editor',
 ): boolean => Array.some(me.grants, grant => grant.capability === capability)
 
+type PageLink = { route: AppRoute; label: string }
+
 const pageLinksFor = (
   me: MeView,
-): ReadonlyArray<{ page: Page; label: string }> => [
-  { page: 'Desk', label: 'Cases' },
-  { page: 'NewCase', label: 'New case' },
-  { page: 'Rules', label: 'Rules' },
+  mode: RuntimeMode,
+): ReadonlyArray<PageLink> => [
+  ...(mode === 'demo'
+    ? [
+        { route: AppRoute.Desk(), label: 'Cases' },
+        { route: AppRoute.NewCase(), label: 'New case' },
+        { route: AppRoute.Rules(), label: 'Rules' },
+      ]
+    : [{ route: AppRoute.Desk(), label: 'Home' }]),
   ...(hasCapability(me, 'author')
-    ? [{ page: 'Unit' as const, label: 'My unit' }]
+    ? [{ route: AppRoute.Unit(), label: 'My unit' }]
     : []),
   ...(hasCapability(me, 'admin')
-    ? [{ page: 'Admin' as const, label: 'Administration' }]
+    ? [{ route: AppRoute.Admin(), label: 'Administration' }]
     : []),
-  { page: 'Account', label: 'My account' },
+  { route: AppRoute.Account(), label: 'My account' },
 ]
 
 const pageLink = (
   model: Model,
-  page: Page,
-  label: string,
+  { route, label }: PageLink,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const isCurrent = model.page === page
-  return h.button(
+  const isCurrent = pathOf(model.route) === pathOf(route)
+  return h.a(
     [
+      h.Href(pathOf(route)),
       h.Class(
         clsx(
           'cursor-pointer text-base transition-colors',
@@ -184,7 +219,6 @@ const pageLink = (
         ),
       ),
       ...(isCurrent ? [h.AriaCurrent('page')] : []),
-      h.OnClick(Message.ClickedPage({ page })),
     ],
     [label],
   )
@@ -204,8 +238,8 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
         [
           h.nav(
             [h.AriaLabel('Pages'), h.Class('flex flex-wrap gap-x-6 gap-y-2')],
-            Array.map(pageLinksFor(me), ({ page, label }) =>
-              pageLink(model, page, label, h),
+            Array.map(pageLinksFor(me, modeOf(model)), link =>
+              pageLink(model, link, h),
             ),
           ),
           h.div(
@@ -229,7 +263,10 @@ const centreNav = (model: Model, h: HtmlBuilder<Message>): Html =>
   Session.match(model.session, {
     Checking: () => h.empty,
     SignedOut: () => h.empty,
-    SignedIn: () => (model.page === 'Desk' ? centreTabs(model, h) : h.empty),
+    SignedIn: () =>
+      modeOf(model) === 'demo' && AppRoute.guards.Desk(model.route)
+        ? centreTabs(model, h)
+        : h.empty,
   })
 
 const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -243,7 +280,7 @@ const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
             'flex flex-col gap-x-12 border-b border-msf-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
           ),
         ],
-        [wordmark(h), centreNav(model, h)],
+        [wordmark(model, h), centreNav(model, h)],
       ),
     ],
   )
@@ -452,10 +489,10 @@ const queueList = (model: Model, h: HtmlBuilder<Message>): Html => {
                   : 'No cases for this centre.',
               ],
             ),
-            h.button(
+            h.a(
               [
+                h.Href(pathOf(AppRoute.NewCase())),
                 h.Class(outlineButtonClassName),
-                h.OnClick(Message.ClickedPage({ page: 'NewCase' })),
               ],
               ['Enter a case'],
             ),
@@ -647,83 +684,26 @@ const emptyDetail = (
     [h.p([], ['Pick a case to see why it has its priority.'])],
   )
 
-const clockButton = (
-  label: string,
-  message: Message,
-  h: HtmlBuilder<Message>,
-): Html =>
-  h.button([h.Class(outlineButtonClassName), h.OnClick(message)], [label])
-
-const demoControls = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.div(
-    [
-      h.Role('group'),
-      h.AriaLabel('Simulated clock'),
-      h.Class(
-        'flex flex-col gap-4 border-l-2 border-msf-line pl-5 md:flex-row md:items-center md:justify-between',
-      ),
-    ],
-    [
-      h.p(
-        [h.Class('flex flex-wrap items-baseline gap-x-3 text-base')],
-        [
-          h.span([h.Class('text-msf-grey')], ['Simulated time']),
-          h.span(
-            [h.Class('font-medium tabular-nums text-msf-ink')],
-            [formatInstant(model.now)],
-          ),
-        ],
-      ),
-      h.div(
-        [h.Class('flex flex-wrap items-center gap-2')],
-        [
-          clockButton('+1 h', Message.ClickedAdvanceClock({ hours: 1 }), h),
-          clockButton('+6 h', Message.ClickedAdvanceClock({ hours: 6 }), h),
-          clockButton('+24 h', Message.ClickedAdvanceClock({ hours: 24 }), h),
-          h.button(
-            [
-              h.Class(clsx('ml-3 text-base', textButtonClassName)),
-              h.OnClick(Message.ClickedResetClock()),
-            ],
-            ['Reset'],
-          ),
-        ],
-      ),
-    ],
-  )
-
 const footer = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.footer(
     [
       h.Class(
-        'mt-24 flex flex-col gap-6 border-t border-msf-line pb-12 pt-8 md:mt-32',
+        'mt-24 flex flex-col gap-3 border-t border-msf-line pb-12 pt-8 md:mt-32',
       ),
     ],
     [
-      Option.match(BRAND.maybeLogo, {
-        onNone: () => h.empty,
-        onSome: logo =>
-          h.img([
-            h.Src(logo.src),
-            h.Alt(logo.alt),
-            h.Class('block h-14 w-auto self-start'),
-          ]),
-      }),
       h.p(
         [h.Class('max-w-3xl text-base leading-relaxed text-msf-ink')],
         [
-          'A prototype for Metges Sense Fronteres, developed at Universitat Pompeu Fabra as part of our Project Management course.',
+          `${PRODUCT_NAME}, a reporting system for ${themeOf(model).organisationName}.`,
         ],
       ),
-      h.button(
+      h.p(
+        [h.Class('max-w-3xl text-sm leading-relaxed text-msf-grey')],
         [
-          h.Class(clsx('self-start text-sm', textButtonClassName)),
-          h.AriaExpanded(model.isDemoControlsOpen),
-          h.OnClick(Message.ClickedToggleDemoControls()),
+          'A prototype developed at Universitat Pompeu Fabra as part of our Project Management course.',
         ],
-        ['Demo controls'],
       ),
-      model.isDemoControlsOpen ? demoControls(model, h) : h.empty,
     ],
   )
 
@@ -817,45 +797,145 @@ const deskPageView = (
     Loading: () => [loadingDesk(h)],
     Failed: ({ failure }) => [failedDesk(failure, h)],
     Loaded: () =>
-      Match.value(model.page).pipe(
-        Match.when('NewCase', () => [entryPage(model, h)]),
-        Match.when('Rules', () => [rulesPage(model, h)]),
-        Match.orElse(() => loadedDesk(model, h)),
+      AppRoute.match<ReadonlyArray<Html>>(model.route, {
+        NewCase: () => [entryPage(model, h)],
+        Rules: () => [rulesPage(model, h)],
+        Desk: () => loadedDesk(model, h),
+        Account: () => loadedDesk(model, h),
+        Unit: () => loadedDesk(model, h),
+        Admin: () => loadedDesk(model, h),
+        Link: () => loadedDesk(model, h),
+        Report: () => loadedDesk(model, h),
+        Revision: () => loadedDesk(model, h),
+        NotFound: () => loadedDesk(model, h),
+      }),
+  })
+
+const welcomePage = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.section(
+    [
+      h.AriaLabel('Welcome'),
+      h.Class('flex flex-col items-start gap-4 pb-14 pt-12 md:pb-20 md:pt-16'),
+    ],
+    [
+      h.h1(
+        [
+          h.Id(PAGE_HEADING_ID),
+          h.Class(
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+          ),
+        ],
+        [`Welcome to ${PRODUCT_NAME}`],
       ),
+      h.p(
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [
+          `Reports for ${themeOf(model).organisationName} are written, reviewed and approved here. They will appear on this page.`,
+        ],
+      ),
+    ],
+  )
+
+const unavailablePage = (
+  title: string,
+  body: string,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.section(
+    [
+      h.AriaLabel(title),
+      h.Class('flex flex-col items-start gap-4 pb-14 pt-12 md:pb-20 md:pt-16'),
+    ],
+    [
+      h.h1(
+        [
+          h.Id(PAGE_HEADING_ID),
+          h.Class(
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+          ),
+        ],
+        [title],
+      ),
+      h.p(
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [body],
+      ),
+      h.a(
+        [
+          h.Href(pathOf(AppRoute.Desk())),
+          h.Class(clsx('text-base', textButtonClassName)),
+        ],
+        ['Go to the start page'],
+      ),
+    ],
+  )
+
+const accountPage = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    slotId: 'account',
+    model: model.account,
+    view: Account.view,
+    toParentMessage: message => Message.GotAccountMessage({ message }),
   })
 
 const pageView = (
   model: Model,
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> =>
-  Array.contains(DESK_PAGES, model.page)
-    ? deskPageView(model, h)
-    : Match.value(model.page).pipe(
-        Match.when('Account', () => [
-          h.submodel({
-            slotId: 'account',
-            model: model.account,
-            view: Account.view,
-            toParentMessage: message => Message.GotAccountMessage({ message }),
-          }),
-        ]),
-        Match.when('Unit', () => [
+  isTriageRoute(model.route) && modeOf(model) === 'pilot'
+    ? AppRoute.guards.Desk(model.route)
+      ? [welcomePage(model, h)]
+      : [
+          unavailablePage(
+            'This page is not available',
+            `The case desk is not part of this deployment of ${PRODUCT_NAME}.`,
+            h,
+          ),
+        ]
+    : AppRoute.match<ReadonlyArray<Html>>(model.route, {
+        Desk: () => deskPageView(model, h),
+        NewCase: () => deskPageView(model, h),
+        Rules: () => deskPageView(model, h),
+        Account: () => [accountPage(model, h)],
+        Unit: () => [
           h.submodel({
             slotId: 'unit',
             model: model.unit,
             view: Unit.view,
             toParentMessage: message => Message.GotUnitMessage({ message }),
           }),
-        ]),
-        Match.orElse(() => [
+        ],
+        Admin: () => [
           h.submodel({
             slotId: 'admin',
             model: model.admin,
             view: Admin.view,
             toParentMessage: message => Message.GotAdminMessage({ message }),
           }),
-        ]),
-      )
+        ],
+        Link: () => [welcomePage(model, h)],
+        Report: ({ reportId }) => [
+          unavailablePage(
+            'Report',
+            `Report ${reportId} opens here once reports are available.`,
+            h,
+          ),
+        ],
+        Revision: ({ reportId, revision }) => [
+          unavailablePage(
+            'Revision',
+            `Revision ${revision} of report ${reportId} opens here once reviews are available.`,
+            h,
+          ),
+        ],
+        NotFound: () => [
+          unavailablePage(
+            'Page not found',
+            'There is nothing at this address.',
+            h,
+          ),
+        ],
+      })
 
 const linkView = (link: Link.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({
@@ -869,19 +949,36 @@ const mainView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
   Option.match(model.maybeLink, {
     onSome: link => [linkView(link, h)],
     onNone: () =>
-      Session.match(model.session, {
-        Checking: () => [
-          deskMessage('Opening Case Desk', 'Checking your session.', h),
-        ],
-        SignedOut: () => [loginPage(model, h)],
-        SignedIn: () => pageView(model, h),
-      }),
+      ConfigLoad.guards.Loading(model.config)
+        ? [deskMessage(`Opening ${PRODUCT_NAME}`, 'Getting the settings.', h)]
+        : Session.match(model.session, {
+            Checking: () => [
+              deskMessage(
+                `Opening ${PRODUCT_NAME}`,
+                'Checking your session.',
+                h,
+              ),
+            ],
+            SignedOut: () => [loginPage(model, h)],
+            SignedIn: () => pageView(model, h),
+          }),
   })
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
-  title: BRAND.productName,
+  title: PRODUCT_NAME,
   body: h.div(
-    [h.Class('mx-auto max-w-6xl px-5 sm:px-10')],
-    [topBar(model, h), h.main([], mainView(model, h)), footer(model, h)],
+    [
+      h.Id('quoroom-root'),
+      h.Class(
+        'min-h-dvh border-t-[6px] border-msf-red bg-msf-paper font-sans text-msf-ink',
+      ),
+      h.Style(themeStyle(themeOf(model))),
+    ],
+    [
+      h.div(
+        [h.Class('mx-auto max-w-6xl px-5 sm:px-10')],
+        [topBar(model, h), h.main([], mainView(model, h)), footer(model, h)],
+      ),
+    ],
   ),
 })

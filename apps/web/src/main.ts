@@ -11,24 +11,41 @@ import {
   Stream,
   pipe,
 } from 'effect'
-import { Command, Dom, Runtime, Subscription, Update } from 'foldkit'
+import { HttpClient, HttpClientResponse } from 'effect/http'
+import {
+  Command,
+  Dom,
+  Http,
+  Navigation,
+  Runtime,
+  Subscription,
+  Update,
+} from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
+import { UrlRequest } from 'foldkit/navigation'
 import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
+import { Url, toString as urlToString } from 'foldkit/url'
 
 import {
+  AppConfig,
   CENTRES,
   CHANNELS,
+  CONFIG_PATH,
   Case,
   CaseEntry,
   CaseId,
+  ConfigLogo,
+  DEFAULT_THEME,
   DEMO_START,
   FastTrackSignal,
-  LINK_PATH,
+  IMAGE_ROUTE,
+  ImageChunkRead,
   MeView,
   RISKS,
   RuleSet,
   RuleSetScope,
+  type RuntimeMode,
   SCOPES,
   type TriageRules,
   TriageRules as TriageRulesSchema,
@@ -55,13 +72,13 @@ import {
   entryOf,
   toggleSignal,
 } from './entryForm'
-import { hoursToMs } from './format'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
+import { AppRoute, fragmentOf, originOf, pathOf, urlToAppRoute } from './route'
 import {
   RulesField,
   RulesForm,
@@ -112,26 +129,17 @@ export const LoginForm = Schema.Struct({
 })
 export type LoginForm = typeof LoginForm.Type
 
-export const Page = Schema.Literals([
-  'Desk',
-  'NewCase',
-  'Rules',
-  'Account',
-  'Unit',
-  'Admin',
-])
-export type Page = typeof Page.Type
-
-export const DESK_PAGES: ReadonlyArray<Page> = ['Desk', 'NewCase', 'Rules']
-
-export const Place = defineTaggedUnion({
-  Elsewhere: {},
-  LinkPage: { maybeToken: Schema.Option(Schema.Redacted(Schema.String)) },
+export const ConfigLoad = defineTaggedUnion({
+  Loading: {},
+  Loaded: { config: AppConfig },
+  Unavailable: {},
 })
-export type Place = typeof Place.Type
+export type ConfigLoad = typeof ConfigLoad.Type
 
 export const Model = Schema.Struct({
-  page: Page,
+  route: AppRoute,
+  config: ConfigLoad,
+  maybeLogoSrc: Schema.Option(Schema.String),
   entryForm: EntryForm,
   rulesForm: RulesForm,
   session: Session,
@@ -144,14 +152,12 @@ export const Model = Schema.Struct({
   deskLoad: DeskLoad,
   ruleSets: Schema.Array(RuleSet),
   cases: Schema.Array(Case),
-  startedAt: Schema.Int,
   now: Schema.Int,
   maybeSelectedCaseId: Schema.Option(CaseId),
   maybeHighlightedCaseId: Schema.Option(CaseId),
   maybeFocusedMarkId: Schema.Option(CaseId),
   heroLayout: HeroLayout,
   isDetailSheetOpen: Schema.Boolean,
-  isDemoControlsOpen: Schema.Boolean,
   centreFilter: CentreFilter,
 })
 export type Model = typeof Model.Type
@@ -168,19 +174,24 @@ export const Message = defineMessageUnion({
   UpdatedHeroLayout: { layout: Schema.Literals(['Axis', 'Timeline']) },
   CompletedFocusCaseMark: {},
   CompletedFocusElement: {},
-  ClickedAdvanceClock: { hours: Schema.Int },
-  ClickedResetClock: {},
-  ClickedToggleDemoControls: {},
   SelectedCentreFilter: { centreFilter: CentreFilter },
   CompletedGetCurrentTime: { now: Schema.Int },
+  UpdatedNow: { now: Schema.Int },
   SucceededLoadDesk: {
     cases: Schema.Array(Case),
     ruleSets: Schema.Array(RuleSet),
   },
   FailedLoadDesk: { failure: ApiFailure },
   ClickedRetryLoad: {},
-  CompletedReadLocation: { origin: Schema.String, place: Place },
-  CompletedReturnToRoot: {},
+  ClickedLink: { request: UrlRequest },
+  ChangedUrl: { url: Url },
+  CompletedPushUrl: {},
+  CompletedReplaceUrl: {},
+  CompletedLoadExternal: {},
+  SucceededLoadConfig: { config: AppConfig },
+  FailedLoadConfig: {},
+  SucceededLoadLogo: { src: Schema.String },
+  FailedLoadLogo: {},
   GotLinkMessage: { message: Link.Message },
   GotAccountMessage: { message: Account.Message },
   GotAdminMessage: { message: Admin.Message },
@@ -194,7 +205,6 @@ export const Message = defineMessageUnion({
   FailedSignIn: { failure: Failure },
   ClickedSignOut: {},
   CompletedSignOut: {},
-  ClickedPage: { page: Page },
   UpdatedEntryField: { field: EntryField, value: Schema.String },
   ToggledEntrySignal: { signal: FastTrackSignal },
   SubmittedEntry: {},
@@ -249,6 +259,23 @@ export const dueSoonCountOf = (model: Model): number =>
   Array.filter(visibleQueueOf(model), triaged => triaged.sla._tag === 'DueSoon')
     .length
 
+export const modeOf = (model: Model): RuntimeMode =>
+  ConfigLoad.match<RuntimeMode>(model.config, {
+    Loading: () => 'pilot',
+    Loaded: ({ config }) => config.mode,
+    Unavailable: () => 'pilot',
+  })
+
+export const themeOf = (model: Model) =>
+  ConfigLoad.match(model.config, {
+    Loading: () => DEFAULT_THEME,
+    Loaded: ({ config }) => config.theme,
+    Unavailable: () => DEFAULT_THEME,
+  })
+
+export const isConfigKnown = (model: Model): boolean =>
+  !ConfigLoad.guards.Loading(model.config)
+
 // INIT
 
 const firstCaseIdOf = (model: Model): Option.Option<typeof CaseId.Type> =>
@@ -265,7 +292,9 @@ const emptyLoginForm = LoginForm.make({
 })
 
 export const initialModel = Model.make({
-  page: 'Desk',
+  route: AppRoute.Desk(),
+  config: ConfigLoad.Loading(),
+  maybeLogoSrc: Option.none(),
   entryForm: emptyEntryForm(DEMO_START),
   rulesForm: rulesFormFor([], 'Default'),
   session: Session.Checking(),
@@ -278,21 +307,50 @@ export const initialModel = Model.make({
   deskLoad: DeskLoad.Loading(),
   ruleSets: [],
   cases: [],
-  startedAt: DEMO_START,
   now: DEMO_START,
   maybeSelectedCaseId: Option.none(),
   maybeHighlightedCaseId: Option.none(),
   maybeFocusedMarkId: Option.none(),
   heroLayout: 'Responsive',
   isDetailSheetOpen: false,
-  isDemoControlsOpen: false,
   centreFilter: 'All',
 })
 
-export const init: Runtime.ApplicationInit<Model, Message> = () => ({
-  model: initialModel,
-  commands: [GetCurrentTime(), CheckSession(), ReadLocation()],
-})
+const openingLink = (url: Url): Update.Return<Model, Message> => {
+  const linkInit = Link.init(
+    Option.map(fragmentOf(url), fragment => Redacted.make(fragment)),
+  )
+  return {
+    model: modifyFields(initialModel, {
+      maybeLink: () => Option.some(linkInit.model),
+    }),
+    commands: [
+      ...Command.mapMessages(linkInit.commands ?? [], message =>
+        Message.GotLinkMessage({ message }),
+      ),
+      ReplaceUrl({ url: pathOf(AppRoute.Link()) }),
+    ],
+  }
+}
+
+export const init: Runtime.RoutingApplicationInit<Model, Message> = url => {
+  const route = urlToAppRoute(url)
+  const opened = AppRoute.guards.Link(route)
+    ? openingLink(url)
+    : { model: initialModel }
+  return {
+    model: modifyFields(opened.model, {
+      route: () => route,
+      origin: () => originOf(url),
+    }),
+    commands: [
+      GetCurrentTime(),
+      CheckSession(),
+      LoadConfig(),
+      ...(opened.commands ?? []),
+    ],
+  }
+}
 
 // COMMAND
 
@@ -346,38 +404,78 @@ export const LoadDesk = Command.define('LoadDesk', {
   ),
 })
 
-// NOTE: A link is opened at `/link#<token>`. The token is read once and the
-// fragment is removed at once, so it is not left in the address bar, the
-// history or a copied URL. It is only ever sent in a POST body.
-export const ReadLocation = Command.define('ReadLocation', {
-  messages: [Message.CompletedReadLocation],
-  execute: Effect.sync(() => {
-    const { origin, pathname, hash } = window.location
-    if (pathname !== LINK_PATH) {
-      return Message.CompletedReadLocation({
-        origin,
-        place: Place.Elsewhere(),
-      })
-    }
-    window.history.replaceState(null, '', LINK_PATH)
-    return Message.CompletedReadLocation({
-      origin,
-      place: Place.LinkPage({
-        maybeToken:
-          hash.length > 1
-            ? Option.some(Redacted.make(hash.slice(1)))
-            : Option.none(),
-      }),
-    })
-  }),
+// NOTE: A link is opened at `/link#<token>`. The token is read once from the
+// fragment and the fragment is removed at once, so it is not left in the
+// address bar, the history or a copied URL. It is only ever sent in a POST body.
+export const PushUrl = Command.define('PushUrl', {
+  args: { url: Schema.String },
+  messages: [Message.CompletedPushUrl],
+  execute: ({ url }) =>
+    Navigation.pushUrl(url).pipe(Effect.as(Message.CompletedPushUrl())),
 })
 
-export const ReturnToRoot = Command.define('ReturnToRoot', {
-  messages: [Message.CompletedReturnToRoot],
-  execute: Effect.sync(() => {
-    window.history.replaceState(null, '', '/')
-    return Message.CompletedReturnToRoot()
-  }),
+export const ReplaceUrl = Command.define('ReplaceUrl', {
+  args: { url: Schema.String },
+  messages: [Message.CompletedReplaceUrl],
+  execute: ({ url }) =>
+    Navigation.replaceUrl(url).pipe(Effect.as(Message.CompletedReplaceUrl())),
+})
+
+export const LoadExternal = Command.define('LoadExternal', {
+  args: { href: Schema.String },
+  messages: [Message.CompletedLoadExternal],
+  execute: ({ href }) =>
+    Navigation.load(href).pipe(Effect.as(Message.CompletedLoadExternal())),
+})
+
+export const LoadConfig = Command.define('LoadConfig', {
+  messages: [Message.SucceededLoadConfig, Message.FailedLoadConfig],
+  execute: Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    const response = yield* client.get(CONFIG_PATH)
+    return yield* HttpClientResponse.schemaBodyJson(AppConfig)(response)
+  }).pipe(
+    Effect.map(config => Message.SucceededLoadConfig({ config })),
+    Effect.catch(() => Effect.succeed(Message.FailedLoadConfig())),
+    Effect.provide(Http.layer),
+  ),
+})
+
+const bytesOfBase64 = (base64: string): Uint8Array<ArrayBuffer> => {
+  const binary = atob(base64)
+  return Uint8Array.from({ length: binary.length }, (_, index) =>
+    binary.charCodeAt(index),
+  )
+}
+
+// NOTE: The logo is stored as base64 text in chunks (D5), each chunk the
+// encoding of its own bytes, so the chunks are decoded one by one and joined
+// as bytes. It is readable by a signed-in account only; for anyone else the
+// request fails and the app shows no logo.
+export const LoadLogo = Command.define('LoadLogo', {
+  args: { logo: ConfigLogo },
+  messages: [Message.SucceededLoadLogo, Message.FailedLoadLogo],
+  execute: ({ logo }) =>
+    Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient
+      const chunks = yield* Effect.forEach(
+        Array.makeBy(logo.chunks, index => index),
+        index =>
+          client
+            .get(
+              `${IMAGE_ROUTE}/${encodeURIComponent(logo.id)}/${index}?context=theme`,
+            )
+            .pipe(
+              Effect.flatMap(HttpClientResponse.schemaBodyJson(ImageChunkRead)),
+              Effect.map(chunk => bytesOfBase64(chunk.base64)),
+            ),
+      )
+      return URL.createObjectURL(new Blob(chunks, { type: logo.mime }))
+    }).pipe(
+      Effect.map(src => Message.SucceededLoadLogo({ src })),
+      Effect.catch(() => Effect.succeed(Message.FailedLoadLogo())),
+      Effect.provide(Http.layer),
+    ),
 })
 
 export const CheckSession = Command.define('CheckSession', {
@@ -591,7 +689,6 @@ const submitEntry = (model: Model): Update.Return<Model, Message> =>
 
 const signedOut = (model: Model): Model =>
   modifyFields(model, {
-    page: () => 'Desk',
     session: () => Session.SignedOut(),
     account: () => Account.initialModel,
     admin: () => Admin.initialModel,
@@ -602,6 +699,7 @@ const signedOut = (model: Model): Model =>
     maybeSelectedCaseId: () => Option.none(),
     maybeHighlightedCaseId: () => Option.none(),
     isDetailSheetOpen: () => false,
+    maybeLogoSrc: () => Option.none(),
   })
 
 const loadingDesk = (model: Model, me: MeView): Model =>
@@ -621,12 +719,20 @@ const foldLink = Update.foldChild({
     Link.OutMessage.match<Update.Step<Model, Message>>(outMessage, {
       SignedInWithLink:
         ({ me }) =>
-        stepModel => ({
-          model: modifyFields(loadingDesk(stepModel, me), {
+        stepModel => {
+          const home = modifyFields(loadingDesk(stepModel, me), {
             maybeLink: () => Option.none(),
-          }),
-          commands: [LoadDesk(), ReturnToRoot()],
-        }),
+            route: () => AppRoute.Desk(),
+          })
+          const resumed = resume(home)
+          return {
+            model: resumed.model,
+            commands: [
+              ReplaceUrl({ url: pathOf(AppRoute.Desk()) }),
+              ...(resumed.commands ?? []),
+            ],
+          }
+        },
     }),
 })
 
@@ -677,13 +783,107 @@ const enterUnit = (origin: string) =>
     toParentMessage: message => Message.GotUnitMessage({ message }),
   })
 
-const enterPage = (model: Model, page: Page): Update.Return<Model, Message> =>
-  Match.value(page).pipe(
-    Match.when('Account', () => enterAccount(model)),
-    Match.when('Admin', () => enterAdmin(model.origin)(model)),
-    Match.when('Unit', () => enterUnit(model.origin)(model)),
-    Match.orElse(() => ({ model })),
+const enterRoute = (
+  model: Model,
+  route: AppRoute,
+): Update.Return<Model, Message> =>
+  AppRoute.match<Update.Return<Model, Message>>(route, {
+    Desk: () => ({ model }),
+    NewCase: () => ({ model }),
+    Rules: () => ({ model }),
+    Account: () => enterAccount(model),
+    Admin: () => enterAdmin(model.origin)(model),
+    Unit: () => enterUnit(model.origin)(model),
+    Link: () => ({ model }),
+    Report: () => ({ model }),
+    Revision: () => ({ model }),
+    NotFound: () => ({ model }),
+  })
+
+const logoCommands = (model: Model) =>
+  ConfigLoad.match(model.config, {
+    Loading: () => [],
+    Unavailable: () => [],
+    Loaded: ({ config }) =>
+      config.logo === undefined || Option.isSome(model.maybeLogoSrc)
+        ? []
+        : [LoadLogo({ logo: config.logo })],
+  })
+
+// NOTE: A signed-in account and a known configuration are both needed before
+// a screen can load its data: the triage desk only in the demo, never in a
+// pilot, and the logo only for someone signed in. Whichever of the two
+// arrives last starts it, so it runs once.
+const resume = (model: Model): Update.Return<Model, Message> =>
+  Session.match(model.session, {
+    Checking: () => ({ model }),
+    SignedOut: () => ({ model }),
+    SignedIn: () => {
+      if (!isConfigKnown(model)) {
+        return { model }
+      }
+      const entered = enterRoute(model, model.route)
+      const desk = modeOf(model) === 'demo' ? [LoadDesk()] : []
+      return {
+        model: entered.model,
+        commands: [
+          ...desk,
+          ...logoCommands(model),
+          ...(entered.commands ?? []),
+        ],
+      }
+    },
+  })
+
+const goTo = (model: Model, url: Url): Update.Return<Model, Message> => {
+  const route = urlToAppRoute(url)
+  const linked: Update.Return<Model, Message> = AppRoute.guards.Link(route)
+    ? Option.match(model.maybeLink, {
+        onSome: () => ({ model }),
+        onNone: () => {
+          const linkInit = Link.init(
+            Option.map(fragmentOf(url), fragment => Redacted.make(fragment)),
+          )
+          return {
+            model: modifyFields(model, {
+              maybeLink: () => Option.some(linkInit.model),
+            }),
+            commands: [
+              ...Command.mapMessages(linkInit.commands ?? [], message =>
+                Message.GotLinkMessage({ message }),
+              ),
+              ReplaceUrl({ url: pathOf(AppRoute.Link()) }),
+            ],
+          }
+        },
+      })
+    : { model: modifyFields(model, { maybeLink: () => Option.none() }) }
+  const routed = modifyFields(linked.model, {
+    route: () => route,
+    isDetailSheetOpen: () => false,
+    rulesForm: form =>
+      AppRoute.guards.Rules(route) &&
+      !RulesSubmission.guards.Saving(form.submission)
+        ? rulesFormFor(model.ruleSets, form.scope)
+        : form,
+  })
+  const entered: Update.Return<Model, Message> = Session.guards.SignedIn(
+    routed.session,
   )
+    ? enterRoute(routed, route)
+    : { model: routed }
+  return {
+    model: entered.model,
+    commands: [
+      ...(linked.commands ?? []),
+      ...(entered.commands ?? []),
+      focusPageHeading(),
+    ],
+  }
+}
+
+const isSameRoute = (a: AppRoute, b: AppRoute): boolean =>
+  pathOf(a) === pathOf(b)
 
 // UPDATE
 
@@ -741,23 +941,14 @@ export const update = (model: Model, message: Message) =>
     },
     CompletedFocusCaseMark: () => ({ model }),
     CompletedFocusElement: () => ({ model }),
-    ClickedAdvanceClock: ({ hours }) => ({
-      model: modifyFields(model, { now: now => now + hoursToMs(hours) }),
-    }),
-    ClickedToggleDemoControls: () => ({
-      model: modifyFields(model, {
-        isDemoControlsOpen: isOpen => !isOpen,
-      }),
-    }),
-    ClickedResetClock: () => ({
-      model: modifyFields(model, { now: () => model.startedAt }),
+    UpdatedNow: ({ now }) => ({
+      model: modifyFields(model, { now: () => now }),
     }),
     SelectedCentreFilter: ({ centreFilter }) => ({
       model: modifyFields(model, { centreFilter: () => centreFilter }),
     }),
     CompletedGetCurrentTime: ({ now }) => ({
       model: modifyFields(model, {
-        startedAt: () => now,
         now: () => now,
         entryForm: () => emptyEntryForm(now),
       }),
@@ -787,32 +978,48 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, { deskLoad: () => DeskLoad.Loading() }),
       commands: [LoadDesk()],
     }),
-    CompletedReadLocation: ({ origin, place }) => {
-      const located = modifyFields(model, { origin: () => origin })
-      return Place.match(place, {
-        Elsewhere: () => ({ model: located }),
-        LinkPage: ({ maybeToken }) => {
-          const linkInit = Link.init(maybeToken)
-          return {
-            model: modifyFields(located, {
-              maybeLink: () => Option.some(linkInit.model),
-            }),
-            commands: Command.mapMessages(linkInit.commands ?? [], message =>
-              Message.GotLinkMessage({ message }),
-            ),
-          }
-        },
-      })
-    },
-    CompletedReturnToRoot: () => ({ model }),
+    ClickedLink: ({ request }) =>
+      UrlRequest.match<Update.Return<Model, Message>>(request, {
+        Internal: ({ url }) =>
+          isSameRoute(urlToAppRoute(url), model.route)
+            ? { model }
+            : (() => {
+                const went = goTo(model, url)
+                return {
+                  model: went.model,
+                  commands: [
+                    PushUrl({ url: urlToString(url) }),
+                    ...(went.commands ?? []),
+                  ],
+                }
+              })(),
+        External: ({ href }) => ({
+          model,
+          commands: [LoadExternal({ href })],
+        }),
+      }),
+    ChangedUrl: ({ url }) =>
+      isSameRoute(urlToAppRoute(url), model.route)
+        ? { model }
+        : goTo(model, url),
+    CompletedPushUrl: () => ({ model }),
+    CompletedReplaceUrl: () => ({ model }),
+    CompletedLoadExternal: () => ({ model }),
+    SucceededLoadConfig: ({ config }) =>
+      resume(
+        modifyFields(model, { config: () => ConfigLoad.Loaded({ config }) }),
+      ),
+    FailedLoadConfig: () =>
+      resume(modifyFields(model, { config: () => ConfigLoad.Unavailable() })),
+    SucceededLoadLogo: ({ src }) => ({
+      model: modifyFields(model, { maybeLogoSrc: () => Option.some(src) }),
+    }),
+    FailedLoadLogo: () => ({ model }),
     GotLinkMessage: ({ message }) => foldLink(model, message),
     GotAccountMessage: ({ message }) => foldAccount(model, message),
     GotAdminMessage: ({ message }) => foldAdmin(model, message),
     GotUnitMessage: ({ message }) => foldUnit(model, message),
-    SucceededCheckSession: ({ me }) => ({
-      model: loadingDesk(model, me),
-      commands: [LoadDesk()],
-    }),
+    SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({
       model: modifyFields(model, {
@@ -830,10 +1037,7 @@ export const update = (model: Model, message: Message) =>
         NotSubmitted: () => submitLogin(model),
         Rejected: () => submitLogin(model),
       }),
-    SucceededSignIn: ({ me }) => ({
-      model: loadingDesk(model, me),
-      commands: [LoadDesk()],
-    }),
+    SucceededSignIn: ({ me }) => resume(loadingDesk(model, me)),
     FailedSignIn: ({ failure }) => ({
       model: modifyFields(model, {
         loginForm: form =>
@@ -844,25 +1048,10 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     ClickedSignOut: () => ({
-      model: signedOut(model),
-      commands: [SignOut()],
+      model: modifyFields(signedOut(model), { route: () => AppRoute.Desk() }),
+      commands: [SignOut(), ReplaceUrl({ url: pathOf(AppRoute.Desk()) })],
     }),
     CompletedSignOut: () => ({ model }),
-    ClickedPage: ({ page }) => {
-      const paged = modifyFields(model, {
-        page: () => page,
-        isDetailSheetOpen: () => false,
-        rulesForm: form =>
-          page === 'Rules' && !RulesSubmission.guards.Saving(form.submission)
-            ? rulesFormFor(model.ruleSets, form.scope)
-            : form,
-      })
-      const entered = enterPage(paged, page)
-      return {
-        model: entered.model,
-        commands: [...(entered.commands ?? []), focusPageHeading()],
-      }
-    },
     SelectedRulesScope: ({ scope }) => ({
       model: modifyFields(model, {
         rulesForm: () => rulesFormFor(model.ruleSets, scope),
@@ -934,12 +1123,12 @@ export const update = (model: Model, message: Message) =>
       model: modifyFields(model, {
         cases: cases => Array.append(cases, created),
         entryForm: () => emptyEntryForm(model.now),
-        page: () => 'Desk',
+        route: () => AppRoute.Desk(),
         centreFilter: () => 'All',
         maybeSelectedCaseId: () => Option.some(created.id),
         isDetailSheetOpen: () => true,
       }),
-      commands: [focusPageHeading()],
+      commands: [PushUrl({ url: pathOf(AppRoute.Desk()) }), focusPageHeading()],
     }),
     FailedCreateCase: ({ failure }) => ({
       model:
@@ -969,7 +1158,15 @@ const submitLogin = (model: Model) => ({
 
 // SUBSCRIPTION
 
+export const CLOCK_TICK_MINUTES = 1
+
 export const subscriptions = Subscription.make<Model, Message>()(_entry => ({
+  clock: Subscription.persistentEntry(
+    Stream.tick(Duration.minutes(CLOCK_TICK_MINUTES)).pipe(
+      Stream.mapEffect(() => Clock.currentTimeMillis),
+      Stream.map(now => Message.UpdatedNow({ now })),
+    ),
+  ),
   heroLayout: Subscription.persistentEntry(
     Dom.streamFromMediaQuery({
       query: NARROW_VIEWPORT_QUERY,

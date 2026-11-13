@@ -116,12 +116,51 @@ const copiedLink = async (page: Page): Promise<string> => {
   return link
 }
 
+const startWorkerd = (
+  port: number,
+  dataDir: string,
+  env: Record<string, string>,
+): ChildProcess =>
+  spawn(
+    'pnpm',
+    [
+      '--dir',
+      join(root, 'apps/api'),
+      'exec',
+      'workerd',
+      'serve',
+      'workerd/case-desk.capnp',
+      '--directory-path',
+      `assets=${join(root, 'apps/web/dist')}`,
+      '--directory-path',
+      `data=${dataDir}`,
+      '--socket-addr',
+      `http=127.0.0.1:${port}`,
+      '--experimental',
+    ],
+    { cwd: root, env: { ...process.env, ...env }, stdio: 'ignore', detached: true },
+  )
+
+// NOTE: Each server is its own process group (pnpm starts workerd as a child),
+// so stopping the group ends exactly the processes this script started.
+const stop = (child: ChildProcess | undefined): void => {
+  if (child?.pid === undefined) {
+    return
+  }
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch {
+    // already gone
+  }
+}
+
 const main = async (): Promise<void> => {
   mkdirSync(shots, { recursive: true })
   const local = mkdtempSync(join(tmpdir(), 'quoroom-e2e-'))
   const port = await freePort()
   const base = `http://127.0.0.1:${port}`
   let server: ChildProcess | undefined
+  let pilotServer: ChildProcess | undefined
   let browser: Browser | undefined
 
   try {
@@ -149,25 +188,7 @@ const main = async (): Promise<void> => {
       CASE_DESK_LOCAL_DIR: local,
     })
     mkdirSync(join(local, 'data'), { recursive: true })
-    server = spawn(
-      'pnpm',
-      [
-        '--dir',
-        join(root, 'apps/api'),
-        'exec',
-        'workerd',
-        'serve',
-        'workerd/case-desk.capnp',
-        '--directory-path',
-        `assets=${join(root, 'apps/web/dist')}`,
-        '--directory-path',
-        `data=${join(local, 'data')}`,
-        '--socket-addr',
-        `http=127.0.0.1:${port}`,
-        '--experimental',
-      ],
-      { cwd: root, stdio: 'ignore' },
-    )
+    server = startWorkerd(port, join(local, 'data'), {})
     await waitForHealth(base)
 
     const launched = await chromium.launch({
@@ -204,7 +225,7 @@ const main = async (): Promise<void> => {
     })
 
     await step('the administrator sees the administration and creates a unit', async () => {
-      await admin.getByRole('button', { name: 'Administration' }).click()
+      await admin.getByRole('link', { name: 'Administration' }).click()
       await admin.getByRole('heading', { name: 'Administration' }).waitFor()
       await admin.getByLabel('Unit name').fill('Synthetic Unit')
       await admin.getByLabel('Unit code').fill('SYN')
@@ -249,9 +270,9 @@ const main = async (): Promise<void> => {
 
     await step('the author sees the unit, the other author, and nothing of administration', async () => {
       await assert.rejects(
-        ana.getByRole('button', { name: 'Administration' }).waitFor({ timeout: 500 }),
+        ana.getByRole('link', { name: 'Administration' }).waitFor({ timeout: 500 }),
       )
-      await ana.getByRole('button', { name: 'My unit' }).click()
+      await ana.getByRole('link', { name: 'My unit' }).click()
       await ana.getByRole('heading', { name: 'My unit' }).waitFor()
       await ana
         .getByRole('list', { name: 'Authors in this unit' })
@@ -319,7 +340,7 @@ const main = async (): Promise<void> => {
     })
 
     await step('only the reviewer gives WhatsApp consent, on their own account', async () => {
-      await rae.getByRole('button', { name: 'My account' }).click()
+      await rae.getByRole('link', { name: 'My account' }).click()
       await rae.getByRole('heading', { name: 'Your account' }).waitFor()
       assert.equal(
         await rae
@@ -337,7 +358,7 @@ const main = async (): Promise<void> => {
     })
 
     await step('an author sets the approval notice (D19)', async () => {
-      await ben.getByRole('button', { name: 'My account' }).click()
+      await ben.getByRole('link', { name: 'My account' }).click()
       await ben.getByRole('heading', { name: 'Your account' }).waitFor()
       await ben.getByLabel('Tell me about each single approval of my reports').check()
       await ben.getByRole('button', { name: 'Save preferences' }).click()
@@ -371,9 +392,107 @@ const main = async (): Promise<void> => {
       await visitor.getByText('Too many attempts').waitFor()
       await shot(visitor, 'throttled')
     })
+
+    await step('/api/config gives the demo mode and the neutral theme, briefly cached', async () => {
+      const response = await fetch(`${base}/api/config`)
+      assert.equal(response.status, 200)
+      assert.match(response.headers.get('cache-control') ?? '', /public, max-age=\d+/)
+      const config = (await response.json()) as {
+        mode: string
+        theme: { organisationName: string; colors: { primary: string } }
+      }
+      assert.equal(config.mode, 'demo')
+      assert.equal(config.theme.organisationName, 'Your organisation')
+      assert.equal(config.theme.colors.primary, '#1f4e79')
+    })
+
+    await step('the theme from /api/config is applied: a colour and the organisation name', async () => {
+      const themed = await person(launched)
+      await themed.route('**/api/config', async route => {
+        const response = await route.fetch()
+        const config = (await response.json()) as Record<string, unknown>
+        await route.fulfill({
+          response,
+          json: {
+            ...config,
+            theme: {
+              ...(config.theme as Record<string, unknown>),
+              organisationName: 'Synthetic Foundation',
+              colors: {
+                primary: '#0b5e3c',
+                accent: '#7a2e0e',
+                text: '#111111',
+                background: '#ffffff',
+              },
+            },
+          },
+        })
+      })
+      await themed.goto(base)
+      await themed.getByRole('heading', { name: 'Sign in' }).waitFor()
+      await themed.getByText('Synthetic Foundation').first().waitFor()
+      const primary = await themed
+        .locator('#quoroom-root')
+        .evaluate(element => element.style.getPropertyValue('--color-msf-red'))
+      assert.equal(primary, '#0b5e3c')
+      await shot(themed, 'theme-applied')
+      await themed.context().close()
+    })
+
+    await step('a signed-out deep link asks for sign-in and returns to the exact link', async () => {
+      const visitor = await person(launched)
+      await visitor.goto(`${base}/r/syn-1/rev/2`)
+      await visitor.getByRole('heading', { name: 'Sign in' }).waitFor()
+      assert.equal(new URL(visitor.url()).pathname, '/r/syn-1/rev/2')
+      await shot(visitor, 'deep-link-sign-in')
+      await visitor.getByLabel('E-mail').fill('rae.viewer@case-desk.test')
+      await visitor.getByLabel('Password', { exact: true }).fill(PASSWORD)
+      await visitor.getByRole('button', { name: 'Sign in' }).click()
+      await visitor.getByText('Revision 2 of report syn-1').waitFor()
+      assert.equal(new URL(visitor.url()).pathname, '/r/syn-1/rev/2')
+      await shot(visitor, 'deep-link-returned')
+      await visitor.context().close()
+    })
+
+    await step('in pilot mode the server says so, hides triage, and the app shows no triage', async () => {
+      const pilotPort = await freePort()
+      const pilotData = join(local, 'pilot-data')
+      mkdirSync(pilotData, { recursive: true })
+      pilotServer = startWorkerd(pilotPort, pilotData, { RUNTIME_MODE: 'pilot' })
+      const pilotBase = `http://127.0.0.1:${pilotPort}`
+      await waitForHealth(pilotBase)
+      const config = (await (await fetch(`${pilotBase}/api/config`)).json()) as {
+        mode: string
+      }
+      assert.equal(config.mode, 'pilot')
+      const rpc = await fetch(`${pilotBase}/api/rpc`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ _tag: 'Request', id: '1', tag: 'ListCases', payload: null, headers: [] }),
+      })
+      assert.equal(rpc.status, 404)
+
+      // NOTE: A signed-in account on the pilot app. The pilot data folder has
+      // no accounts, so the pilot config is given to the signed-in administrator
+      // of the demo server, which is the app's own behaviour for the mode.
+      await admin.route('**/api/config', async route => {
+        const response = await route.fetch()
+        const body = (await response.json()) as Record<string, unknown>
+        await route.fulfill({ response, json: { ...body, mode: 'pilot' } })
+      })
+      await admin.goto(base)
+      await admin.getByRole('link', { name: 'Home' }).waitFor()
+      assert.equal(await admin.getByRole('link', { name: 'New case' }).count(), 0)
+      assert.equal(await admin.getByRole('link', { name: 'Rules' }).count(), 0)
+      await admin.goto(`${base}/new-case`)
+      await admin.getByText('This page is not available').waitFor()
+      await shot(admin, 'pilot-no-triage')
+      await admin.unroute('**/api/config')
+    })
   } finally {
     await browser?.close()
-    server?.kill('SIGTERM')
+    stop(server)
+    stop(pilotServer)
     rmSync(local, { recursive: true, force: true })
   }
 

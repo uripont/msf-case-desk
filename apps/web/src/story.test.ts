@@ -4,18 +4,16 @@ import { describe, expect, test } from 'vitest'
 
 import { CaseId, DEMO_START, SEED_CASES } from '@case-desk/domain'
 
-import { loadedModel } from './fixtures'
+import { loadedModel, openedAt } from './fixtures'
 import {
   CheckSession,
   FocusCaseMark,
   GetCurrentTime,
+  LoadConfig,
   LoadDesk,
   Message,
-  ReadLocation,
   heroLayoutTransition,
-  init,
   initialModel,
-  overdueCountOf,
   update,
   visibleQueueOf,
 } from './main'
@@ -38,23 +36,17 @@ describe('update', () => {
     )
   })
 
-  test('advancing the clock creates overdue cases and reset restores it', () => {
+  test('the clock follows the real time, with no way to move it', () => {
     story(
       update,
       given(loadedModel),
-      message(Message.ClickedAdvanceClock({ hours: 24 })),
-      message(Message.ClickedAdvanceClock({ hours: 24 })),
+      message(Message.UpdatedNow({ now: DEMO_START + 3_600_000 })),
       model(next => {
-        expect(next.now).toBe(DEMO_START + 48 * 3_600_000)
-        expect(overdueCountOf(next)).toBeGreaterThan(
-          overdueCountOf(loadedModel),
-        )
-      }),
-      message(Message.ClickedResetClock()),
-      model(next => {
-        expect(next.now).toBe(DEMO_START)
+        expect(next.now).toBe(DEMO_START + 3_600_000)
       }),
     )
+    expect('ClickedAdvanceClock' in Message).toBe(false)
+    expect('ClickedToggleDemoControls' in Message).toBe(false)
   })
 
   test('the centre filter narrows the queue to one operational centre', () => {
@@ -110,24 +102,6 @@ describe('update', () => {
       message(Message.LeftCase()),
       model(next => {
         expect(next.maybeHighlightedCaseId).toEqual(Option.none())
-      }),
-    )
-  })
-
-  test('demo controls start hidden and can be toggled', () => {
-    story(
-      update,
-      given(loadedModel),
-      model(next => {
-        expect(next.isDemoControlsOpen).toBe(false)
-      }),
-      message(Message.ClickedToggleDemoControls()),
-      model(next => {
-        expect(next.isDemoControlsOpen).toBe(true)
-      }),
-      message(Message.ClickedToggleDemoControls()),
-      model(next => {
-        expect(next.isDemoControlsOpen).toBe(false)
       }),
     )
   })
@@ -192,12 +166,12 @@ describe('update', () => {
 
 describe('loading the desk', () => {
   test('starting the app reads the clock and checks the session', () => {
-    const started = init()
+    const started = openedAt('/')
     expect(started.model.deskLoad._tag).toBe('Loading')
     expect(started.commands?.map(command => command.name)).toEqual([
       GetCurrentTime.name,
       CheckSession.name,
-      ReadLocation.name,
+      LoadConfig.name,
     ])
   })
 

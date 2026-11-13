@@ -11,8 +11,8 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { SYNTHETIC_ME } from './fixtures'
-import { FocusElement, Message, Place, update } from './main'
+import { SYNTHETIC_ME, atPage } from './fixtures'
+import { Message, update } from './main'
 import {
   SYNTHETIC_TOKEN,
   SYNTHETIC_UNIT,
@@ -27,9 +27,7 @@ import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
 import { view } from './view'
 
-const openedLink = linkPageModel(
-  Place.LinkPage({ maybeToken: Option.some(SYNTHETIC_TOKEN) }),
-)
+const openedLink = linkPageModel(Option.some(SYNTHETIC_TOKEN))
 
 const activationInfo = {
   purpose: 'activate',
@@ -51,6 +49,16 @@ const unusableLink = update(
     message: Link.Message.FailedInspectLink({ failure: Failure.LinkInvalid() }),
   }),
 ).model
+
+const enteredPage = (
+  start: typeof adminModel,
+  page: Parameters<typeof atPage>[1],
+  messages: ReadonlyArray<Message>,
+) =>
+  messages.reduce(
+    (model, next) => update(model, next).model,
+    atPage(start, page),
+  )
 
 describe('link scene', () => {
   test('a link that works asks for a password, with no sign-in form', () => {
@@ -92,15 +100,15 @@ describe('navigation scene', () => {
     scene(
       { update, view },
       given(adminModel),
-      expect(role('button', { name: 'Administration' })).toExist(),
-      expect(role('button', { name: 'My account' })).toExist(),
-      expect(role('button', { name: 'My unit' })).toBeAbsent(),
+      expect(role('link', { name: 'Administration' })).toExist(),
+      expect(role('link', { name: 'My account' })).toExist(),
+      expect(role('link', { name: 'My unit' })).toBeAbsent(),
     )
     scene(
       { update, view },
       given(authorModel),
-      expect(role('button', { name: 'My unit' })).toExist(),
-      expect(role('button', { name: 'Administration' })).toBeAbsent(),
+      expect(role('link', { name: 'My unit' })).toExist(),
+      expect(role('link', { name: 'Administration' })).toBeAbsent(),
     )
   })
 })
@@ -109,12 +117,15 @@ describe('administration scene', () => {
   test('the administrator creates a unit and hands over a link', () => {
     scene(
       { update, view },
-      given(adminModel),
-      click(role('button', { name: 'Administration' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      Command.resolve(
-        Admin.LoadAdmin,
-        Admin.Message.SucceededLoadAdmin({ units: [], accounts: [] }),
+      given(
+        enteredPage(adminModel, 'Admin', [
+          Message.GotAdminMessage({
+            message: Admin.Message.SucceededLoadAdmin({
+              units: [],
+              accounts: [],
+            }),
+          }),
+        ]),
       ),
       expect(role('heading', { name: 'Administration' })).toExist(),
       type(role('textbox', { name: 'Unit name' }), 'Synthetic Unit'),
@@ -131,15 +142,15 @@ describe('administration scene', () => {
   test('a granted new person comes with a one-time link', () => {
     scene(
       { update, view },
-      given(adminModel),
-      click(role('button', { name: 'Administration' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      Command.resolve(
-        Admin.LoadAdmin,
-        Admin.Message.SucceededLoadAdmin({
-          units: [SYNTHETIC_UNIT],
-          accounts: [],
-        }),
+      given(
+        enteredPage(adminModel, 'Admin', [
+          Message.GotAdminMessage({
+            message: Admin.Message.SucceededLoadAdmin({
+              units: [SYNTHETIC_UNIT],
+              accounts: [],
+            }),
+          }),
+        ]),
       ),
       type(role('textbox', { name: 'E-mail' }), 'new@case-desk.test'),
       type(role('textbox', { name: 'Name' }), 'New Author'),
@@ -175,21 +186,22 @@ describe('unit scene', () => {
   test('inviting someone who has an account says so, with no link', () => {
     scene(
       { update, view },
-      given(authorModel),
-      click(role('button', { name: 'My unit' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      Command.resolve(
-        Unit.LoadUnits,
-        Unit.Message.SucceededLoadUnits({ units: [SYNTHETIC_UNIT] }),
-      ),
-      Command.resolve(
-        Unit.LoadUnitData,
-        Unit.Message.SucceededLoadUnitData({
-          unit: SYNTHETIC_UNIT.id,
-          members: [],
-          reviewers: [],
-          committees: [],
-        }),
+      given(
+        enteredPage(authorModel, 'Unit', [
+          Message.GotUnitMessage({
+            message: Unit.Message.SucceededLoadUnits({
+              units: [SYNTHETIC_UNIT],
+            }),
+          }),
+          Message.GotUnitMessage({
+            message: Unit.Message.SucceededLoadUnitData({
+              unit: SYNTHETIC_UNIT.id,
+              members: [],
+              reviewers: [],
+              committees: [],
+            }),
+          }),
+        ]),
       ),
       type(role('textbox', { name: 'Name' }), 'Known Person'),
       type(role('textbox', { name: 'E-mail' }), 'known@case-desk.test'),
@@ -218,21 +230,22 @@ describe('unit scene', () => {
   test('a reviewer is registered with a number and a consent request', () => {
     scene(
       { update, view },
-      given(authorModel),
-      click(role('button', { name: 'My unit' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      Command.resolve(
-        Unit.LoadUnits,
-        Unit.Message.SucceededLoadUnits({ units: [SYNTHETIC_UNIT] }),
-      ),
-      Command.resolve(
-        Unit.LoadUnitData,
-        Unit.Message.SucceededLoadUnitData({
-          unit: SYNTHETIC_UNIT.id,
-          members: [],
-          reviewers: [],
-          committees: [],
-        }),
+      given(
+        enteredPage(authorModel, 'Unit', [
+          Message.GotUnitMessage({
+            message: Unit.Message.SucceededLoadUnits({
+              units: [SYNTHETIC_UNIT],
+            }),
+          }),
+          Message.GotUnitMessage({
+            message: Unit.Message.SucceededLoadUnitData({
+              unit: SYNTHETIC_UNIT.id,
+              members: [],
+              reviewers: [],
+              committees: [],
+            }),
+          }),
+        ]),
       ),
       type(role('textbox', { name: 'Reviewer name' }), 'Rae Viewer'),
       type(role('textbox', { name: 'Reviewer e-mail' }), 'rae@case-desk.test'),
@@ -283,12 +296,12 @@ describe('account scene', () => {
   test('consent needs a number, and only the person can give it', () => {
     scene(
       { update, view },
-      given(authorModel),
-      click(role('button', { name: 'My account' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      Command.resolve(
-        Account.LoadAccount,
-        Account.Message.SucceededLoadAccount({ me: SYNTHETIC_ME }),
+      given(
+        enteredPage(authorModel, 'Account', [
+          Message.GotAccountMessage({
+            message: Account.Message.SucceededLoadAccount({ me: SYNTHETIC_ME }),
+          }),
+        ]),
       ),
       click(
         role('checkbox', {
@@ -303,12 +316,12 @@ describe('account scene', () => {
   test('the approval notice is off until chosen', () => {
     scene(
       { update, view },
-      given(authorModel),
-      click(role('button', { name: 'My account' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      Command.resolve(
-        Account.LoadAccount,
-        Account.Message.SucceededLoadAccount({ me: SYNTHETIC_ME }),
+      given(
+        enteredPage(authorModel, 'Account', [
+          Message.GotAccountMessage({
+            message: Account.Message.SucceededLoadAccount({ me: SYNTHETIC_ME }),
+          }),
+        ]),
       ),
       expect(
         role('checkbox', {

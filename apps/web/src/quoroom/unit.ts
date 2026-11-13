@@ -952,7 +952,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
       failure._tag === 'NotAllowed'
         ? [
             h.p(
-              [h.Role('alert'), h.Class('text-lg font-medium text-msf-red')],
+              [h.Role('alert'), h.Class('text-lg font-medium text-msf-alert')],
               [
                 'You are not an author in this unit. An administrator can grant you that.',
               ],
@@ -960,7 +960,10 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
           ]
         : [
             h.p(
-              [h.Role('alert'), h.Class('text-base font-medium text-msf-red')],
+              [
+                h.Role('alert'),
+                h.Class('text-base font-medium text-msf-alert'),
+              ],
               [failureText(failure)],
             ),
           ],

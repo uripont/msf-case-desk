@@ -30,7 +30,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
           h.p(
             [h.Class('text-pretty text-lg font-light text-msf-ink')],
             [
-              'Case Desk is for the people who assess and decide cases. Use the account the team gave you.',
+              'Quoroom is where reports are written, reviewed and approved. Use the account you were given.',
             ],
           ),
         ],
@@ -79,7 +79,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
               h.p(
                 [
                   h.Role('alert'),
-                  h.Class('text-base font-medium text-msf-red'),
+                  h.Class('text-base font-medium text-msf-alert'),
                 ],
                 [failureText(failure)],
               ),

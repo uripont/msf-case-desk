@@ -1,5 +1,7 @@
 import { Layer } from 'effect'
 
+import { runtimeModeOf } from '@case-desk/domain'
+
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'
 import { layerSql } from './d1Repository'
@@ -10,6 +12,8 @@ import { fromD1 } from './sql'
 export type Env = {
   readonly ASSETS: Fetcher
   readonly DB: D1Database
+  // NOTE: `demo` or `pilot` (D20), set by the stack. Unset means `demo`.
+  readonly RUNTIME_MODE?: string
 }
 
 const API_PREFIX = '/api/'
@@ -25,6 +29,7 @@ const handleApi = async (
   const app = makeApp(
     layerSql(env.DB),
     Layer.mergeAll(layerSqlReport(fromD1(env.DB)), QuoroomServicesLive),
+    runtimeModeOf(env.RUNTIME_MODE),
   )
   try {
     return await app.handle(request)

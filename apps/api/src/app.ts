@@ -1,8 +1,15 @@
 import { Effect, Layer, Option, Schema } from 'effect'
 
-import { DEFAULT_RULES, RPC_PATH, type Repository } from '@case-desk/domain'
+import {
+  CONFIG_PATH,
+  DEFAULT_RULES,
+  RPC_PATH,
+  type Repository,
+  type RuntimeMode,
+} from '@case-desk/domain'
 
 import { withReferrerPolicy } from './headers'
+import { makeConfigHandler } from './quoroom/config'
 import { withSink } from './quoroom/cookies'
 import {
   QUOROOM_PUBLIC_PATH,
@@ -46,7 +53,10 @@ const isJsonPost = (request: Request): boolean =>
 export const makeApp = (
   repository: Layer.Layer<Repository>,
   quoroom?: QuoroomDeps,
+  mode: RuntimeMode = 'demo',
 ) => {
+  const config =
+    quoroom === undefined ? undefined : makeConfigHandler(quoroom, mode)
   const rpc = makeRpcHandler(repository)
   const quoroomRpc =
     quoroom === undefined ? undefined : makeQuoroomRpcHandler(repository, quoroom)
@@ -133,6 +143,13 @@ export const makeApp = (
     }
     if (pathname === '/api/session') {
       return session(request)
+    }
+    if (config !== undefined && pathname === CONFIG_PATH) {
+      return config(request)
+    }
+    // NOTE: the triage desk is switched off in a pilot (D20).
+    if (mode === 'pilot' && (pathname === RPC_PATH || pathname === `${RPC_PATH}/`)) {
+      return Promise.resolve(json({ error: 'NotFound' }, 404))
     }
     if (pathname === RPC_PATH) {
       return rpc.handler(request)

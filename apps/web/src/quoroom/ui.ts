@@ -247,7 +247,10 @@ export const linkButton = <M>(
   )
 
 export const alertText = <M>(h: HtmlBuilder<M>, text: string): Html =>
-  h.p([h.Role('alert'), h.Class('text-base font-medium text-msf-red')], [text])
+  h.p(
+    [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+    [text],
+  )
 
 export const statusText = <M>(h: HtmlBuilder<M>, text: string): Html =>
   h.p([h.Role('status'), h.Class('text-base font-medium text-msf-ink')], [text])

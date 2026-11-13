@@ -12,7 +12,7 @@ import {
 import { describe, test } from 'vitest'
 
 import { loadedModel, signedInModel } from './fixtures'
-import { FocusElement, LoadDesk, Message, initialModel, update } from './main'
+import { LoadDesk, Message, initialModel, update } from './main'
 import { view } from './view'
 
 describe('scene', () => {
@@ -46,17 +46,13 @@ describe('scene', () => {
     )
   })
 
-  test('advancing the clock turns due cases into overdue ones', () => {
+  test('the latest app has no demo controls and no simulated clock', () => {
     scene(
       { update, view },
       given(loadedModel),
-      expect(text('Mon 2 Nov, 09:00 UTC', { exact: false })).toBeAbsent(),
-      click(role('button', { name: 'Demo controls' })),
-      expect(text('Mon 2 Nov, 09:00 UTC', { exact: false })).toExist(),
-      click(role('button', { name: '+24 h' })),
-      expect(role('heading', { name: '3 cases are overdue' })).toExist(),
-      click(role('button', { name: 'Reset' })),
-      expect(role('heading', { name: '1 case is due soon' })).toExist(),
+      expect(role('button', { name: 'Demo controls' })).toBeAbsent(),
+      expect(text('Simulated time', { exact: false })).toBeAbsent(),
+      expect(role('button', { name: '+24 h' })).toBeAbsent(),
     )
   })
 
@@ -123,14 +119,17 @@ describe('scene', () => {
     )
   })
 
-  test('the footer shows the MSF logo and where the prototype comes from', () => {
+  test('the footer names the product and the organisation of the theme', () => {
     scene(
       { update, view },
       given(loadedModel),
-      expect(role('img', { name: 'Metges Sense Fronteres' })).toExist(),
+      expect(
+        text('Quoroom, a reporting system for Your organisation.'),
+      ).toExist(),
       expect(
         text('developed at Universitat Pompeu Fabra', { exact: false }),
       ).toExist(),
+      expect(role('img')).toBeAbsent(),
     )
   })
 })
@@ -152,9 +151,10 @@ describe('desk states', () => {
       given(emptyModel),
       expect(role('heading', { name: 'Everything is on track' })).toExist(),
       expect(text('No cases yet.')).toExist(),
-      click(role('button', { name: 'Enter a case' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
-      expect(role('heading', { name: 'New case' })).toExist(),
+      expect(role('link', { name: 'Enter a case' })).toHaveAttr(
+        'href',
+        '/new-case',
+      ),
     )
   })
 
@@ -178,7 +178,7 @@ describe('desk states', () => {
     scene(
       { update, view },
       given(initialModel),
-      expect(role('heading', { name: 'Opening Case Desk' })).toExist(),
+      expect(role('heading', { name: 'Opening Quoroom' })).toExist(),
       expect(role('heading', { name: 'Sign in' })).toBeAbsent(),
     )
   })

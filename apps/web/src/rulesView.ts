@@ -100,7 +100,7 @@ const numberField = (
         onNone: () => h.empty,
         onSome: error =>
           h.p(
-            [h.Id(errorId), h.Class('text-base font-medium text-msf-red')],
+            [h.Id(errorId), h.Class('text-base font-medium text-msf-alert')],
             [error],
           ),
       }),
@@ -346,7 +346,7 @@ export const rulesPage = (model: Model, h: HtmlBuilder<Message>): Html => {
                     onNone: () => h.empty,
                     onSome: error =>
                       h.p(
-                        [h.Class('text-base font-medium text-msf-red')],
+                        [h.Class('text-base font-medium text-msf-alert')],
                         [error],
                       ),
                   }),
@@ -369,7 +369,7 @@ export const rulesPage = (model: Model, h: HtmlBuilder<Message>): Html => {
                   h.p(
                     [
                       h.Role('alert'),
-                      h.Class('text-base font-medium text-msf-red'),
+                      h.Class('text-base font-medium text-msf-alert'),
                     ],
                     [failureText(failure)],
                   ),

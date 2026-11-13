@@ -16,6 +16,10 @@ const application = Runtime.makeApplication({
   update,
   view,
   subscriptions,
+  routing: {
+    onUrlRequest: request => Message.ClickedLink({ request }),
+    onUrlChange: url => Message.ChangedUrl({ url }),
+  },
   viewTransition: heroLayoutTransition,
   container: document.getElementById('root'),
   devTools: {

@@ -3,8 +3,15 @@ import { describe, expect, test } from 'vitest'
 
 import { DEFAULT_RULES, type RuleSet, SEED_CASES } from '@case-desk/domain'
 
-import { loadedModel } from './fixtures'
-import { FocusElement, Message, PutRuleSet, queueOf, update } from './main'
+import { clickedPage, loadedModel } from './fixtures'
+import {
+  FocusElement,
+  Message,
+  PushUrl,
+  PutRuleSet,
+  queueOf,
+  update,
+} from './main'
 import { previewOfRules, rulesFormFor } from './rulesForm'
 
 const savedOcg: RuleSet = {
@@ -43,7 +50,8 @@ describe('rules editor', () => {
     story(
       update,
       given(loadedModel),
-      message(Message.ClickedPage({ page: 'Rules' })),
+      message(clickedPage('Rules')),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.UpdatedRulesField({ field: 'p2MinScore', value: '9' })),
       message(Message.SubmittedRules()),
@@ -60,7 +68,8 @@ describe('rules editor', () => {
     story(
       update,
       given(loadedModel),
-      message(Message.ClickedPage({ page: 'Rules' })),
+      message(clickedPage('Rules')),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.SelectedRulesScope({ scope: 'OCG' })),
       message(Message.UpdatedRulesField({ field: 'p1MinScore', value: '5' })),
@@ -100,7 +109,8 @@ describe('rules editor', () => {
     story(
       update,
       given(loadedModel),
-      message(Message.ClickedPage({ page: 'Rules' })),
+      message(clickedPage('Rules')),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.UpdatedRulesField({ field: 'targetP3', value: '120' })),
       message(Message.SubmittedRules()),

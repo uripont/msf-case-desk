@@ -7,12 +7,12 @@ export const labelClassName =
   'flex flex-col gap-2 text-base font-medium text-msf-ink'
 
 export const fieldClassName = clsx(
-  'h-12 w-full border border-msf-line bg-white px-3 text-lg font-normal text-msf-black transition-colors hover:border-msf-ink aria-[invalid=true]:border-msf-red',
+  'h-12 w-full border border-msf-line bg-white px-3 text-lg font-normal text-msf-black transition-colors hover:border-msf-ink aria-[invalid=true]:border-msf-alert',
   focusRing,
 )
 
 export const textAreaClassName = clsx(
-  'min-h-32 w-full border border-msf-line bg-white px-3 py-2 text-lg font-normal leading-relaxed text-msf-black transition-colors hover:border-msf-ink aria-[invalid=true]:border-msf-red',
+  'min-h-32 w-full border border-msf-line bg-white px-3 py-2 text-lg font-normal leading-relaxed text-msf-black transition-colors hover:border-msf-ink aria-[invalid=true]:border-msf-alert',
   focusRing,
 )
 

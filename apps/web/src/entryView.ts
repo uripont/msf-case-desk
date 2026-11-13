@@ -25,6 +25,7 @@ import {
 } from './entryForm'
 import { formatInstant, humanise } from './format'
 import { Message, type Model, PAGE_HEADING_ID } from './main'
+import { AppRoute, pathOf } from './route'
 import {
   fieldClassName,
   labelClassName,
@@ -71,7 +72,7 @@ const fieldError = (
     onNone: () => h.empty,
     onSome: error =>
       h.p(
-        [h.Id(errorId(field)), h.Class('text-base font-medium text-msf-red')],
+        [h.Id(errorId(field)), h.Class('text-base font-medium text-msf-alert')],
         [error],
       ),
   })
@@ -396,7 +397,7 @@ export const entryPage = (model: Model, h: HtmlBuilder<Message>): Html => {
                   h.p(
                     [
                       h.Role('alert'),
-                      h.Class('text-base font-medium text-msf-red'),
+                      h.Class('text-base font-medium text-msf-alert'),
                     ],
                     [failureText(failure)],
                   ),
@@ -412,11 +413,10 @@ export const entryPage = (model: Model, h: HtmlBuilder<Message>): Html => {
                     ],
                     [isSubmitting ? 'Saving…' : 'Save case'],
                   ),
-                  h.button(
+                  h.a(
                     [
-                      h.Type('button'),
+                      h.Href(pathOf(AppRoute.Desk())),
                       h.Class(clsx('text-base', textButtonClassName)),
-                      h.OnClick(Message.ClickedPage({ page: 'Desk' })),
                     ],
                     ['Back to cases'],
                   ),

@@ -4,6 +4,8 @@
 // interface D1 satisfies. Built and started by `pnpm workerd`.
 import { DurableObject } from 'cloudflare:workers'
 import { Layer } from 'effect'
+
+import { runtimeModeOf } from '@case-desk/domain'
 // @ts-expect-error: provided by the bundler from the migrations and seed files.
 import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
@@ -30,6 +32,8 @@ export type Env = {
   // address, if the operator controls one. Without it the per-address sign-in
   // limit is one shared bucket (see `clientAddress`).
   readonly TRUSTED_PROXY_HEADER?: string
+  // NOTE: `demo` or `pilot` (D20), set in the workerd config. Unset means `demo`.
+  readonly RUNTIME_MODE?: string
 }
 
 const runScript = (sql: SqlStorage, script: string): void => {
@@ -183,6 +187,7 @@ export default {
     const app = makeApp(
       layerSql(database),
       Layer.mergeAll(layerSqlReport(database), QuoroomServicesFor(network)),
+      runtimeModeOf(env.RUNTIME_MODE),
     )
     try {
       return await app.handle(request)

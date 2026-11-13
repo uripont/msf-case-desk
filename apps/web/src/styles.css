@@ -1,18 +1,37 @@
 @import '@fontsource-variable/hanken-grotesk';
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-700.css';
+@import '@fontsource/inter/latin-900.css';
+@import '@fontsource/inter/latin-ext-400.css';
+@import '@fontsource/inter/greek-400.css';
+@import '@fontsource/inter/cyrillic-400.css';
+@import '@fontsource/source-serif-4/latin-400.css';
+@import '@fontsource/source-serif-4/latin-600.css';
+@import '@fontsource/source-serif-4/latin-700.css';
+@import '@fontsource/source-serif-4/latin-900.css';
+@import '@fontsource/noto-sans/latin-400.css';
+@import '@fontsource/noto-sans/latin-500.css';
+@import '@fontsource/noto-sans/latin-700.css';
+@import '@fontsource/noto-sans/latin-900.css';
 @import 'tailwindcss';
 
 @theme {
   --font-sans:
-    'Atlas Grotesk', 'Hanken Grotesk Variable', 'Helvetica Neue', Arial,
-    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+    'Inter', 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol';
+  --font-heading:
+    'Hanken Grotesk Variable', 'Helvetica Neue', Arial, sans-serif;
 
-  --color-msf-red: #d7211e;
-  --color-msf-black: #000000;
-  --color-msf-ink: #414141;
+  --color-msf-red: #1f4e79;
+  --color-msf-alert: #b42318;
+  --color-msf-accent: #9a3412;
+  --color-msf-black: #1a1a1a;
+  --color-msf-ink: #1a1a1a;
   --color-msf-grey: #767676;
   --color-msf-line: #dbdbdb;
   --color-msf-mist: #f6f6f6;
-  --color-msf-paper: #fcfcfa;
+  --color-msf-paper: #ffffff;
 
   --radius-xs: 0;
   --radius-sm: 0;
@@ -34,7 +53,12 @@ html {
 body {
   min-width: 320px;
   margin: 0;
-  border-top: 6px solid var(--color-msf-red);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
 }
 
 button {
@@ -43,7 +67,8 @@ button {
 }
 
 ::selection {
-  @apply bg-msf-red text-white;
+  background: var(--color-msf-accent);
+  color: #ffffff;
 }
 
 .time-axis-mark {

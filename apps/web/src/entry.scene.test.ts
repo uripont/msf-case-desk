@@ -13,17 +13,15 @@ import { describe, test } from 'vitest'
 
 import { CaseId } from '@case-desk/domain'
 
-import { loadedModel } from './fixtures'
-import { CreateCase, FocusElement, Message, update } from './main'
+import { atPage, loadedModel } from './fixtures'
+import { CreateCase, FocusElement, Message, PushUrl, update } from './main'
 import { view } from './view'
 
 describe('case entry scene', () => {
   test('the form previews the priority as it is filled in', () => {
     scene(
       { update, view },
-      given(loadedModel),
-      click(role('button', { name: 'New case' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
+      given(atPage(loadedModel, 'NewCase')),
       expect(role('heading', { name: 'New case' })).toExist(),
       expect(role('complementary', { name: 'Priority preview' })).toContainText(
         'standard',
@@ -38,9 +36,7 @@ describe('case entry scene', () => {
   test('saving without a summary points at the field', () => {
     scene(
       { update, view },
-      given(loadedModel),
-      click(role('button', { name: 'New case' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
+      given(atPage(loadedModel, 'NewCase')),
       click(role('button', { name: 'Save case' })),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('textbox', { name: 'Summary' })).toHaveAttr(
@@ -54,9 +50,7 @@ describe('case entry scene', () => {
   test('a saved case appears on the desk', () => {
     scene(
       { update, view },
-      given(loadedModel),
-      click(role('button', { name: 'New case' })),
-      Command.resolve(FocusElement, Message.CompletedFocusElement()),
+      given(atPage(loadedModel, 'NewCase')),
       type(role('textbox', { name: 'Summary' }), 'Synthetic scene case.'),
       change(role('combobox', { name: 'Operational centre' }), 'OCA'),
       click(role('button', { name: 'Save case' })),
@@ -82,6 +76,7 @@ describe('case entry scene', () => {
           },
         }),
       ),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       expect(role('heading', { name: 'Synthetic scene case.' })).toExist(),
     )

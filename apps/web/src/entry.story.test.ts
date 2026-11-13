@@ -10,8 +10,8 @@ import {
   fromDateTimeInput,
   toDateTimeInput,
 } from './entryForm'
-import { loadedModel } from './fixtures'
-import { CreateCase, FocusElement, Message, update } from './main'
+import { clickedPage, loadedModel } from './fixtures'
+import { CreateCase, FocusElement, Message, PushUrl, update } from './main'
 
 const created: Case = {
   id: CaseId.make('CD-NEW00001'),
@@ -46,7 +46,8 @@ describe('case entry form', () => {
     story(
       update,
       given(loadedModel),
-      message(Message.ClickedPage({ page: 'NewCase' })),
+      message(clickedPage('NewCase')),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(Message.SubmittedEntry()),
       model(next => {
@@ -62,7 +63,8 @@ describe('case entry form', () => {
     story(
       update,
       given(loadedModel),
-      message(Message.ClickedPage({ page: 'NewCase' })),
+      message(clickedPage('NewCase')),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       message(
         Message.UpdatedEntryField({
@@ -99,9 +101,10 @@ describe('case entry form', () => {
         }),
       ),
       Command.resolve(CreateCase, Message.SucceededCreateCase({ created })),
+      Command.resolve(PushUrl, Message.CompletedPushUrl()),
       Command.resolve(FocusElement, Message.CompletedFocusElement()),
       model(next => {
-        expect(next.page).toBe('Desk')
+        expect(next.route).toEqual({ _tag: 'Desk' })
         expect(next.isDetailSheetOpen).toBe(true)
         expect(next.cases).toContainEqual(created)
         expect(next.maybeSelectedCaseId).toEqual(
