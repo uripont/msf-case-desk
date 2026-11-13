@@ -17,7 +17,13 @@ import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'
 import { authorModel } from './quoroom.fixtures'
 import * as Report from './quoroom/report'
-import { REPORT_ID, SAVED_AT, loadedReport } from './report.fixtures'
+import {
+  REPORT_ID,
+  SAVED_AT,
+  SCOPE,
+  loadedReport,
+  staleSaveFacts,
+} from './report.fixtures'
 import { view } from './view'
 
 const reportMessage = (message: Report.Message) =>
@@ -27,6 +33,7 @@ const model = [
   clickedLinkTo(`/r/${REPORT_ID}`),
   reportMessage(
     Report.Message.SucceededLoadReport({
+      scope: SCOPE,
       loaded: loadedReport(INVESTIGATION_TEMPLATE, { state: 'drafting' }),
     }),
   ),
@@ -49,7 +56,11 @@ const addedWith = (
   Command.resolveAll(
     [
       Report.NewEntryId,
-      Report.Message.GeneratedEntryId({ target: GROUP, entryId: 'b1' }),
+      Report.Message.GeneratedEntryId({
+        scope: SCOPE,
+        target: GROUP,
+        entryId: 'b1',
+      }),
     ],
     [Report.SaveSection, saved],
     [Report.FocusSectionHeading, Report.Message.CompletedFocusSectionHeading()],
@@ -58,6 +69,7 @@ const addedWith = (
 
 const savedAs = (saveCounter: number) =>
   Report.Message.SucceededSaveSection({
+    scope: SCOPE,
     sectionId: 'background',
     saveCounter,
     savedAt: SAVED_AT,
@@ -115,7 +127,17 @@ describe('the save state is shown', () => {
       { update, view },
       given(model),
       click(role('button', { name: 'Add background topic' })),
-      addedWith(Report.Message.StaleSaveSection({ sectionId: 'background' })),
+      addedWith(
+        Report.Message.StaleSaveSection({
+          scope: SCOPE,
+          sectionId: 'background',
+          sent: { values: {}, sections: {} },
+        }),
+      ),
+      Command.resolve(
+        Report.ReadStaleSection,
+        Report.Message.SucceededReadStaleSection(staleSaveFacts('background')),
+      ),
       expect(
         role('heading', { name: 'This working copy changed in another tab' }),
       ).toExist(),

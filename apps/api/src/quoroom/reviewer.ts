@@ -375,7 +375,7 @@ export const reviewerHandlers: Pick<
         const body =
           readerView === 'full'
             ? comment.body
-            : (comment.redactedBody ?? redactor.text(comment.body))
+            : redactor.text(comment.redactedBody ?? comment.body)
         const replies = listed.replies
           .filter(reply => reply.commentId === comment.id)
           .map(reply => ({
@@ -387,7 +387,7 @@ export const reviewerHandlers: Pick<
             body:
               readerView === 'full'
                 ? reply.body
-                : (reply.redactedBody ?? redactor.text(reply.body)),
+                : redactor.text(reply.redactedBody ?? reply.body),
             createdAt: reply.createdAt,
           }))
         const common = {
@@ -407,7 +407,16 @@ export const reviewerHandlers: Pick<
         }
         const sameView = mine || writtenFull === (readerView === 'full')
         if (sameView) {
-          out.push({ ...common, anchor: anchorOf(comment) })
+          // NOTE: a redacted reader's own words go through the redaction
+          // too, so no alias comes back to anyone however it got in (D14).
+          const anchor = anchorOf(comment)
+          out.push({
+            ...common,
+            anchor:
+              readerView === 'redacted' && anchor.kind === 'text'
+                ? { ...anchor, quoted: redactor.text(anchor.quoted) }
+                : anchor,
+          })
         } else {
           // NOTE: positions point into a text this reader does not have, so
           // the comment sits on the section, with its quoted text in the

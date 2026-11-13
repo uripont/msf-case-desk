@@ -246,7 +246,8 @@ export const Figure = Node.create<FigureOptions>({
           return true
         },
         stopEvent: event =>
-          event.target instanceof globalThis.Node && body.contains(event.target),
+          event.target instanceof globalThis.Node &&
+          body.contains(event.target),
         ignoreMutation: mutation =>
           mutation.type === 'selection'
             ? false

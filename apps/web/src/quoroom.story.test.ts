@@ -227,7 +227,10 @@ describe('link tokens in Messages', () => {
 
   test('a link the server issued is Redacted in every Message that carries one', () => {
     const given = givenLinkOf(activationLink)
-    const reset = Admin.Message.SucceededIssueReset({ name: 'Known Person', link: given })
+    const reset = Admin.Message.SucceededIssueReset({
+      name: 'Known Person',
+      link: given,
+    })
     const messages = [
       reset,
       Admin.Message.SucceededGrantCapability({
@@ -240,8 +243,14 @@ describe('link tokens in Messages', () => {
         },
         link: Option.some(given),
       }),
-      Unit.Message.SucceededInviteToUnit({ name: 'Second Author', link: Option.some(given) }),
-      Unit.Message.SucceededAddReviewer({ name: 'Second Reviewer', link: Option.some(given) }),
+      Unit.Message.SucceededInviteToUnit({
+        name: 'Second Author',
+        link: Option.some(given),
+      }),
+      Unit.Message.SucceededAddReviewer({
+        name: 'Second Reviewer',
+        link: Option.some(given),
+      }),
     ]
     for (const message of messages) {
       expect(JSON.stringify(message)).not.toContain(token)

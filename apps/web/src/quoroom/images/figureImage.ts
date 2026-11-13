@@ -1,18 +1,19 @@
 import { Option } from 'effect'
 
 import { loadImage } from './read'
-import { IMAGE_TAG } from './spec'
+import { IMAGE_TAG, imageContextToken, parseImageContext } from './spec'
 
 // NOTE: The element that shows one stored image (stage 4d), in the editor and in
 // the read-only rich-text view. It fetches the image through the image route
 // with the session cookie (never a public address), shows the picture in an
 // `<img>` through an object URL, and revokes that URL and stops the request
-// when it leaves the page. Foldkit sets `imageId`, `report` and `alt`; nothing
+// when it leaves the page. Foldkit sets `imageId`, `report`, `context` (the version it is read through) and `alt`; nothing
 // is fetched until both IDs are set, and a change of either loads again.
 
 class QuoroomImage extends HTMLElement {
   #imageId = ''
   #report = ''
+  #context = ''
   #alt = ''
   #url: string | undefined
   #abort: AbortController | undefined
@@ -34,6 +35,15 @@ class QuoroomImage extends HTMLElement {
 
   set report(value: string) {
     this.#report = value
+    this.#schedule()
+  }
+
+  get context(): string {
+    return this.#context
+  }
+
+  set context(value: string) {
+    this.#context = value
     this.#schedule()
   }
 
@@ -88,7 +98,8 @@ class QuoroomImage extends HTMLElement {
     if (!this.isConnected || this.#imageId === '' || this.#report === '') {
       return
     }
-    const key = `${this.#report}/${this.#imageId}`
+    const context = parseImageContext(this.#context)
+    const key = `${this.#report}/${this.#imageId}/${imageContextToken(context)}`
     if (key === this.#loadedFor) {
       return
     }
@@ -98,7 +109,7 @@ class QuoroomImage extends HTMLElement {
     this.#abort = abort
     this.#say('Loading the image.', 'status')
     loadImage(
-      { imageId: this.#imageId, reportId: this.#report },
+      { imageId: this.#imageId, reportId: this.#report, context },
       abort.signal,
     ).then(
       loaded => {

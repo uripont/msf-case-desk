@@ -25,6 +25,9 @@ export const TEMPLATES: ReadonlyArray<Template> = [
 
 export const REPORT_ID = 'report-1'
 
+// NOTE: The scope of the first entry into a report from an empty screen.
+export const SCOPE = { reportId: REPORT_ID, generation: 1, epoch: 0 }
+
 export const FIRST_AUTHOR = { id: 'account-1', name: AUTHOR_ME.name }
 
 export const SECOND_AUTHOR = {
@@ -100,6 +103,8 @@ export const loadedReport = (
     hasUnsharedChanges: false,
   },
   maybeImageUsage: Option.none(),
+  myId: FIRST_AUTHOR.id,
+  drafting: [],
   unitMembers: [
     {
       accountId: FIRST_AUTHOR.id,
@@ -111,4 +116,20 @@ export const loadedReport = (
     },
     SECOND_AUTHOR,
   ],
+})
+
+// NOTE: The facts of the server's section read after a save was refused as
+// stale: the saved section differs from what was sent, so the copy really
+// changed in another tab.
+export const staleSaveFacts = (sectionId: string) => ({
+  scope: SCOPE,
+  sectionId,
+  sent: { values: {}, sections: {} },
+  saved: {
+    notApplicable: { reason: 'Changed elsewhere' },
+    values: {},
+    sections: {},
+  },
+  saveCounter: 3,
+  savedAt: SAVED_AT,
 })

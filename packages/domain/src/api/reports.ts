@@ -162,6 +162,7 @@ export const DraftConflictSchema = Schema.Union([
   Schema.Struct({
     key: Schema.String,
     kind: Schema.Literal('entry_order'),
+    titles: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     ...sides(Schema.Array(Schema.String)),
   }),
   Schema.Struct({
@@ -195,6 +196,7 @@ export const DraftConflictSchema = Schema.Union([
     kind: Schema.Literal('entries_limit'),
     max: Count,
     merged: Schema.Array(Schema.String),
+    titles: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     ...sides(Schema.Array(Schema.String)),
   }),
 ])
@@ -211,10 +213,26 @@ export const ConflictChoiceSchema = Schema.Union([
 // NOTE: The three-way comparison of the author's working copy against the
 // latest shared draft, from their common base. `problems` are `merge`
 // problems of the domain (`resolveMerge` refuses while any remain).
+export const AutomaticChangeSchema = Schema.Struct({
+  key: Schema.String,
+  side: Schema.Literals(['ours', 'theirs', 'both']),
+  change: Schema.Literals(['added', 'removed', 'changed']),
+  title: Schema.optionalKey(Schema.String),
+})
+
 export const Comparison = Schema.Struct({
   baseDraft: DraftNumber,
   theirsDraft: DraftNumber,
   conflicts: Schema.Array(DraftConflictSchema).check(Schema.isMaxLength(500)),
+  // NOTE: What only one side changed (or both changed the same way), taken
+  // without a choice and listed for the author (`automaticChanges`).
+  automatic: Schema.optionalKey(
+    Schema.Array(AutomaticChangeSchema).check(Schema.isMaxLength(2000)),
+  ),
+  // NOTE: How many automatic changes were left out of `automatic` because the
+  // list is capped at 2000. Absent when none were (an older server never sets
+  // it); the screen says "and N more changes".
+  automaticOmitted: Schema.optionalKey(Count),
   problems: Schema.Array(Problem).check(Schema.isMaxLength(200)),
 })
 export type Comparison = typeof Comparison.Type

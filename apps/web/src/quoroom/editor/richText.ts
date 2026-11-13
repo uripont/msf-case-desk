@@ -6,6 +6,7 @@ import {
   canonicalRichText,
   decodeRichText,
   isRichTextEmpty,
+  offsetsOfProseMirrorRange,
 } from '@case-desk/domain'
 
 // NOTE: What crosses between the editor and the Model is a string of canonical
@@ -55,3 +56,23 @@ export const richTextForItem = (maybeDoc: Option.Option<RichTextDoc>): string =>
   })
 
 export const isDocumentEmpty = isRichTextEmpty
+
+// NOTE: The anchor of the editor's selection, in the text offsets shared with
+// the read-only view (`richtext-offsets.ts` in the domain), from the editor's
+// JSON and its ProseMirror positions. `None` when the document is not valid.
+export const selectionAnchor = (
+  json: unknown,
+  pmFrom: number,
+  pmTo: number,
+): Option.Option<{ from: number; to: number; text: string }> =>
+  Result.match(normaliseEditorJson(json), {
+    onFailure: () => Option.none(),
+    onSuccess: doc => {
+      const anchor = offsetsOfProseMirrorRange(doc, pmFrom, pmTo)
+      return Option.some({
+        from: anchor.from,
+        to: anchor.to,
+        text: anchor.quoted,
+      })
+    },
+  })

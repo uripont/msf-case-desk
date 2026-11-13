@@ -20,10 +20,12 @@ import * as Reports from './quoroom/reports'
 import {
   REPORT_ID,
   SAVED_AT,
+  SCOPE,
   SECOND_AUTHOR,
   TEMPLATES,
   detailOf,
   loadedReport,
+  staleSaveFacts,
 } from './report.fixtures'
 
 const reportMessage = (message: Report.Message) =>
@@ -37,6 +39,7 @@ const reportModelFor = (
     clickedLinkTo(`/r/${REPORT_ID}`),
     reportMessage(
       Report.Message.SucceededLoadReport({
+        scope: SCOPE,
         loaded: loadedReport(template, options),
       }),
     ),
@@ -145,6 +148,7 @@ describe('editing and saving', () => {
       first.model,
       reportMessage(
         Report.Message.SucceededSaveSection({
+          scope: SCOPE,
           sectionId: 'jurisdiction-materiality',
           saveCounter: 1,
           savedAt: SAVED_AT,
@@ -165,6 +169,7 @@ describe('editing and saving', () => {
       first.model,
       reportMessage(
         Report.Message.FailedSaveSection({
+          scope: SCOPE,
           sectionId: 'jurisdiction-materiality',
           failure: Failure.Unavailable(),
         }),
@@ -188,9 +193,9 @@ describe('editing and saving', () => {
     const failed = update(
       first.model,
       reportMessage(
-        Report.Message.StaleSaveSection({
-          sectionId: 'jurisdiction-materiality',
-        }),
+        Report.Message.SucceededReadStaleSection(
+          staleSaveFacts('jurisdiction-materiality'),
+        ),
       ),
     )
     expect(failed.model.report.save._tag).toBe('Stale')
@@ -281,6 +286,7 @@ describe('co-authors', () => {
       Command.resolve(
         Report.AddCoAuthor,
         Report.Message.SucceededAddCoAuthor({
+          scope: SCOPE,
           account: { id: SECOND_AUTHOR.accountId, name: SECOND_AUTHOR.name },
         }),
       ),

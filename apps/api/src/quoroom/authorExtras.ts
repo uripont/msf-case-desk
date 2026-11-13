@@ -24,6 +24,7 @@ import {
   flowFailure,
   idOf,
   QuoroomClock,
+  requireAuthor,
   validation,
 } from './core'
 import { auditOf, member, peopleOf } from './support'
@@ -128,6 +129,12 @@ const listFor = (
         }),
       )
       .map(comment => viewOfComment(comment, listed.replies))
+  })
+
+const peopleOfDraft = (db: Store, loaded: Loaded, draft: number) =>
+  Effect.gen(function* () {
+    const found = yield* db.getDraft(loaded.record.id, draft)
+    return found === null ? ([] as ReadonlyArray<Person>) : peopleOf(found.people)
   })
 
 const peopleOfRevision = (db: Store, loaded: Loaded, revision: number) =>
@@ -382,6 +389,11 @@ export const authorExtraHandlers: Pick<
         type: 'read_comments',
         revision,
       })
+      // NOTE: `read_comments` is also a reviewer's action (their own list is
+      // `ListReviewerComments`, in the view of their role). This answer holds
+      // the original and the redacted text of every comment and reply, so it
+      // is for authors only (D14).
+      yield* requireAuthor(loaded, user)
       return yield* listFor(db, loaded, user.id, 'revision', revision)
     }),
 
@@ -391,16 +403,27 @@ export const authorExtraHandlers: Pick<
         type: 'read_draft_comments',
       })
       const comment = yield* db.getComment(reportId, commentId)
-      if (
-        comment === null ||
-        comment.targetKind !== 'revision' ||
-        comment.reviewId === null
-      ) {
-        return yield* Effect.fail(new NotFound())
+      if (comment === null) return yield* Effect.fail(new NotFound())
+      // NOTE: a comment on a draft is between the authors: the reply needs the
+      // permission to comment on drafts, which no reviewing role holds. A
+      // comment on a revision is answered with `reply`, once it was sent.
+      if (comment.targetKind === 'draft') {
+        yield* allow(loaded, user, {
+          type: 'read_draft',
+          number: comment.targetNumber,
+        })
+        yield* allow(loaded, user, { type: 'comment_on_draft' })
+      } else {
+        if (comment.reviewId === null) return yield* Effect.fail(new NotFound())
+        yield* allow(loaded, user, {
+          type: 'reply',
+          revision: comment.targetNumber,
+        })
       }
-      yield* allow(loaded, user, { type: 'reply', revision: comment.targetNumber })
       const redactor = redactorFor(
-        yield* peopleOfRevision(db, loaded, comment.targetNumber),
+        comment.targetKind === 'draft'
+          ? yield* peopleOfDraft(db, loaded, comment.targetNumber)
+          : yield* peopleOfRevision(db, loaded, comment.targetNumber),
       )
       const added = yield* db.addReply({
         id: yield* idOf('reply'),
@@ -415,7 +438,7 @@ export const authorExtraHandlers: Pick<
         db,
         loaded,
         user.id,
-        'revision',
+        comment.targetKind,
         comment.targetNumber,
       )
       const made = listed.find(entry => entry.id === commentId)
@@ -430,7 +453,15 @@ export const authorExtraHandlers: Pick<
       })
       const comment = yield* db.getComment(reportId, commentId)
       if (comment === null) return yield* Effect.fail(new NotFound())
-      if (comment.targetKind === 'revision') {
+      if (comment.targetKind === 'draft') {
+        // NOTE: only the authors may resolve a comment on a draft; anyone
+        // else does not see it.
+        yield* allow(loaded, user, {
+          type: 'read_draft',
+          number: comment.targetNumber,
+        })
+        yield* allow(loaded, user, { type: 'comment_on_draft' })
+      } else {
         if (comment.reviewId === null) return yield* Effect.fail(new NotFound())
         yield* allow(loaded, user, {
           type: 'reply',

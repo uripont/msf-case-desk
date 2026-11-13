@@ -18,7 +18,7 @@ import { Message, update } from './main'
 import { authorModel } from './quoroom.fixtures'
 import { editorElement } from './quoroom/editor/spec'
 import * as Report from './quoroom/report'
-import { REPORT_ID, loadedReport } from './report.fixtures'
+import { REPORT_ID, SCOPE, loadedReport } from './report.fixtures'
 import { view } from './view'
 
 const reportModelFor = (options: Parameters<typeof loadedReport>[1] = {}) =>
@@ -26,6 +26,7 @@ const reportModelFor = (options: Parameters<typeof loadedReport>[1] = {}) =>
     clickedLinkTo(`/r/${REPORT_ID}`),
     Message.GotReportMessage({
       message: Report.Message.SucceededLoadReport({
+        scope: SCOPE,
         loaded: loadedReport(INTAKE_TEMPLATE, options),
       }),
     }),
@@ -59,7 +60,9 @@ const readOnlyWith = (safeToShare: boolean) =>
     permissions: [],
     contents: {
       summary: {
-        values: { 'summary-text': { type: 'rich_text', doc: figureDoc(safeToShare) } },
+        values: {
+          'summary-text': { type: 'rich_text', doc: figureDoc(safeToShare) },
+        },
         sections: {},
       },
     },
@@ -74,7 +77,9 @@ describe('images in the read-only view', () => {
       focused,
       expect(selector('figure[data-image-id="img-1"] quoroom-image')).toExist(),
       expect(selector('figure[data-safe="false"]')).toExist(),
-      expect(text('Not marked safe to share. Withheld from redacted views.')).toExist(),
+      expect(
+        text('Not marked safe to share. Withheld from redacted views.'),
+      ).toExist(),
       expect(text('A caption')).toExist(),
       expect(selector('quoroom-editor')).toBeAbsent(),
     )
@@ -108,6 +113,7 @@ describe('image limits beside the editor', () => {
       Command.resolve(
         Report.LoadImageUsage,
         Report.Message.SucceededLoadImageUsage({
+          scope: SCOPE,
           usage: { usedBytes: 400_000, limitBytes: 20_000_000 },
         }),
       ),
@@ -128,7 +134,10 @@ describe('image limits beside the editor', () => {
         imageId: 'img-1',
         size: 400_000,
       }),
-      Command.resolve(Report.LoadImageUsage, Report.Message.FailedLoadImageUsage()),
+      Command.resolve(
+        Report.LoadImageUsage,
+        Report.Message.FailedLoadImageUsage({ scope: SCOPE }),
+      ),
       expect(text(/Each image: at most 1\.0 MB/)).toExist(),
     )
   })

@@ -44,6 +44,7 @@ export type UploadRequest = Readonly<{
   uploadId: string
   image: PreparedImage
   startAt: number
+  signal?: AbortSignal
   onProgress: (progress: UploadProgress) => void
 }>
 
@@ -77,6 +78,7 @@ const sendChunk = async (
   try {
     const response = await fetch(`${IMAGE_ROUTE}?${query.toString()}`, {
       method: 'POST',
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
       headers: { 'content-type': 'application/octet-stream' },
       body,
     })
@@ -108,6 +110,7 @@ const sendWithRetries = async (
   const outcome = await sendChunk(request, index, chunks, body)
   if (
     outcome.kind === 'failed' &&
+    request.signal?.aborted !== true &&
     isRetryable(outcome.status) &&
     attempt < MAX_ATTEMPTS
   ) {

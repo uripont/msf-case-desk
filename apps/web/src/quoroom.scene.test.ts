@@ -13,7 +13,6 @@ import { describe, test } from 'vitest'
 
 import { SYNTHETIC_ME, atPage } from './fixtures'
 import { Message, update } from './main'
-import { givenLinkOf } from './quoroom/issuedLink'
 import {
   SYNTHETIC_TOKEN,
   SYNTHETIC_UNIT,
@@ -24,6 +23,7 @@ import {
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { Failure } from './quoroom/failure'
+import { givenLinkOf } from './quoroom/issuedLink'
 import * as Link from './quoroom/link'
 import * as Unit from './quoroom/unit'
 import { view } from './view'

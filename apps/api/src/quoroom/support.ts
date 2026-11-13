@@ -22,6 +22,7 @@ import {
   REPORT_STATES,
   Validation,
   applyEvent,
+  automaticChanges,
   chooseParticipants,
   draftLabel,
   revisionTitle,
@@ -118,18 +119,38 @@ export const draftHeader = (
     }
   })
 
+// NOTE: The most automatically-taken changes one comparison lists (the
+// `Comparison` schema allows 2000).
+export const AUTOMATIC_LIMIT = 2000
+
+// NOTE: The list cut to `limit`, and how many were left out. The count goes in
+// `Comparison.automaticOmitted` so the screen can say "and N more changes"
+// instead of silently showing a part.
+export const capAutomatic = <A>(
+  changes: ReadonlyArray<A>,
+  limit: number = AUTOMATIC_LIMIT,
+): Readonly<{ automatic: ReadonlyArray<A>; omitted: number }> => ({
+  automatic: changes.slice(0, limit),
+  omitted: Math.max(0, changes.length - limit),
+})
+
 export const comparisonOf = (
   merge: Merge,
   baseDraft: number,
   theirsDraft: number,
-): Comparison => ({
-  baseDraft,
-  theirsDraft,
-  conflicts: merge.conflicts as unknown as Comparison['conflicts'],
-  problems: merge.problems.map(entry =>
-    problem('merge', entry.code, entry.path, entry.message),
-  ),
-})
+): Comparison => {
+  const { automatic, omitted } = capAutomatic(automaticChanges(merge))
+  return {
+    baseDraft,
+    theirsDraft,
+    conflicts: merge.conflicts as unknown as Comparison['conflicts'],
+    automatic,
+    ...(omitted > 0 ? { automaticOmitted: omitted } : {}),
+    problems: merge.problems.map(entry =>
+      problem('merge', entry.code, entry.path, entry.message),
+    ),
+  }
+}
 
 export const auditOf = (
   at: number,

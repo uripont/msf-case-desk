@@ -2,14 +2,21 @@ import { Option, Schema } from 'effect'
 
 import { IMAGE_ROUTE, ImageChunkRead } from '@case-desk/domain'
 
+import { type ImageContext, imageReadQuery } from './spec'
+
 // NOTE: Reading an image back (stage 4d). The route answers one chunk at a
 // time as base64 text; the browser decodes it, joins the chunks and makes an
 // object URL for an `<img>`. The request carries the session cookie, so the
 // route authorizes it like the RPC (D5): the image must be referenced by the
-// version named in the query. The drafting screen reads the author's own
-// working copy.
+// version named in the query (`context`): the working copy on the drafting
+// screen, the draft number in the read-only draft view, the revision number
+// for a revision.
 
-export type ImageSource = Readonly<{ imageId: string; reportId: string }>
+export type ImageSource = Readonly<{
+  imageId: string
+  reportId: string
+  context: ImageContext
+}>
 
 export type LoadedImage = Readonly<{ blob: Blob; mime: string }>
 
@@ -29,11 +36,8 @@ const base64ToBytes = (text: string): Uint8Array<ArrayBuffer> => {
 }
 
 const chunkUrl = (source: ImageSource, index: number): string => {
-  const query = new URLSearchParams({
-    context: 'working_copy',
-    report: source.reportId,
-  })
-  return `${IMAGE_ROUTE}/${encodeURIComponent(source.imageId)}/${index}?${query.toString()}`
+  const query = imageReadQuery(source.reportId, source.context)
+  return `${IMAGE_ROUTE}/${encodeURIComponent(source.imageId)}/${index}?${query}`
 }
 
 const fetchChunk = async (

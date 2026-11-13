@@ -74,7 +74,11 @@ export type DraftConflict =
       Sides<ItemValue>)
   | (Readonly<{ key: string; kind: 'entry' }> & Sides<SectionEntry | ItemEntry>)
   | (Readonly<{ key: string; kind: 'entry_title' }> & Sides<string>)
-  | (Readonly<{ key: string; kind: 'entry_order' }> &
+  | (Readonly<{
+      key: string
+      kind: 'entry_order'
+      titles?: Readonly<Record<string, string>>
+    }> &
       Sides<ReadonlyArray<string>>)
   | (Readonly<{ key: string; kind: 'section_status' }> &
       Sides<Readonly<{ reason: string }>>)
@@ -92,6 +96,8 @@ export type DraftConflict =
       kind: 'entries_limit'
       max: number
       merged: ReadonlyArray<string>
+      // The titles of the entries that have one, by ID, from either side.
+      titles?: Readonly<Record<string, string>>
     }> &
       Sides<ReadonlyArray<string>>)
 
@@ -557,6 +563,7 @@ const mergeEntries = <E extends ItemEntry | SectionEntry>(
         : pickSide(context, {
             key: `${prefix}/order`,
             kind: 'entry_order',
+            ...titlesOf([...ours, ...theirs, ...base]),
             base: sb,
             ours: so,
             theirs: st,
@@ -587,6 +594,7 @@ const mergeEntries = <E extends ItemEntry | SectionEntry>(
     kind: 'entries_limit',
     max,
     merged: result,
+    ...titlesOf([...ours, ...theirs, ...base]),
     base: base.map(e => e.id),
     ours: ours.map(e => e.id),
     theirs: theirs.map(e => e.id),
@@ -613,6 +621,18 @@ const mergeEntries = <E extends ItemEntry | SectionEntry>(
     return result.map(id => survivors.get(id) as E)
   }
   return result.filter(id => kept.has(id)).map(id => survivors.get(id) as E)
+}
+
+const titlesOf = (
+  entries: ReadonlyArray<Readonly<{ id: string; title?: string }>>,
+): { titles?: Record<string, string> } => {
+  const titles: Record<string, string> = {}
+  for (const entry of entries) {
+    if (entry.title !== undefined && !(entry.id in titles)) {
+      titles[entry.id] = entry.title
+    }
+  }
+  return Object.keys(titles).length === 0 ? {} : { titles }
 }
 
 // ---- Sections ---------------------------------------------------------------------
@@ -1123,4 +1143,130 @@ export const resolveMerge = (
     ])
   }
   return Result.succeed({ content: validated.success, people: draft.people })
+}
+
+// ---- Changes taken automatically ----------------------------------------------------
+
+// NOTE: One change that only one side made (or both made identically), listed
+// on the comparison screen as "taken automatically". `key` is a unit key as
+// above (an item value, an entry, an entry title, a section status); `title` is
+// the title of an entry that was added or removed.
+export type AutomaticChange = Readonly<{
+  key: string
+  side: 'ours' | 'theirs' | 'both'
+  change: 'added' | 'removed' | 'changed'
+  title?: string
+}>
+
+type Unit = Readonly<{ canon: string; title?: string }>
+
+const ENTRY_PRESENT = 'present'
+
+const flattenValues = (
+  values: ItemValues,
+  prefix: string,
+  out: Map<string, Unit>,
+): void => {
+  for (const [id, value] of Object.entries(values)) {
+    const key = `${prefix}/i:${id}`
+    if (value.type === 'repeated') {
+      for (const entry of value.entries) {
+        const entryKey = `${key}/e:${entry.id}`
+        out.set(entryKey, {
+          canon: ENTRY_PRESENT,
+          ...(entry.title === undefined ? {} : { title: entry.title }),
+        })
+        out.set(`${entryKey}/title`, { canon: entry.title ?? '' })
+        flattenValues(entry.values, entryKey, out)
+      }
+    } else {
+      out.set(key, { canon: canonOf(valueData(value)) ?? '' })
+    }
+  }
+}
+
+const flattenSections = (
+  sections: SectionContents,
+  prefix: string,
+  out: Map<string, Unit>,
+): void => {
+  for (const [id, section] of Object.entries(sections)) {
+    const key = join(prefix, `s:${id}`)
+    if (section.notApplicable !== undefined) {
+      out.set(`${key}/status`, { canon: section.notApplicable.reason.trim() })
+    }
+    flattenValues(section.values, key, out)
+    for (const entry of section.entries ?? []) {
+      const entryKey = `${key}/e:${entry.id}`
+      out.set(entryKey, {
+        canon: ENTRY_PRESENT,
+        ...(entry.title === undefined ? {} : { title: entry.title }),
+      })
+      out.set(`${entryKey}/title`, { canon: entry.title ?? '' })
+      flattenValues(entry.values, entryKey, out)
+      flattenSections(entry.sections, entryKey, out)
+    }
+    flattenSections(section.sections, key, out)
+  }
+}
+
+const flatOf = (content: ReportContent): Map<string, Unit> => {
+  const out = new Map<string, Unit>()
+  flattenSections(content.sections, '', out)
+  return out
+}
+
+// NOTE: What each side changed since the base, where the merge needed no
+// choice: everything except the units named by a conflict. An entry added or
+// removed is one change; what is inside it is not listed again. Order follows
+// the document. Pure; the units are those of `compareDrafts`.
+export const automaticChanges = (
+  merge: Merge,
+): ReadonlyArray<AutomaticChange> => {
+  const base = flatOf(merge.base.content)
+  const ours = flatOf(merge.ours.content)
+  const theirs = flatOf(merge.theirs.content)
+  const conflictKeys = merge.conflicts.map(conflict => conflict.key)
+  const keys = [...new Set([...ours.keys(), ...theirs.keys(), ...base.keys()])]
+  const found: Array<AutomaticChange> = []
+  for (const key of keys) {
+    if (
+      conflictKeys.some(
+        conflict => key === conflict || key.startsWith(`${conflict}/`),
+      )
+    ) {
+      continue
+    }
+    const b = base.get(key)?.canon
+    const o = ours.get(key)?.canon
+    const t = theirs.get(key)?.canon
+    const oursChanged = o !== b
+    const theirsChanged = t !== b
+    if (!oursChanged && !theirsChanged) {
+      continue
+    }
+    if (oursChanged && theirsChanged && o !== t) {
+      continue
+    }
+    const side = oursChanged && theirsChanged ? 'both' : oursChanged ? 'ours' : 'theirs'
+    const after = side === 'theirs' ? t : o
+    const change =
+      b === undefined ? 'added' : after === undefined ? 'removed' : 'changed'
+    // An empty entry title equals an absent one.
+    if (key.endsWith('/title') && change !== 'changed' && (b ?? '') === (after ?? '')) {
+      continue
+    }
+    const title =
+      (side === 'theirs' ? theirs : ours).get(key)?.title ??
+      base.get(key)?.title
+    found.push({ key, side, change, ...(title === undefined ? {} : { title }) })
+  }
+  const wholeEntries = found
+    .filter(
+      entry => entry.change !== 'changed' && /\/e:[^/]+$/.test(entry.key),
+    )
+    .map(entry => entry.key)
+  return found.filter(
+    entry => !wholeEntries.some(whole => entry.key.startsWith(`${whole}/`)),
+  )
 }

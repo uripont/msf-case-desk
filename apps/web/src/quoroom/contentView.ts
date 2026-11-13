@@ -1,0 +1,353 @@
+import { clsx } from 'clsx'
+import { Array, Option } from 'effect'
+import { Attribute, Html, HtmlBuilder } from 'foldkit/html'
+
+import {
+  type Item,
+  type ItemEntry,
+  type ItemValue,
+  type Person,
+  type Section,
+  type SectionContent,
+  type SectionEntry,
+  entryDisplayTitle,
+  formatDate,
+} from '@case-desk/domain'
+
+import { richTextView } from './richTextView'
+
+// NOTE: A section of a shared draft, or one unit of it, read-only (stage 4g):
+// plain Foldkit views of the content, no editor and no Tiptap. Text that can
+// be commented on carries the data attributes the selection reader looks for
+// (`COMMENT_ATTRIBUTES`): the top-level section, the entries passed through
+// and the item, so a selection becomes an anchor of the comment API.
+
+export const COMMENT_SECTION = 'comment-section'
+export const COMMENT_ITEM = 'comment-item'
+export const COMMENT_ENTRIES = 'comment-entries'
+
+export type ViewContext = Readonly<{
+  reportId: string
+  // NOTE: The version images are read through (`imageContextToken`): `draft:N`
+  // in the read-only draft view, `revision:N` for a revision. Absent: the
+  // author's working copy.
+  imageContext?: string
+  people: ReadonlyArray<Person>
+  // NOTE: Set on screens where text may be commented on.
+  topSectionId: string
+}>
+
+const EMPTY = 'Nothing written.'
+
+const personName = (people: ReadonlyArray<Person>, id: string): string =>
+  Option.match(
+    Array.findFirst(people, person => person.id === id),
+    { onNone: () => 'A person no longer in the list', onSome: p => p.name },
+  )
+
+const selectable =
+  <M>(
+    h: HtmlBuilder<M>,
+    context: ViewContext,
+    entryPath: ReadonlyArray<string>,
+    itemId: string,
+  ) =>
+  (extra: string): ReadonlyArray<Attribute<M>> => [
+    h.DataAttribute(COMMENT_SECTION, context.topSectionId),
+    h.DataAttribute(COMMENT_ITEM, itemId),
+    h.DataAttribute(COMMENT_ENTRIES, entryPath.join('/')),
+    h.Class(extra),
+  ]
+
+const plain = <M>(
+  h: HtmlBuilder<M>,
+  text: string,
+  attributes: ReadonlyArray<Attribute<M>>,
+): Html =>
+  text === ''
+    ? h.p([h.Class('text-base text-msf-grey')], [EMPTY])
+    : h.p([...attributes], [text])
+
+export const valueText = (
+  item: Item,
+  value: ItemValue,
+  people: ReadonlyArray<Person>,
+): string => {
+  switch (value.type) {
+    case 'text':
+      return value.text
+    case 'date':
+      return formatDate(value.date)
+    case 'select':
+      return Array.map(value.optionIds, id =>
+        item.type === 'select'
+          ? Array.findFirst(item.options, option => option.id === id).pipe(
+              Option.map(option => option.label),
+              Option.getOrElse(() => id),
+            )
+          : id,
+      ).join(', ')
+    case 'people':
+      return Array.map(value.personIds, id => personName(people, id)).join(', ')
+    case 'signature':
+      return value.date === undefined
+        ? value.name
+        : `${value.name}, ${formatDate(value.date)}`
+    case 'not_applicable':
+      return `Not applicable: ${value.reason}`
+    case 'rich_text':
+      return ''
+    case 'repeated':
+      return ''
+  }
+}
+
+const itemRow = <M>(
+  h: HtmlBuilder<M>,
+  item: Item,
+  value: ItemValue | undefined,
+  context: ViewContext,
+  entryPath: ReadonlyArray<string>,
+): Html => {
+  const attributes = selectable(h, context, entryPath, item.id)
+  const body: Html =
+    item.type === 'repeated'
+      ? repeatedItemView(h, item, value, context, entryPath)
+      : value === undefined
+        ? h.p([h.Class('text-base text-msf-grey')], [EMPTY])
+        : value.type === 'rich_text'
+          ? richTextView(
+              h,
+              value.doc,
+              [...attributes('min-w-0')],
+              context.reportId,
+              context.imageContext,
+            )
+          : value.type === 'repeated'
+            ? h.empty
+            : plain(
+                h,
+                valueText(item, value, context.people),
+                attributes('whitespace-pre-wrap text-lg text-msf-ink'),
+              )
+  return h.div(
+    [h.Class('flex min-w-0 flex-col gap-1'), h.DataAttribute('item', item.id)],
+    [
+      item.type === 'case_value'
+        ? h.empty
+        : h.p([h.Class('text-base font-medium text-msf-grey')], [item.label]),
+      item.type === 'case_value' ? h.empty : body,
+    ],
+  )
+}
+
+const repeatedItemView = <M>(
+  h: HtmlBuilder<M>,
+  item: Extract<Item, { type: 'repeated' }>,
+  value: ItemValue | undefined,
+  context: ViewContext,
+  entryPath: ReadonlyArray<string>,
+): Html => {
+  const entries: ReadonlyArray<ItemEntry> =
+    value?.type === 'repeated' ? value.entries : []
+  return Array.match(entries, {
+    onEmpty: () => h.p([h.Class('text-base text-msf-grey')], ['None.']),
+    onNonEmpty: list =>
+      h.div(
+        [h.Class('flex flex-col gap-3')],
+        Array.map(list, (entry, index) =>
+          h.keyed('div')(
+            entry.id,
+            [
+              h.Class('flex flex-col gap-3 border-l-2 border-msf-line pl-3'),
+              h.DataAttribute('entry', entry.id),
+            ],
+            [
+              h.p(
+                [h.Class('text-lg font-bold text-msf-black')],
+                [entryDisplayTitle(entry, item.entryLabel, index)],
+              ),
+              ...Array.map(item.items, inner =>
+                itemRow(h, inner, entry.values[inner.id], context, [
+                  ...entryPath,
+                  entry.id,
+                ]),
+              ),
+            ],
+          ),
+        ),
+      ),
+  })
+}
+
+const heading = <M>(h: HtmlBuilder<M>, depth: number, text: string): Html =>
+  h.p(
+    [
+      h.Class(
+        clsx(
+          'font-black text-msf-black',
+          depth <= 1 ? 'text-2xl' : depth === 2 ? 'text-xl' : 'text-lg',
+        ),
+      ),
+    ],
+    [text],
+  )
+
+const entryView = <M>(
+  h: HtmlBuilder<M>,
+  section: Section,
+  entry: SectionEntry,
+  index: number,
+  context: ViewContext,
+  entryPath: ReadonlyArray<string>,
+  depth: number,
+): Html =>
+  h.keyed('div')(
+    entry.id,
+    [
+      h.Class('flex min-w-0 flex-col gap-4 border-l-2 border-msf-line pl-3'),
+      h.DataAttribute('entry', entry.id),
+    ],
+    [
+      heading(h, depth, entryDisplayTitle(entry, section.title, index)),
+      ...Array.map(section.items, item =>
+        itemRow(h, item, entry.values[item.id], context, [
+          ...entryPath,
+          entry.id,
+        ]),
+      ),
+      ...Array.map(section.sections, child =>
+        sectionBody(
+          h,
+          child,
+          entry.sections[child.id],
+          context,
+          [...entryPath, entry.id],
+          depth + 1,
+        ),
+      ),
+    ],
+  )
+
+const sectionBody = <M>(
+  h: HtmlBuilder<M>,
+  section: Section,
+  content: SectionContent | undefined,
+  context: ViewContext,
+  entryPath: ReadonlyArray<string>,
+  depth: number,
+): Html => {
+  const notApplicable = content?.notApplicable
+  return h.div(
+    [
+      h.Class('flex min-w-0 flex-col gap-4'),
+      h.DataAttribute('section', section.id),
+    ],
+    [
+      depth === 0 ? h.empty : heading(h, depth, section.title),
+      notApplicable === undefined
+        ? h.empty
+        : h.p(
+            [h.Class('text-base font-medium text-msf-ink')],
+            [`Not applicable: ${notApplicable.reason}`],
+          ),
+      section.repeat === undefined
+        ? h.div(
+            [h.Class('flex min-w-0 flex-col gap-4')],
+            [
+              ...Array.map(section.items, item =>
+                itemRow(h, item, content?.values[item.id], context, entryPath),
+              ),
+              ...Array.map(section.sections, child =>
+                sectionBody(
+                  h,
+                  child,
+                  content?.sections[child.id],
+                  context,
+                  entryPath,
+                  depth + 1,
+                ),
+              ),
+            ],
+          )
+        : Array.match(content?.entries ?? [], {
+            onEmpty: () => h.p([h.Class('text-base text-msf-grey')], ['None.']),
+            onNonEmpty: entries =>
+              h.div(
+                [h.Class('flex flex-col gap-6')],
+                Array.map(entries, (entry, index) =>
+                  entryView(
+                    h,
+                    section,
+                    entry,
+                    index,
+                    context,
+                    entryPath,
+                    depth + 1,
+                  ),
+                ),
+              ),
+          }),
+    ],
+  )
+}
+
+// NOTE: One top-level section with its title as the heading level 0 the
+// screen provides; nested sections get headings below it.
+export const readOnlySection = <M>(
+  h: HtmlBuilder<M>,
+  section: Section,
+  content: SectionContent | undefined,
+  context: ViewContext,
+): Html => sectionBody(h, section, content, context, [], 0)
+
+// NOTE: One item value or one entry shown on the comparison screen, with the
+// item for labels and options when the key found it.
+export const valueView = <M>(
+  h: HtmlBuilder<M>,
+  maybeItem: Option.Option<Item>,
+  value: ItemValue | undefined,
+  context: ViewContext,
+): Html => {
+  if (value === undefined) {
+    return h.p(
+      [h.Class('text-base italic text-msf-grey')],
+      ['Nothing (removed or empty).'],
+    )
+  }
+  if (value.type === 'rich_text') {
+    return richTextView(
+      h,
+      value.doc,
+      [],
+      context.reportId,
+      context.imageContext,
+    )
+  }
+  if (value.type === 'repeated') {
+    return h.p(
+      [h.Class('text-base text-msf-ink')],
+      [`${value.entries.length} entries`],
+    )
+  }
+  const text = Option.match(maybeItem, {
+    onNone: () =>
+      value.type === 'text'
+        ? value.text
+        : value.type === 'date'
+          ? formatDate(value.date)
+          : value.type === 'not_applicable'
+            ? `Not applicable: ${value.reason}`
+            : value.type === 'signature'
+              ? value.name
+              : value.type === 'people'
+                ? Array.map(value.personIds, id =>
+                    personName(context.people, id),
+                  ).join(', ')
+                : value.optionIds.join(', '),
+    onSome: item => valueText(item, value, context.people),
+  })
+  return text === ''
+    ? h.p([h.Class('text-base italic text-msf-grey')], ['Empty.'])
+    : h.p([h.Class('whitespace-pre-wrap text-lg text-msf-ink')], [text])
+}

@@ -21,8 +21,12 @@ describe('nextColumnWidth', () => {
   })
 
   test('stays between the minimum and the maximum', () => {
-    expect(nextColumnWidth(COLUMN_MIN_WIDTH, 0, 'narrow')).toBe(COLUMN_MIN_WIDTH)
-    expect(nextColumnWidth(COLUMN_MIN_WIDTH + 1, 0, 'narrow')).toBe(COLUMN_MIN_WIDTH)
+    expect(nextColumnWidth(COLUMN_MIN_WIDTH, 0, 'narrow')).toBe(
+      COLUMN_MIN_WIDTH,
+    )
+    expect(nextColumnWidth(COLUMN_MIN_WIDTH + 1, 0, 'narrow')).toBe(
+      COLUMN_MIN_WIDTH,
+    )
     expect(nextColumnWidth(COLUMN_MAX_WIDTH, 0, 'widen')).toBe(COLUMN_MAX_WIDTH)
   })
 
@@ -51,7 +55,13 @@ describe('withColumnWidth', () => {
 
   test('in a cell over two columns only one entry changes and none is below 1', () => {
     expect(withColumnWidth([100, 150], 2, 1, 240)).toEqual([100, 240])
-    expect(withColumnWidth(undefined, 2, 1, 240)).toEqual([COLUMN_MIN_WIDTH, 240])
-    expect(withColumnWidth([0, 150], 2, 1, 240)).toEqual([COLUMN_MIN_WIDTH, 240])
+    expect(withColumnWidth(undefined, 2, 1, 240)).toEqual([
+      COLUMN_MIN_WIDTH,
+      240,
+    ])
+    expect(withColumnWidth([0, 150], 2, 1, 240)).toEqual([
+      COLUMN_MIN_WIDTH,
+      240,
+    ])
   })
 })

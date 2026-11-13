@@ -6,11 +6,18 @@ import { CustomElement } from 'foldkit'
 // loaded lazily (`LoadEditor` in `report.ts`).
 export const EDITOR_TAG = 'quoroom-editor'
 
+// NOTE: Events the element sends on the window as it goes away, when its own
+// listeners are already gone (`report.ts` listens).
+export const EDITOR_FINAL_EVENT = 'quoroom-editor-final'
+export const EDITOR_UPLOAD_CANCELLED_EVENT = 'quoroom-editor-upload-cancelled'
+
 export const editorElement = CustomElement.define({
   tag: EDITOR_TAG,
   properties: {
     content: Schema.String,
     version: Schema.Number,
+    generation: Schema.Number,
+    owner: Schema.String,
     disabled: Schema.Boolean,
     label: Schema.String,
     report: Schema.String,
@@ -22,6 +29,10 @@ export const editorElement = CustomElement.define({
       from: Schema.Number,
       to: Schema.Number,
       text: Schema.String,
+    }),
+    discarded: Schema.Struct({
+      content: Schema.String,
+      version: Schema.Number,
     }),
     image: Schema.Struct({ imageId: Schema.String, size: Schema.Number }),
   },

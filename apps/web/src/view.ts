@@ -23,6 +23,7 @@ import {
   type CentreFilter,
   ConfigLoad,
   DeskLoad,
+  LEAVE_HEADING_ID,
   Message,
   type Model,
   PAGE_HEADING_ID,
@@ -37,9 +38,12 @@ import {
 } from './main'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
+import { actionButton } from './quoroom/entryViews'
+import * as History from './quoroom/history'
 import * as Link from './quoroom/link'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
+import * as Share from './quoroom/share'
 import * as Unit from './quoroom/unit'
 import { AppRoute, isTriageRoute, pathOf } from './route'
 import { rulesPage } from './rulesView'
@@ -812,6 +816,9 @@ const deskPageView = (
         Admin: () => loadedDesk(model, h),
         Link: () => loadedDesk(model, h),
         Report: () => loadedDesk(model, h),
+        Share: () => loadedDesk(model, h),
+        Drafts: () => loadedDesk(model, h),
+        Draft: () => loadedDesk(model, h),
         Revision: () => loadedDesk(model, h),
         NotFound: () => loadedDesk(model, h),
       }),
@@ -841,6 +848,81 @@ const welcomePage = (model: Model, h: HtmlBuilder<Message>): Html =>
       ),
     ],
   )
+
+const LEAVE_REASONS: Readonly<
+  Record<ReturnType<typeof Report.unsavedReason>, string>
+> = {
+  offline:
+    'You are offline. What you typed is saved when the connection returns.',
+  failed: 'The last save did not work.',
+  stale:
+    'The working copy changed in another tab, so what you typed here is not saved.',
+  saving: 'The last changes are being saved.',
+}
+
+// NOTE: Asks before the report is left with edits that are not saved (stage
+// 4 review): stay, wait for the save and then go, or go without it.
+const leaveDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
+  Option.match(model.maybeLeaving, {
+    onNone: () => h.empty,
+    onSome: leaving => {
+      const reason = Report.unsavedReason(model.report)
+      return h.section(
+        [
+          h.AriaLabel('Leave the report?'),
+          h.Role('alertdialog'),
+          h.Class(
+            'mb-6 mt-6 flex max-w-4xl flex-col gap-3 border-2 border-msf-ink px-4 py-4',
+          ),
+        ],
+        [
+          h.h2(
+            [
+              h.Id(LEAVE_HEADING_ID),
+              h.Tabindex(-1),
+              h.Class('text-xl font-black'),
+            ],
+            ['This report has changes that are not saved'],
+          ),
+          h.p(
+            [h.Class('text-pretty text-base text-msf-ink')],
+            [`${LEAVE_REASONS[reason]} If you leave now, they are lost.`],
+          ),
+          leaving.isWaiting
+            ? h.p(
+                [h.Role('status'), h.Class('text-base text-msf-grey')],
+                ['Waiting for the save. You leave as soon as it is done.'],
+              )
+            : h.empty,
+          h.div(
+            [h.Class('flex flex-wrap gap-2')],
+            [
+              actionButton(
+                h,
+                'Stay on this report',
+                'Stay on this report',
+                Message.ClickedStayOnReport(),
+              ),
+              reason === 'stale' || leaving.isWaiting
+                ? h.empty
+                : actionButton(
+                    h,
+                    'Wait for the save, then leave',
+                    'Wait for the save, then leave',
+                    Message.ClickedWaitToLeaveReport(),
+                  ),
+              actionButton(
+                h,
+                'Leave without saving',
+                'Leave without saving',
+                Message.ClickedLeaveReportUnsaved(),
+              ),
+            ],
+          ),
+        ],
+      )
+    },
+  })
 
 const unavailablePage = (
   title: string,
@@ -929,11 +1011,36 @@ const pageView = (
           }),
         ],
         Report: ({ reportId }) => [
+          leaveDialog(model, h),
           h.submodel({
             slotId: `report-${reportId}`,
             model: model.report,
             view: Report.view,
             toParentMessage: message => Message.GotReportMessage({ message }),
+          }),
+        ],
+        Share: ({ reportId }) => [
+          h.submodel({
+            slotId: `share-${reportId}`,
+            model: model.share,
+            view: Share.view,
+            toParentMessage: message => Message.GotShareMessage({ message }),
+          }),
+        ],
+        Drafts: ({ reportId }) => [
+          h.submodel({
+            slotId: `drafts-${reportId}`,
+            model: model.history,
+            view: History.view,
+            toParentMessage: message => Message.GotHistoryMessage({ message }),
+          }),
+        ],
+        Draft: ({ reportId, draft }) => [
+          h.submodel({
+            slotId: `draft-${reportId}-${draft}`,
+            model: model.history,
+            view: History.view,
+            toParentMessage: message => Message.GotHistoryMessage({ message }),
           }),
         ],
         Revision: ({ reportId, revision }) => [

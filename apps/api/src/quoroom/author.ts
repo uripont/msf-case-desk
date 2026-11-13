@@ -11,6 +11,7 @@ import {
   NotFound,
   Validation,
   applyEvent,
+  canonicalJson,
   checkClosingDraft,
   checkSave,
   compareDrafts,
@@ -18,6 +19,7 @@ import {
   draftLabel,
   draftingRoleOf,
   peopleListProblems,
+  redactedSectionOf,
   redactorFor,
   resolveMerge,
 } from '@case-desk/domain'
@@ -552,12 +554,18 @@ export const authorHandlers: Pick<
       // NOTE: the redaction of a section, made here, on the server, every
       // time a section is shared; what reviewers of a redacted role read is
       // this stored text and nothing computed later (D14).
-      const redactor = redactorFor(peopleOf(copy.people))
-      const redacted =
-        redactor.content(reportShell(loaded.template, { [sectionId]: original }))
-          .sections[sectionId] ?? EMPTY_SECTION
+      const redacted = redactedSectionOf(
+        loaded.template,
+        peopleOf(copy.people),
+        sectionId,
+        original,
+      )
       const redactedContent = JSON.stringify(redacted)
-      const redactedHash = yield* Effect.promise(() => sha256Hex(redactedContent))
+      // NOTE: the hash is of the canonical text, so the browser, which builds
+      // the same section with the same function, gets the same hash.
+      const redactedHash = yield* Effect.promise(() =>
+        sha256Hex(canonicalJson(redacted)),
+      )
       const peopleHash = yield* Effect.promise(() => peopleHashOf(copy.people))
       const clock = yield* QuoroomClock
       const now = yield* clock.now

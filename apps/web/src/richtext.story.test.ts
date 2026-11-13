@@ -8,7 +8,7 @@ import { Message, update } from './main'
 import { authorModel } from './quoroom.fixtures'
 import { serializeRichText } from './quoroom/editor/richText'
 import * as Report from './quoroom/report'
-import { REPORT_ID, loadedReport } from './report.fixtures'
+import { REPORT_ID, SCOPE, loadedReport } from './report.fixtures'
 
 const reportMessage = (message: Report.Message) =>
   Message.GotReportMessage({ message })
@@ -19,6 +19,7 @@ const loaded = (options: Parameters<typeof loadedReport>[1] = {}) => {
     opened.model,
     reportMessage(
       Report.Message.SucceededLoadReport({
+        scope: SCOPE,
         loaded: loadedReport(INTAKE_TEMPLATE, options),
       }),
     ),
@@ -240,5 +241,72 @@ describe('selection reporting', () => {
         select(selected.model, 'case-details').model.report.maybeSelection,
       ),
     ).toBe(true)
+  })
+})
+
+describe('an editor that goes away (stage 4 review)', () => {
+  const flush = (scope: typeof SCOPE) =>
+    reportMessage(
+      Report.Message.FlushedRichText({
+        scope,
+        sectionKey: SUMMARY,
+        steps: [],
+        itemId: ITEM,
+        content: serializeRichText(DOC),
+        version: 5,
+      }),
+    )
+
+  test('the last text it sends reaches the Model and is saved', () => {
+    const step = update(loaded().model, flush(SCOPE))
+    expect(Report.hasUnsavedEdits(step.model.report)).toBe(true)
+    expect(commandNames(step)).toContain(Report.SaveSection.name)
+    expect(step.model.report.editorVersions).toEqual({
+      [`${SUMMARY}/${ITEM}`]: 5,
+    })
+  })
+
+  test('the last text of a screen that was left is dropped', () => {
+    const model = loaded().model
+    const step = update(model, flush({ ...SCOPE, generation: 0 }))
+    expect(step.model.report).toBe(model.report)
+  })
+
+  test('a reload makes every editor replace its text, and keeps what they had not sent', () => {
+    const typing = update(loaded().model, change(serializeRichText(DOC), 3))
+    const reloaded = update(
+      typing.model,
+      reportMessage(
+        Report.Message.SucceededReloadWorkingCopy({
+          scope: SCOPE,
+          contents: {},
+          saveCounter: 4,
+          savedAt: 1,
+          copy: {
+            baseDraft: 0,
+            latestDraft: 0,
+            behind: false,
+            hasUnsharedChanges: false,
+          },
+        }),
+      ),
+    )
+    expect(reloaded.model.report.editorGeneration).toBeGreaterThan(
+      typing.model.report.editorGeneration,
+    )
+    const discarded = update(
+      reloaded.model,
+      reportMessage(
+        Report.Message.DiscardedRichText({
+          sectionKey: SUMMARY,
+          steps: [],
+          itemId: ITEM,
+          content: serializeRichText(DOC),
+        }),
+      ),
+    )
+    expect(
+      discarded.model.report.keptEdits.map(edit => edit.sectionId),
+    ).toContain('summary')
   })
 })

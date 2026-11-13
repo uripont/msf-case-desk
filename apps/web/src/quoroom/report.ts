@@ -1,4 +1,3 @@
-import { BrowserCrypto } from '@effect/platform-browser'
 import { clsx } from 'clsx'
 import {
   Array,
@@ -20,6 +19,7 @@ import { modifyFields } from 'foldkit/struct'
 import {
   AccountRef,
   CONTENT_SCHEMA_VERSION,
+  DraftingInfo,
   type EndState,
   type ItemStep,
   ItemValue,
@@ -53,15 +53,21 @@ import {
   topSectionIdOfKey,
   withItemValueAt,
 } from '@case-desk/domain'
+import { BrowserCrypto } from '@effect/platform-browser'
 
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'
 import { type QuoroomClient, withQuoroom } from './api'
+import { timeText } from './draftText'
 import {
   EMPTY_RICH_TEXT_JSON,
   parseRichTextJson,
   serializeRichText,
 } from './editor/richText'
+import {
+  EDITOR_FINAL_EVENT,
+  EDITOR_UPLOAD_CANCELLED_EVENT,
+} from './editor/spec'
 import { EditorState, RichTextSelection, editorKey } from './editor/state'
 import {
   StepSchema,
@@ -90,8 +96,9 @@ import {
 } from './entryViews'
 import { Failure, failureOf, failureText, isStaleSave } from './failure'
 import { type CaseValues, type FieldContext, itemField } from './fields'
-import { IMAGE_LIMITS_TEXT, remainingBytes, usageText } from './images/plan'
 import { FormState, formStatus, isSubmitting } from './formState'
+import { IMAGE_LIMITS_TEXT, remainingBytes, usageText } from './images/plan'
+import { PageScope, isCurrentPage } from './scope'
 import {
   failureAlert,
   loadingText,
@@ -166,6 +173,16 @@ export const KeptEdit = Schema.Struct({
   content: SectionContent,
 })
 
+// NOTE: The page a Command was started for, and the working copy it was
+// started against. `epoch` is raised every time the working copy is replaced
+// (reloaded, started again), so a save started before is never taken for one
+// of the new working copy.
+export const Scope = Schema.Struct({
+  ...PageScope.fields,
+  epoch: Schema.Int,
+})
+export type Scope = typeof Scope.Type
+
 export const NaDraft = Schema.Struct({
   reason: Schema.String,
   isMissing: Schema.Boolean,
@@ -178,12 +195,15 @@ export const Confirmation = defineTaggedUnion({
     label: Schema.String,
   },
   ReplaceCopy: {},
+  ReapplyEdit: { sectionId: Schema.String, title: Schema.String },
 })
 export type Confirmation = typeof Confirmation.Type
 
 export const Model = Schema.Struct({
   origin: Schema.String,
   reportId: Schema.String,
+  generation: Schema.Int,
+  epoch: Schema.Int,
   load: LoadState,
   maybeDetail: Schema.Option(ReportDetail),
   maybeTemplate: Schema.Option(Template),
@@ -214,13 +234,17 @@ export const Model = Schema.Struct({
   naStash: Schema.Record(Schema.String, ItemValue),
   titleDrafts: Schema.Record(Schema.String, Schema.String),
   maybeEditNote: Schema.Option(Schema.String),
-  editorBase: Schema.Int,
+  editorGeneration: Schema.Int,
+  myId: Schema.String,
+  drafting: Schema.Array(DraftingInfo),
 })
 export type Model = typeof Model.Type
 
 export const initialModel = Model.make({
   origin: '',
   reportId: '',
+  generation: 0,
+  epoch: 0,
   load: LoadState.Loading(),
   maybeDetail: Option.none(),
   maybeTemplate: Option.none(),
@@ -251,7 +275,9 @@ export const initialModel = Model.make({
   naStash: {},
   titleDrafts: {},
   maybeEditNote: Option.none(),
-  editorBase: 0,
+  editorGeneration: 0,
+  myId: '',
+  drafting: [],
 })
 
 export const LoadedReport = Schema.Struct({
@@ -265,14 +291,16 @@ export const LoadedReport = Schema.Struct({
   maybeImageUsage: Schema.Option(ImageUsage),
   savedAt: Schema.Int,
   copy: CopyInfo,
+  myId: Schema.String,
+  drafting: Schema.Array(DraftingInfo),
 })
 export type LoadedReport = typeof LoadedReport.Type
 
 // MESSAGE
 
 export const Message = defineMessageUnion({
-  SucceededLoadReport: { loaded: LoadedReport },
-  FailedLoadReport: { failure: Failure },
+  SucceededLoadReport: { scope: Scope, loaded: LoadedReport },
+  FailedLoadReport: { scope: Scope, failure: Failure },
   ClickedRetryLoad: {},
   SelectedSection: { key: Schema.String },
   ToggledNavigator: {},
@@ -283,34 +311,58 @@ export const Message = defineMessageUnion({
     maybeValue: Schema.Option(ItemValue),
   },
   SucceededSaveSection: {
+    scope: Scope,
     sectionId: Schema.String,
     saveCounter: Schema.Int,
     savedAt: Schema.Int,
   },
-  FailedSaveSection: { sectionId: Schema.String, failure: Failure },
-  StaleSaveSection: { sectionId: Schema.String },
+  FailedSaveSection: {
+    scope: Scope,
+    sectionId: Schema.String,
+    failure: Failure,
+  },
+  StaleSaveSection: {
+    scope: Scope,
+    sectionId: Schema.String,
+    sent: SectionContent,
+  },
+  SucceededReadStaleSection: {
+    scope: Scope,
+    sectionId: Schema.String,
+    sent: SectionContent,
+    saved: SectionContent,
+    saveCounter: Schema.Int,
+    savedAt: Schema.Int,
+  },
+  FailedReadStaleSection: {
+    scope: Scope,
+    sectionId: Schema.String,
+    failure: Failure,
+  },
   ClickedRetrySave: {},
   TickedSaveRetry: {},
   ChangedConnection: { isOnline: Schema.Boolean },
   WarnedBeforeLeaving: {},
   ClickedReloadWorkingCopy: {},
   SucceededReloadWorkingCopy: {
+    scope: Scope,
     contents: Schema.Record(Schema.String, SectionContent),
     saveCounter: Schema.Int,
     savedAt: Schema.Int,
     copy: CopyInfo,
   },
-  FailedReloadWorkingCopy: { failure: Failure },
+  FailedReloadWorkingCopy: { scope: Scope, failure: Failure },
   ClickedReapplyEdit: { sectionId: Schema.String },
   ClickedDiscardEdit: { sectionId: Schema.String },
+  ConfirmedReapplyEdit: {},
   ClickedReplaceCopy: {},
   ConfirmedReplaceCopy: {},
-  SucceededReplaceCopy: {},
-  FailedReplaceCopy: { failure: Failure },
+  SucceededReplaceCopy: { scope: Scope },
+  FailedReplaceCopy: { scope: Scope, failure: Failure },
   CancelledConfirmation: {},
   CompletedFocusConfirmation: {},
   ClickedAddEntry: { target: Target },
-  GeneratedEntryId: { target: Target, entryId: Schema.String },
+  GeneratedEntryId: { scope: Scope, target: Target, entryId: Schema.String },
   ClickedMoveEntry: {
     target: Target,
     entryId: Schema.String,
@@ -334,8 +386,8 @@ export const Message = defineMessageUnion({
   RestoredApplicable: { target: Target },
   SelectedCoAuthor: { value: Schema.String },
   SubmittedCoAuthor: {},
-  SucceededAddCoAuthor: { account: AccountRef },
-  FailedAddCoAuthor: { failure: Failure },
+  SucceededAddCoAuthor: { scope: Scope, account: AccountRef },
+  FailedAddCoAuthor: { scope: Scope, failure: Failure },
   CompletedFocusSectionHeading: {},
   SucceededLoadEditor: {},
   FailedLoadEditor: {},
@@ -347,9 +399,29 @@ export const Message = defineMessageUnion({
     content: Schema.String,
     version: Schema.Int,
   },
+  FlushedRichText: {
+    scope: Scope,
+    sectionKey: Schema.String,
+    steps: Schema.Array(StepSchema),
+    itemId: Schema.String,
+    content: Schema.String,
+    version: Schema.Int,
+  },
+  DiscardedRichText: {
+    sectionKey: Schema.String,
+    steps: Schema.Array(StepSchema),
+    itemId: Schema.String,
+    content: Schema.String,
+  },
+  CancelledImageUpload: { scope: Scope },
   AddedImage: {},
-  SucceededLoadImageUsage: { usage: ImageUsage },
-  FailedLoadImageUsage: {},
+  SucceededLoadImageUsage: { scope: Scope, usage: ImageUsage },
+  FailedLoadImageUsage: { scope: Scope },
+  SucceededRefreshDrafting: {
+    scope: Scope,
+    drafting: Schema.Array(DraftingInfo),
+  },
+  TickedDraftingRefresh: {},
   SelectedRichTextRange: {
     sectionKey: Schema.String,
     itemId: Schema.String,
@@ -408,14 +480,16 @@ const readWorkingCopy = (
       saveCounter: outline.saveCounter,
       savedAt: outline.savedAt,
       copy: copyInfoOf(outline),
+      ownerId: outline.ownerId,
     }
   })
 
 export const LoadReport = Command.define('LoadReport', {
-  args: { reportId: Schema.String },
+  args: { scope: Scope },
   messages: [Message.SucceededLoadReport, Message.FailedLoadReport],
-  execute: ({ reportId }) =>
-    withQuoroom(client =>
+  execute: ({ scope }) => {
+    const { reportId } = scope
+    return withQuoroom(client =>
       Effect.gen(function* () {
         const detail = yield* client.GetReport({ reportId })
         const version = yield* client.GetTemplateVersion({
@@ -431,6 +505,9 @@ export const LoadReport = Command.define('LoadReport', {
           Array.map(topLevelSections(template), section => section.id),
         )
         const people = yield* client.GetPeople({ reportId })
+        const drafting = yield* client
+          .ListDrafting({ reportId })
+          .pipe(Effect.catch(() => Effect.succeed([])))
         const units = yield* client.ListUnits()
         const unitMembers = yield* client
           .ListUnitMembers({ unit: detail.summary.caseFile.unit })
@@ -458,20 +535,25 @@ export const LoadReport = Command.define('LoadReport', {
           saveCounter: copy.saveCounter,
           savedAt: copy.savedAt,
           copy: copy.copy,
+          myId: copy.ownerId,
+          drafting,
           unitMembers,
         }
       }),
     ).pipe(
-      Effect.map(loaded => Message.SucceededLoadReport({ loaded })),
+      Effect.map(loaded => Message.SucceededLoadReport({ scope, loaded })),
       Effect.catch(error =>
-        Effect.succeed(Message.FailedLoadReport({ failure: failureOf(error) })),
+        Effect.succeed(
+          Message.FailedLoadReport({ scope, failure: failureOf(error) }),
+        ),
       ),
-    ),
+    )
+  },
 })
 
 export const SaveSection = Command.define('SaveSection', {
   args: {
-    reportId: Schema.String,
+    scope: Scope,
     sectionId: Schema.String,
     saveCounter: Schema.Int,
     content: SectionContent,
@@ -481,12 +563,18 @@ export const SaveSection = Command.define('SaveSection', {
     Message.FailedSaveSection,
     Message.StaleSaveSection,
   ],
-  execute: ({ reportId, sectionId, saveCounter, content }) =>
+  execute: ({ scope, sectionId, saveCounter, content }) =>
     withQuoroom(client =>
-      client.SaveSection({ reportId, sectionId, saveCounter, content }),
+      client.SaveSection({
+        reportId: scope.reportId,
+        sectionId,
+        saveCounter,
+        content,
+      }),
     ).pipe(
       Effect.map(saved =>
         Message.SucceededSaveSection({
+          scope,
           sectionId,
           saveCounter: saved.saveCounter,
           savedAt: saved.savedAt,
@@ -495,8 +583,9 @@ export const SaveSection = Command.define('SaveSection', {
       Effect.catch(error =>
         Effect.succeed(
           isStaleSave(error)
-            ? Message.StaleSaveSection({ sectionId })
+            ? Message.StaleSaveSection({ scope, sectionId, sent: content })
             : Message.FailedSaveSection({
+                scope,
                 sectionId,
                 failure: failureOf(error),
               }),
@@ -505,18 +594,63 @@ export const SaveSection = Command.define('SaveSection', {
     ),
 })
 
+// NOTE: A save the server refused as stale may be one whose answer was lost:
+// the server holds exactly what was sent and only the counter moved. The
+// section is read again and the screen compares (`SucceededReadStaleSection`).
+export const ReadStaleSection = Command.define('ReadStaleSection', {
+  args: { scope: Scope, sectionId: Schema.String, sent: SectionContent },
+  messages: [Message.SucceededReadStaleSection, Message.FailedReadStaleSection],
+  execute: ({ scope, sectionId, sent }) =>
+    withQuoroom(client =>
+      Effect.gen(function* () {
+        const outline = yield* client.GetWorkingCopy({
+          reportId: scope.reportId,
+        })
+        const section = yield* client.GetWorkingCopySection({
+          reportId: scope.reportId,
+          sectionId,
+        })
+        return { outline, section }
+      }),
+    ).pipe(
+      Effect.map(({ outline, section }) =>
+        Message.SucceededReadStaleSection({
+          scope,
+          sectionId,
+          sent,
+          saved: section.content,
+          saveCounter: outline.saveCounter,
+          savedAt: outline.savedAt,
+        }),
+      ),
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedReadStaleSection({
+            scope,
+            sectionId,
+            failure: failureOf(error),
+          }),
+        ),
+      ),
+    ),
+})
+
 export const ReloadWorkingCopy = Command.define('ReloadWorkingCopy', {
-  args: { reportId: Schema.String, sectionIds: Schema.Array(Schema.String) },
+  args: { scope: Scope, sectionIds: Schema.Array(Schema.String) },
   messages: [
     Message.SucceededReloadWorkingCopy,
     Message.FailedReloadWorkingCopy,
   ],
-  execute: ({ reportId, sectionIds }) =>
-    withQuoroom(client => readWorkingCopy(client, reportId, sectionIds)).pipe(
-      Effect.map(copy => Message.SucceededReloadWorkingCopy(copy)),
+  execute: ({ scope, sectionIds }) =>
+    withQuoroom(client =>
+      readWorkingCopy(client, scope.reportId, sectionIds),
+    ).pipe(
+      Effect.map(copy =>
+        Message.SucceededReloadWorkingCopy({ scope, ...copy }),
+      ),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedReloadWorkingCopy({ failure: failureOf(error) }),
+          Message.FailedReloadWorkingCopy({ scope, failure: failureOf(error) }),
         ),
       ),
     ),
@@ -525,16 +659,16 @@ export const ReloadWorkingCopy = Command.define('ReloadWorkingCopy', {
 // NOTE: Throws the author's working copy away and starts again from the
 // latest shared draft (`replace`). The screen asks first.
 export const ReplaceWorkingCopy = Command.define('ReplaceWorkingCopy', {
-  args: { reportId: Schema.String },
+  args: { scope: Scope },
   messages: [Message.SucceededReplaceCopy, Message.FailedReplaceCopy],
-  execute: ({ reportId }) =>
+  execute: ({ scope }) =>
     withQuoroom(client =>
-      client.StartWorkingCopy({ reportId, replace: true }),
+      client.StartWorkingCopy({ reportId: scope.reportId, replace: true }),
     ).pipe(
-      Effect.map(() => Message.SucceededReplaceCopy()),
+      Effect.map(() => Message.SucceededReplaceCopy({ scope })),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedReplaceCopy({ failure: failureOf(error) }),
+          Message.FailedReplaceCopy({ scope, failure: failureOf(error) }),
         ),
       ),
     ),
@@ -543,19 +677,22 @@ export const ReplaceWorkingCopy = Command.define('ReplaceWorkingCopy', {
 // NOTE: An entry's ID is random and chosen here, so two authors who each add
 // an entry to the same draft never choose the same one.
 export const NewEntryId = Command.define('NewEntryId', {
-  args: { target: Target },
+  args: { scope: Scope, target: Target },
   messages: [Message.GeneratedEntryId],
-  execute: ({ target }) =>
+  execute: ({ scope, target }) =>
     Effect.flatMap(Crypto.Crypto, crypto => crypto.randomUUIDv4).pipe(
       Effect.provide(BrowserCrypto.layer),
       Effect.map(uuid =>
         Message.GeneratedEntryId({
+          scope,
           target,
           entryId: uuid.replaceAll('-', '').slice(0, 16),
         }),
       ),
       Effect.catch(() =>
-        Effect.succeed(Message.GeneratedEntryId({ target, entryId: '' })),
+        Effect.succeed(
+          Message.GeneratedEntryId({ scope, target, entryId: '' }),
+        ),
       ),
     ),
 })
@@ -569,33 +706,38 @@ export const FocusConfirmation = Command.define('FocusConfirmation', {
 })
 
 export const LoadImageUsage = Command.define('LoadImageUsage', {
-  args: { reportId: Schema.String },
+  args: { scope: Scope },
   messages: [Message.SucceededLoadImageUsage, Message.FailedLoadImageUsage],
-  execute: ({ reportId }) =>
-    withQuoroom(client => client.ListImages({ reportId })).pipe(
+  execute: ({ scope }) =>
+    withQuoroom(client => client.ListImages({ reportId: scope.reportId })).pipe(
       Effect.map(list =>
         Message.SucceededLoadImageUsage({
+          scope,
           usage: {
             usedBytes: list.referencedBytes,
             limitBytes: list.limitBytes,
           },
         }),
       ),
-      Effect.catch(() => Effect.succeed(Message.FailedLoadImageUsage())),
+      Effect.catch(() =>
+        Effect.succeed(Message.FailedLoadImageUsage({ scope })),
+      ),
     ),
 })
 
 export const AddCoAuthor = Command.define('AddCoAuthor', {
-  args: { reportId: Schema.String, accountId: Schema.String },
+  args: { scope: Scope, accountId: Schema.String },
   messages: [Message.SucceededAddCoAuthor, Message.FailedAddCoAuthor],
-  execute: ({ reportId, accountId }) =>
-    withQuoroom(client => client.AddCoAuthor({ reportId, accountId })).pipe(
+  execute: ({ scope, accountId }) =>
+    withQuoroom(client =>
+      client.AddCoAuthor({ reportId: scope.reportId, accountId }),
+    ).pipe(
       Effect.map(added =>
-        Message.SucceededAddCoAuthor({ account: added.account }),
+        Message.SucceededAddCoAuthor({ scope, account: added.account }),
       ),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedAddCoAuthor({ failure: failureOf(error) }),
+          Message.FailedAddCoAuthor({ scope, failure: failureOf(error) }),
         ),
       ),
     ),
@@ -607,6 +749,27 @@ export const FocusSectionHeading = Command.define('FocusSectionHeading', {
     Effect.catch(() => Effect.void),
     Effect.as(Message.CompletedFocusSectionHeading()),
   ),
+})
+
+// NOTE: "Who is drafting": the working copies of the report's authors, read
+// when the page loads and again every 30 seconds while it is open. A failed
+// refresh keeps what is shown.
+export const RefreshDrafting = Command.define('RefreshDrafting', {
+  args: { scope: Scope },
+  messages: [Message.SucceededRefreshDrafting],
+  execute: ({ scope }) =>
+    withQuoroom(client =>
+      client.ListDrafting({ reportId: scope.reportId }),
+    ).pipe(
+      Effect.map(drafting =>
+        Message.SucceededRefreshDrafting({ scope, drafting }),
+      ),
+      Effect.catch(() =>
+        Effect.succeed(
+          Message.SucceededRefreshDrafting({ scope, drafting: [] }),
+        ),
+      ),
+    ),
 })
 
 export const LoadEditor = Command.define('LoadEditor', {
@@ -746,22 +909,61 @@ export const reportStateText = (state: ReportState): string =>
 
 // INIT
 
+export const scopeOf = (model: Model): Scope => ({
+  reportId: model.reportId,
+  generation: model.generation,
+  epoch: model.epoch,
+})
+
+const isCurrent = (model: Model, scope: Scope): boolean =>
+  isCurrentPage(model, scope) && model.epoch === scope.epoch
+
+// NOTE: `generation` is the entry of the screen: the parent passes one higher
+// than the screen had, so an answer to a Command of an earlier entry (even of
+// the same report) is never taken for one of this entry.
 export const enter = (
   origin: string,
   reportId: string,
-): Update.Return<Model, Message> => ({
-  model: modifyFields(initialModel, {
+  generation: number,
+): Update.Return<Model, Message> => {
+  const fresh = modifyFields(initialModel, {
     origin: () => origin,
     reportId: () => reportId,
-  }),
-  commands: [LoadReport({ reportId })],
-})
+    generation: () => generation,
+  })
+  return { model: fresh, commands: [LoadReport({ scope: scopeOf(fresh) })] }
+}
+
+// NOTE: What the screen does when it is asked to try saving again, for the
+// parent that waits for a save before the report is left.
+export const retrySave = (model: Model): Update.Return<Model, Message> =>
+  SaveStatus.guards.Saving(model.save)
+    ? { model }
+    : update(model, Message.ClickedRetrySave())
+
+// NOTE: The screen emptied (signed out, or left with edits given up): nothing
+// that is still on its way reaches the new Model.
+export const cleared = (model: Model): Model =>
+  modifyFields(initialModel, { generation: () => model.generation + 1 })
 
 // UPDATE
 
 export const hasUnsavedEdits = (model: Model): boolean =>
   !Array.isReadonlyArrayEmpty(model.dirtySectionIds) ||
   !SaveStatus.guards.Saved(model.save)
+
+// NOTE: Why the edits are not saved yet, for the question asked before the
+// report is left.
+export const unsavedReason = (
+  model: Model,
+): 'offline' | 'failed' | 'stale' | 'saving' =>
+  SaveStatus.guards.Stale(model.save)
+    ? 'stale'
+    : SaveStatus.guards.Failed(model.save)
+      ? 'failed'
+      : model.isOnline
+        ? 'saving'
+        : 'offline'
 
 const EMPTY_SECTION: SectionContent = { values: {}, sections: {} }
 
@@ -773,6 +975,7 @@ const startSave = (model: Model): Update.Return<Model, Message> => {
   if (
     SaveStatus.guards.Saving(model.save) ||
     SaveStatus.guards.Stale(model.save) ||
+    model.isReloading ||
     !model.isOnline
   ) {
     return { model }
@@ -788,7 +991,7 @@ const startSave = (model: Model): Update.Return<Model, Message> => {
     }),
     commands: [
       SaveSection({
-        reportId: model.reportId,
+        scope: scopeOf(model),
         sectionId: next,
         saveCounter: model.saveCounter,
         content: model.contents[next] ?? EMPTY_SECTION,
@@ -924,13 +1127,15 @@ const applyItemChange = (
   )
 
 // NOTE: After a reload, or an edit put back, the editors must take the content
-// from the Model: raising the base above every version they have reported
-// makes them do so.
-const bumpEditorBase = (model: Model): Model =>
-  modifyFields(model, {
-    editorBase: base =>
-      Math.max(base, ...Record.values(model.editorVersions)) + 1,
-  })
+// from the Model. A version is not enough: an element may have taken keystrokes
+// it has not reported yet, so its version is higher than any the Model has
+// seen. A new generation makes every element replace its text, whatever its
+// version, and report what it had not sent as `DiscardedRichText`.
+const resetEditors = (model: Model): Model =>
+  modifyFields(model, { editorGeneration: generation => generation + 1 })
+
+const withNewEpoch = (model: Model): Model =>
+  modifyFields(model, { epoch: epoch => epoch + 1 })
 
 const withTemplate = (
   model: Model,
@@ -972,7 +1177,102 @@ const setSectionContent = (
 const sectionIdsOf = (template: Template): ReadonlyArray<string> =>
   Array.map(topLevelSections(template), section => section.id)
 
-export const update = (model: Model, message: Message) =>
+const WAIT_FOR_SAVE =
+  'A save is still in progress. Wait for it to finish, then try again.'
+
+const CANCELLED_UPLOAD =
+  'The picture was not added, because you left the text while it was being sent. Add it again.'
+
+const sectionTitleOf = (template: Template, sectionId: string): string =>
+  Array.findFirst(
+    topLevelSections(template),
+    section => section.id === sectionId,
+  ).pipe(
+    Option.map(section => section.title),
+    Option.getOrElse(() => sectionId),
+  )
+
+// NOTE: A rich-text change from an editor, or the last one an editor sent as
+// it went away (`FlushedRichText`).
+const richTextChanged = (
+  model: Model,
+  sectionKey: string,
+  steps: ReadonlyArray<ItemStep>,
+  itemId: string,
+  content: string,
+  version: number,
+): Update.Return<Model, Message> =>
+  Option.match(parseRichTextJson(content), {
+    onNone: () => ({
+      model: modifyFields(model, {
+        maybeRefusal: () => Option.some(REFUSED_RICH_TEXT),
+      }),
+    }),
+    onSome: doc =>
+      applyItemChange(
+        modifyFields(model, {
+          editorVersions: versions =>
+            Record.set(versions, richKey(sectionKey, steps, itemId), version),
+          maybeRefusal: () => Option.none(),
+        }),
+        sectionKey,
+        steps,
+        itemId,
+        serializeRichText(doc) === EMPTY_RICH_TEXT_JSON
+          ? Option.none()
+          : Option.some({ type: 'rich_text', doc }),
+      ),
+  })
+
+// NOTE: Text an editor had taken but not reported when its text was replaced
+// (a reload): it is kept beside the saved version, never saved over it. The
+// kept version is what the page held (the kept edit of the section, or else
+// the saved section) with that text in it.
+const keepDiscardedRichText = (
+  model: Model,
+  sectionKey: string,
+  steps: ReadonlyArray<ItemStep>,
+  itemId: string,
+  content: string,
+): Update.Return<Model, Message> =>
+  Option.match(parseRichTextJson(content), {
+    onNone: () => ({ model }),
+    onSome: doc => {
+      const sectionId = topSectionIdOfKey(sectionKey)
+      const base = Array.findFirst(
+        model.keptEdits,
+        edit => edit.sectionId === sectionId,
+      ).pipe(
+        Option.map(edit => edit.content),
+        Option.getOrElse(() => model.contents[sectionId] ?? EMPTY_SECTION),
+      )
+      const withText = withItemValueAt(
+        { [sectionId]: base },
+        sectionKey,
+        steps,
+        itemId,
+        serializeRichText(doc) === EMPTY_RICH_TEXT_JSON
+          ? undefined
+          : { type: 'rich_text', doc },
+      )[sectionId]
+      const keptContent = withText ?? EMPTY_SECTION
+      return sameContent(
+        keptContent,
+        model.contents[sectionId] ?? EMPTY_SECTION,
+      )
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              keptEdits: edits => [
+                ...Array.filter(edits, edit => edit.sectionId !== sectionId),
+                { sectionId, content: keptContent },
+              ],
+            }),
+          }
+    },
+  })
+
+const updateCurrent = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
     SucceededLoadReport: ({ loaded }) =>
       Update.combine(model, [
@@ -989,6 +1289,8 @@ export const update = (model: Model, message: Message) =>
             maybeImageUsage: () => loaded.maybeImageUsage,
             maybeSavedAt: () => Option.some(loaded.savedAt),
             maybeCopy: () => Option.some(loaded.copy),
+            myId: () => loaded.myId,
+            drafting: () => loaded.drafting,
           }),
         }),
         requestEditor,
@@ -998,7 +1300,7 @@ export const update = (model: Model, message: Message) =>
     }),
     ClickedRetryLoad: () => ({
       model: modifyFields(model, { load: () => LoadState.Loading() }),
-      commands: [LoadReport({ reportId: model.reportId })],
+      commands: [LoadReport({ scope: scopeOf(model) })],
     }),
     SelectedSection: ({ key }) =>
       Update.combine(model, [selectSection(key), requestEditor]),
@@ -1018,34 +1320,17 @@ export const update = (model: Model, message: Message) =>
       commands: [LoadEditor()],
     }),
     ChangedRichText: ({ sectionKey, steps, itemId, content, version }) =>
-      Option.match(parseRichTextJson(content), {
-        onNone: () => ({
-          model: modifyFields(model, {
-            maybeRefusal: () => Option.some(REFUSED_RICH_TEXT),
-          }),
-        }),
-        onSome: doc =>
-          applyItemChange(
-            modifyFields(model, {
-              editorVersions: versions =>
-                Record.set(
-                  versions,
-                  richKey(sectionKey, steps, itemId),
-                  version,
-                ),
-              maybeRefusal: () => Option.none(),
-            }),
-            sectionKey,
-            steps,
-            itemId,
-            serializeRichText(doc) === EMPTY_RICH_TEXT_JSON
-              ? Option.none()
-              : Option.some({ type: 'rich_text', doc }),
-          ),
-      }),
+      richTextChanged(model, sectionKey, steps, itemId, content, version),
+    FlushedRichText: ({ sectionKey, steps, itemId, content, version }) =>
+      richTextChanged(model, sectionKey, steps, itemId, content, version),
+    DiscardedRichText: ({ sectionKey, steps, itemId, content }) =>
+      keepDiscardedRichText(model, sectionKey, steps, itemId, content),
+    CancelledImageUpload: () => ({
+      model: setNote(model, CANCELLED_UPLOAD),
+    }),
     AddedImage: () => ({
       model,
-      commands: [LoadImageUsage({ reportId: model.reportId })],
+      commands: [LoadImageUsage({ scope: scopeOf(model) })],
     }),
     SucceededLoadImageUsage: ({ usage }) => ({
       model: modifyFields(model, { maybeImageUsage: () => Option.some(usage) }),
@@ -1074,9 +1359,33 @@ export const update = (model: Model, message: Message) =>
         save: () => SaveStatus.Failed({ failure }),
       }),
     }),
-    StaleSaveSection: ({ sectionId }) => ({
+    StaleSaveSection: ({ sectionId, sent }) => ({
+      model,
+      commands: [ReadStaleSection({ scope: scopeOf(model), sectionId, sent })],
+    }),
+    SucceededReadStaleSection: ({
+      sectionId,
+      sent,
+      saved,
+      saveCounter,
+      savedAt,
+    }) =>
+      sameContent(sent, saved)
+        ? startSave(
+            modifyFields(model, {
+              saveCounter: () => saveCounter,
+              maybeSavedAt: () => Option.some(savedAt),
+              save: () => SaveStatus.Saved(),
+            }),
+          )
+        : {
+            model: modifyFields(withDirty(model, sectionId), {
+              save: () => SaveStatus.Stale({ sectionId }),
+            }),
+          },
+    FailedReadStaleSection: ({ sectionId, failure }) => ({
       model: modifyFields(withDirty(model, sectionId), {
-        save: () => SaveStatus.Stale({ sectionId }),
+        save: () => SaveStatus.Failed({ failure }),
       }),
     }),
     ClickedRetrySave: () =>
@@ -1106,18 +1415,20 @@ export const update = (model: Model, message: Message) =>
     ClickedReloadWorkingCopy: () =>
       model.isReloading
         ? { model }
-        : withTemplate(model, template => ({
-            model: modifyFields(model, {
-              isReloading: () => true,
-              maybeEditNote: () => Option.none(),
-            }),
-            commands: [
-              ReloadWorkingCopy({
-                reportId: model.reportId,
-                sectionIds: sectionIdsOf(template),
+        : SaveStatus.guards.Saving(model.save)
+          ? { model: setNote(model, WAIT_FOR_SAVE) }
+          : withTemplate(model, template => ({
+              model: modifyFields(model, {
+                isReloading: () => true,
+                maybeEditNote: () => Option.none(),
               }),
-            ],
-          })),
+              commands: [
+                ReloadWorkingCopy({
+                  scope: scopeOf(model),
+                  sectionIds: sectionIdsOf(template),
+                }),
+              ],
+            })),
     SucceededReloadWorkingCopy: ({ contents, saveCounter, savedAt, copy }) => {
       // NOTE: What this page held and the server does not is not thrown away:
       // it is kept beside the saved version, to be copied or put back.
@@ -1133,27 +1444,29 @@ export const update = (model: Model, message: Message) =>
           : [{ sectionId, content: local }]
       })
       return {
-        model: bumpEditorBase(
-          modifyFields(model, {
-            contents: () => contents,
-            saveCounter: () => saveCounter,
-            maybeSavedAt: () => Option.some(savedAt),
-            maybeCopy: () => Option.some(copy),
-            dirtySectionIds: () => [],
-            save: () => SaveStatus.Saved(),
-            isReloading: () => false,
-            keptEdits: existing => [
-              ...Array.filter(
-                existing,
-                edit =>
-                  !Array.some(
-                    kept,
-                    other => other.sectionId === edit.sectionId,
-                  ),
-              ),
-              ...kept,
-            ],
-          }),
+        model: resetEditors(
+          withNewEpoch(
+            modifyFields(model, {
+              contents: () => contents,
+              saveCounter: () => saveCounter,
+              maybeSavedAt: () => Option.some(savedAt),
+              maybeCopy: () => Option.some(copy),
+              dirtySectionIds: () => [],
+              save: () => SaveStatus.Saved(),
+              isReloading: () => false,
+              keptEdits: existing => [
+                ...Array.filter(
+                  existing,
+                  edit =>
+                    !Array.some(
+                      kept,
+                      other => other.sectionId === edit.sectionId,
+                    ),
+                ),
+                ...kept,
+              ],
+            }),
+          ),
         ),
       }
     },
@@ -1163,31 +1476,78 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     ClickedReapplyEdit: ({ sectionId }) =>
+      withTemplate(model, template =>
+        Option.match(
+          Array.findFirst(
+            model.keptEdits,
+            edit => edit.sectionId === sectionId,
+          ),
+          {
+            onNone: () => ({ model }),
+            onSome: () => ({
+              model: modifyFields(model, {
+                maybeConfirmation: () =>
+                  Option.some(
+                    Confirmation.ReapplyEdit({
+                      sectionId,
+                      title: sectionTitleOf(template, sectionId),
+                    }),
+                  ),
+              }),
+              commands: [FocusConfirmation()],
+            }),
+          },
+        ),
+      ),
+    ConfirmedReapplyEdit: () =>
       Option.match(
-        Array.findFirst(model.keptEdits, edit => edit.sectionId === sectionId),
+        Option.filter(model.maybeConfirmation, Confirmation.guards.ReapplyEdit),
         {
           onNone: () => ({ model }),
-          onSome: edit =>
-            Update.combine(model, [
-              stepModel =>
-                startSave(
-                  withDirty(
-                    bumpEditorBase(
-                      modifyFields(stepModel, {
-                        contents: contents =>
-                          setSectionContent(contents, sectionId, edit.content),
-                        keptEdits: edits =>
-                          Array.filter(
-                            edits,
-                            other => other.sectionId !== sectionId,
+          onSome: ({ sectionId }) =>
+            Option.match(
+              Array.findFirst(
+                model.keptEdits,
+                edit => edit.sectionId === sectionId,
+              ),
+              {
+                onNone: () => ({
+                  model: modifyFields(model, {
+                    maybeConfirmation: () => Option.none(),
+                  }),
+                }),
+                onSome: edit =>
+                  Update.combine(
+                    modifyFields(model, {
+                      maybeConfirmation: () => Option.none(),
+                    }),
+                    [
+                      stepModel =>
+                        startSave(
+                          withDirty(
+                            resetEditors(
+                              modifyFields(stepModel, {
+                                contents: contents =>
+                                  setSectionContent(
+                                    contents,
+                                    sectionId,
+                                    edit.content,
+                                  ),
+                                keptEdits: edits =>
+                                  Array.filter(
+                                    edits,
+                                    other => other.sectionId !== sectionId,
+                                  ),
+                              }),
+                            ),
+                            sectionId,
                           ),
-                      }),
-                    ),
-                    sectionId,
+                        ),
+                      requestEditor,
+                    ],
                   ),
-                ),
-              requestEditor,
-            ]),
+              },
+            ),
         },
       ),
     ClickedDiscardEdit: ({ sectionId }) => ({
@@ -1203,33 +1563,45 @@ export const update = (model: Model, message: Message) =>
       commands: [FocusConfirmation()],
     }),
     ConfirmedReplaceCopy: () =>
-      Option.exists(model.maybeConfirmation, Confirmation.guards.ReplaceCopy)
-        ? {
-            model: modifyFields(model, {
-              maybeConfirmation: () => Option.none(),
-              isReloading: () => true,
-            }),
-            commands: [ReplaceWorkingCopy({ reportId: model.reportId })],
-          }
-        : { model },
-    SucceededReplaceCopy: () => ({
-      model: modifyFields(model, {
-        load: () => LoadState.Loading(),
-        contents: () => ({}),
-        dirtySectionIds: () => [],
-        keptEdits: () => [],
-        save: () => SaveStatus.Saved(),
-        isReloading: () => false,
-        naDrafts: () => ({}),
-        naStash: () => ({}),
-        titleDrafts: () => ({}),
-        editorVersions: () => ({}),
-        editorBase: () => 0,
-        maybeSelectedKey: () => Option.none(),
-        maybeEditNote: () => Option.none(),
-      }),
-      commands: [LoadReport({ reportId: model.reportId })],
-    }),
+      !Option.exists(model.maybeConfirmation, Confirmation.guards.ReplaceCopy)
+        ? { model }
+        : SaveStatus.guards.Saving(model.save)
+          ? {
+              model: modifyFields(setNote(model, WAIT_FOR_SAVE), {
+                maybeConfirmation: () => Option.none(),
+              }),
+            }
+          : {
+              model: modifyFields(model, {
+                maybeConfirmation: () => Option.none(),
+                isReloading: () => true,
+              }),
+              commands: [ReplaceWorkingCopy({ scope: scopeOf(model) })],
+            },
+    SucceededReplaceCopy: () => {
+      const restarted = resetEditors(
+        withNewEpoch(
+          modifyFields(model, {
+            load: () => LoadState.Loading(),
+            contents: () => ({}),
+            dirtySectionIds: () => [],
+            keptEdits: () => [],
+            save: () => SaveStatus.Saved(),
+            isReloading: () => false,
+            naDrafts: () => ({}),
+            naStash: () => ({}),
+            titleDrafts: () => ({}),
+            editorVersions: () => ({}),
+            maybeSelectedKey: () => Option.none(),
+            maybeEditNote: () => Option.none(),
+          }),
+        ),
+      )
+      return {
+        model: restarted,
+        commands: [LoadReport({ scope: scopeOf(restarted) })],
+      }
+    },
     FailedReplaceCopy: ({ failure }) => ({
       model: modifyFields(setNote(model, failureText(failure)), {
         isReloading: () => false,
@@ -1247,7 +1619,7 @@ export const update = (model: Model, message: Message) =>
           onSome: note => ({ model: setNote(model, note) }),
           onNone: () => ({
             model: modifyFields(model, { maybeEditNote: () => Option.none() }),
-            commands: [NewEntryId({ target })],
+            commands: [NewEntryId({ scope: scopeOf(model), target })],
           }),
         }),
       ),
@@ -1443,7 +1815,7 @@ export const update = (model: Model, message: Message) =>
         }),
         commands: [
           AddCoAuthor({
-            reportId: model.reportId,
+            scope: scopeOf(model),
             accountId: model.coAuthorChoice,
           }),
         ],
@@ -1465,14 +1837,90 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     CompletedFocusSectionHeading: () => ({ model }),
+    TickedDraftingRefresh: () => ({
+      model,
+      commands: [RefreshDrafting({ scope: scopeOf(model) })],
+    }),
+    SucceededRefreshDrafting: ({ drafting }) => ({
+      model: modifyFields(model, { drafting: () => drafting }),
+    }),
   })
+
+export const update = (
+  model: Model,
+  message: Message,
+): Update.Return<Model, Message> =>
+  'scope' in message && !isCurrent(model, message.scope)
+    ? { model }
+    : updateCurrent(model, message)
 
 // SUBSCRIPTION
 
 export const SAVE_RETRY_SECONDS = 5
+export const DRAFTING_REFRESH_SECONDS = 30
+
+// NOTE: What an editor element puts in its `owner` property: who the text
+// belongs to, so a message it sends as it goes away (after Foldkit has taken
+// its listeners off) can still be told to the Model.
+export const EditorOwner = Schema.Struct({
+  scope: Scope,
+  sectionKey: Schema.String,
+  steps: Schema.Array(StepSchema),
+  itemId: Schema.String,
+})
+export type EditorOwner = typeof EditorOwner.Type
+
+export const ownerText = (owner: EditorOwner): string => JSON.stringify(owner)
+
+const decodeOwner = (text: unknown): Option.Option<EditorOwner> =>
+  typeof text !== 'string'
+    ? Option.none()
+    : Result.match(
+        Result.try({
+          try: (): unknown => JSON.parse(text),
+          catch: () => 'invalid',
+        }),
+        {
+          onFailure: () => Option.none(),
+          onSuccess: Schema.decodeUnknownOption(EditorOwner),
+        },
+      )
+
+const detailOf = (event: Event): Readonly<Record<string, unknown>> => {
+  const detail: unknown = Reflect.get(event, 'detail')
+  return typeof detail === 'object' && detail !== null
+    ? Object.fromEntries(Object.entries(detail))
+    : {}
+}
+
+export const finalFlushOf = (
+  detail: Readonly<Record<string, unknown>>,
+): Option.Option<Message> =>
+  Option.flatMap(decodeOwner(detail['owner']), owner =>
+    typeof detail['content'] === 'string' &&
+    typeof detail['version'] === 'number' &&
+    Number.isInteger(detail['version'])
+      ? Option.some(
+          Message.FlushedRichText({
+            scope: owner.scope,
+            sectionKey: owner.sectionKey,
+            steps: owner.steps,
+            itemId: owner.itemId,
+            content: detail['content'],
+            version: detail['version'],
+          }),
+        )
+      : Option.none(),
+  )
+
+const editorEvents: Dom.TypedEventTarget<{
+  [EDITOR_FINAL_EVENT]: CustomEvent<unknown>
+  [EDITOR_UPLOAD_CANCELLED_EVENT]: CustomEvent<unknown>
+}> = window
 
 export const subscriptions = Subscription.make<Model, Message>()(entry => ({
-  // NOTE: Leaving the page with edits that are not saved asks first.
+  // NOTE: Leaving the page with edits that are not saved asks first. It stays
+  // on for as long as there are such edits, whatever screen is open.
   unsavedEdits: entry(
     { hasUnsavedEdits: Schema.Boolean },
     {
@@ -1500,6 +1948,43 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
         mapEvent: () => Message.ChangedConnection({ isOnline: false }),
       }),
     ),
+  ),
+  // NOTE: An editor that goes away sends what it still holds, and says when a
+  // picture it was sending was cancelled, as events on the window: its own
+  // listeners are gone by then. The scope in `owner` drops them if the page
+  // was left meanwhile. Not tied to the route, because it is exactly when the
+  // route changes that they are sent.
+  editorFarewell: Subscription.persistentEntry(
+    Stream.merge(
+      Dom.streamFromEventFilterMap({
+        target: editorEvents,
+        type: EDITOR_FINAL_EVENT,
+        filterMapEvent: event => finalFlushOf(detailOf(event)),
+      }),
+      Dom.streamFromEventFilterMap({
+        target: editorEvents,
+        type: EDITOR_UPLOAD_CANCELLED_EVENT,
+        filterMapEvent: event =>
+          Option.map(decodeOwner(detailOf(event)['owner']), owner =>
+            Message.CancelledImageUpload({ scope: owner.scope }),
+          ),
+      }),
+    ),
+  ),
+  // NOTE: "Who is drafting" is read again every 30 seconds while the report is
+  // open and loaded.
+  drafting: entry(
+    { isLoaded: Schema.Boolean },
+    {
+      modelToDependencies: model => ({
+        isLoaded: LoadState.guards.Loaded(model.load),
+      }),
+      dependenciesToStream: ({ isLoaded }) =>
+        Stream.tick(Duration.seconds(DRAFTING_REFRESH_SECONDS)).pipe(
+          Stream.map(() => Message.TickedDraftingRefresh()),
+          Stream.when(Effect.sync(() => isLoaded)),
+        ),
+    },
   ),
   saveRetry: entry(
     { isRetrying: Schema.Boolean },
@@ -1778,11 +2263,7 @@ const groupCard = (
                     Array.map(list, (row, index) =>
                       h.keyed('li')(
                         row.key,
-                        [
-                          h.Class(
-                            'flex flex-col gap-2 py-2',
-                          ),
-                        ],
+                        [h.Class('flex flex-col gap-2 py-2')],
                         [
                           navigatorRow(
                             { ...row, depth: 1 },
@@ -1921,13 +2402,6 @@ const stepButtons = (
   )
 }
 
-const timeText = (epochMs: number): string =>
-  new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(epochMs))
-
 // NOTE: One place builds what every field needs, so the sections and entries
 // of a report all send the same Messages, named by the key they edit.
 const fieldContextFor = (
@@ -1946,10 +2420,12 @@ const fieldContextFor = (
   richText: {
     editor: model.editor,
     versionOf: (steps, itemId) =>
-      Math.max(
-        model.editorBase,
-        model.editorVersions[richKey(sectionKey, steps, itemId)] ?? 0,
-      ),
+      model.editorVersions[richKey(sectionKey, steps, itemId)] ?? 0,
+    generation: model.editorGeneration,
+    ownerOf: (steps, itemId) =>
+      ownerText({ scope: scopeOf(model), sectionKey, steps, itemId }),
+    onDiscarded: (steps, itemId, content) =>
+      Message.DiscardedRichText({ sectionKey, steps, itemId, content }),
     onChange: (steps, itemId, content, version) =>
       Message.ChangedRichText({ sectionKey, steps, itemId, content, version }),
     onSelection: (_steps, itemId, range) =>
@@ -2388,6 +2864,13 @@ const confirmationPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
             'Remove',
             Message.ConfirmedRemoveEntry(),
           ] as const,
+        ReapplyEdit: ({ title }) =>
+          [
+            `Put your version of ${title} back?`,
+            `This replaces the version of ${title} that was saved in the other tab with the one you typed here. What the other tab saved in this section is lost.`,
+            'Replace the saved version',
+            Message.ConfirmedReapplyEdit(),
+          ] as const,
         ReplaceCopy: () =>
           [
             'Start again from the latest shared draft?',
@@ -2429,6 +2912,40 @@ const confirmationPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
     },
   })
 
+const sharePrompt = (
+  model: Model,
+  copy: CopyInfo,
+  h: HtmlBuilder<Message>,
+): Html =>
+  Option.match(model.maybeDetail, {
+    onNone: () => h.empty,
+    onSome: detail =>
+      !Array.contains(detail.permissions, 'share') ||
+      detail.summary.state === 'archived'
+        ? h.empty
+        : hasUnsavedEdits(model)
+          ? h.p(
+              [h.Role('status'), h.Class('text-base text-msf-grey')],
+              ['Sharing is available once everything is saved.'],
+            )
+          : h.a(
+              [
+                h.Href(pathOf(AppRoute.Share({ reportId: model.reportId }))),
+                h.Class(
+                  clsx(
+                    'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                    focusRing,
+                  ),
+                ),
+              ],
+              [
+                copy.behind
+                  ? `Compare and share as Draft ${copy.latestDraft + 1}`
+                  : `Share as Draft ${copy.latestDraft + 1}`,
+              ],
+            ),
+  })
+
 const workingCopyPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
   Option.match(model.maybeCopy, {
     onNone: () => h.empty,
@@ -2443,6 +2960,7 @@ const workingCopyPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
               `Started from draft ${copy.baseDraft}. The latest shared draft is ${copy.latestDraft}.`,
             ],
           ),
+          sharePrompt(model, copy, h),
           copy.latestDraft >= 1
             ? actionButton(
                 h,
@@ -2459,6 +2977,59 @@ const workingCopyPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
         ),
       ),
   })
+
+// NOTE: Other authors' working copies: which draft each started from and when
+// each was last saved, with a mark for changes not shared yet. Names are
+// authors of this report only; no text of a working copy is shown.
+export const draftingLine = (entry: typeof DraftingInfo.Type): string =>
+  `${entry.name} is working from Draft ${entry.baseDraft}, last saved ${timeText(entry.lastSavedAt)}${entry.hasUnsharedChanges ? '' : ', nothing new to share'}.`
+
+const draftingPanel = (model: Model, h: HtmlBuilder<Message>): Html => {
+  const others = Array.filter(
+    model.drafting,
+    entry => entry.accountId !== model.myId,
+  )
+  return panel(
+    h,
+    'Who is drafting',
+    [
+      Array.match(others, {
+        onEmpty: () =>
+          h.p(
+            [h.Class('text-lg text-msf-grey')],
+            ['No other author has a working copy of this report.'],
+          ),
+        onNonEmpty: list =>
+          h.ul(
+            [
+              h.AriaLabel('Other authors drafting'),
+              h.Class(
+                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+              ),
+            ],
+            Array.map(list, entry =>
+              h.keyed('li')(
+                entry.accountId,
+                [
+                  h.Class('py-3 text-lg text-msf-ink'),
+                  h.DataAttribute('drafting', entry.accountId),
+                ],
+                [draftingLine(entry)],
+              ),
+            ),
+          ),
+      }),
+      h.a(
+        [
+          h.Href(pathOf(AppRoute.Drafts({ reportId: model.reportId }))),
+          h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+        ],
+        ['Draft history'],
+      ),
+    ],
+    Option.some('Updated every 30 seconds while this page is open.'),
+  )
+}
 
 const endedBanner = (end: EndState, h: HtmlBuilder<Message>): Html =>
   end.outcomeText === undefined
@@ -2621,6 +3192,7 @@ const loadedView = (
         ],
       ),
       workingCopyPanel(model, h),
+      draftingPanel(model, h),
       authorsPanel(model, detail, h),
     ],
   )

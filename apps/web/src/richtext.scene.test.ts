@@ -19,7 +19,7 @@ import { authorModel } from './quoroom.fixtures'
 import { serializeRichText } from './quoroom/editor/richText'
 import { editorElement } from './quoroom/editor/spec'
 import * as Report from './quoroom/report'
-import { REPORT_ID, SAVED_AT, loadedReport } from './report.fixtures'
+import { REPORT_ID, SAVED_AT, SCOPE, loadedReport } from './report.fixtures'
 import { view } from './view'
 
 const reportModelFor = (options: Parameters<typeof loadedReport>[1] = {}) =>
@@ -27,6 +27,7 @@ const reportModelFor = (options: Parameters<typeof loadedReport>[1] = {}) =>
     clickedLinkTo(`/r/${REPORT_ID}`),
     Message.GotReportMessage({
       message: Report.Message.SucceededLoadReport({
+        scope: SCOPE,
         loaded: loadedReport(INTAKE_TEMPLATE, options),
       }),
     }),
@@ -81,6 +82,7 @@ describe('the editor slot', () => {
       Command.resolve(
         Report.SaveSection,
         Report.Message.SucceededSaveSection({
+          scope: SCOPE,
           sectionId: 'summary',
           saveCounter: 1,
           savedAt: SAVED_AT,

@@ -5,11 +5,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
-import {
-  AccountRow,
-  CapabilityName,
-  Unit,
-} from '@case-desk/domain'
+import { AccountRow, CapabilityName, Unit } from '@case-desk/domain'
 
 import { withQuoroom } from './api'
 import { Failure, failureOf } from './failure'

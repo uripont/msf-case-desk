@@ -15,13 +15,16 @@ import {
 
 export type Size = Readonly<{ width: number; height: number }>
 
+// NOTE: The caps on a file before it is decoded (`header.ts`). 30 MB is a large
+// photo; 100 million pixels is about 10000 by 10000, more than a phone camera
+// makes.
+export const MAX_INPUT_BYTES = 30_000_000
+export const MAX_INPUT_PIXELS = 100_000_000
+
 // NOTE: The size within `max` pixels on the longest side, in the same
 // proportions. An image already within the limit keeps its size (never
 // enlarged); each side is at least one pixel.
-export const fitWithin = (
-  size: Size,
-  max: number = IMAGE_MAX_SIDE,
-): Size => {
+export const fitWithin = (size: Size, max: number = IMAGE_MAX_SIDE): Size => {
   const longest = Math.max(size.width, size.height)
   if (longest <= max) {
     return { width: Math.max(1, size.width), height: Math.max(1, size.height) }
@@ -52,35 +55,47 @@ export type OutputFormat = Readonly<{
   mime: 'image/jpeg' | 'image/png'
   // NOTE: Encoder qualities to try in order; PNG has none.
   qualities: ReadonlyArray<number>
+  // NOTE: Longest sides to try in order when the encoded image is over the
+  // limit at every quality. A PNG cannot be made smaller by quality, so a
+  // transparent image over the limit is tried again at smaller dimensions
+  // before it is refused.
+  sides: ReadonlyArray<number>
 }>
 
 export const JPEG_QUALITIES: ReadonlyArray<number> = [0.85, 0.7]
+export const PNG_SIDES: ReadonlyArray<number> = [IMAGE_MAX_SIDE, 1200, 900]
 
 export const formatFor = (isTransparent: boolean): OutputFormat =>
   isTransparent
-    ? { mime: 'image/png', qualities: [1] }
-    : { mime: 'image/jpeg', qualities: JPEG_QUALITIES }
+    ? { mime: 'image/png', qualities: [1], sides: PNG_SIDES }
+    : { mime: 'image/jpeg', qualities: JPEG_QUALITIES, sides: [IMAGE_MAX_SIDE] }
 
 export type EncodeDecision =
   | Readonly<{ kind: 'accept' }>
   | Readonly<{ kind: 'retry'; quality: number }>
+  | Readonly<{ kind: 'shrink'; side: number }>
   | Readonly<{ kind: 'refuse' }>
 
 // NOTE: After the image was encoded with `qualities[attempt]` and came to
 // `bytes` bytes: accept it, try the next lower quality (a JPEG gets one more
-// try), or refuse it.
+// try), draw it again at the next smaller side (`step` is the index into
+// `format.sides` of the side it was drawn at; every side starts again at the
+// first quality), or refuse it.
 export const decideAfterEncoding = (
   format: OutputFormat,
   attempt: number,
   bytes: number,
+  step = 0,
 ): EncodeDecision => {
   if (bytes <= IMAGE_MAX_BYTES) {
     return { kind: 'accept' }
   }
   const next = format.qualities[attempt + 1]
-  return next === undefined
-    ? { kind: 'refuse' }
-    : { kind: 'retry', quality: next }
+  if (next !== undefined) {
+    return { kind: 'retry', quality: next }
+  }
+  const side = format.sides[step + 1]
+  return side === undefined ? { kind: 'refuse' } : { kind: 'shrink', side }
 }
 
 export type ChunkRange = Readonly<{ index: number; start: number; end: number }>
@@ -125,6 +140,8 @@ export const usageText = (usage: ImageUsage): string =>
 export type Refusal =
   | Readonly<{ kind: 'not_an_image' }>
   | Readonly<{ kind: 'unreadable' }>
+  | Readonly<{ kind: 'file_too_large'; bytes: number }>
+  | Readonly<{ kind: 'too_many_pixels'; pixels: number }>
   | Readonly<{ kind: 'too_large_after_encoding'; bytes: number }>
   | Readonly<{ kind: 'report_full'; remaining: number; bytes: number }>
 
@@ -134,6 +151,10 @@ export const refusalText = (refusal: Refusal): string => {
       return 'That file is not a picture. Choose a JPEG, PNG, WebP or GIF image.'
     case 'unreadable':
       return 'That picture could not be read. Try another file.'
+    case 'file_too_large':
+      return `This file is ${formatBytes(refusal.bytes)}, which is too large to open here (the limit is ${formatBytes(MAX_INPUT_BYTES)}). Choose a smaller picture.`
+    case 'too_many_pixels':
+      return `This picture has ${Math.round(refusal.pixels / 1_000_000)} million pixels, which is too many to open here (the limit is ${MAX_INPUT_PIXELS / 1_000_000} million). Choose a smaller picture.`
     case 'too_large_after_encoding':
       return `This picture is still ${formatBytes(refusal.bytes)} after it was made smaller, and the limit is ${formatBytes(IMAGE_MAX_BYTES)} for one image. Crop it or choose a simpler picture.`
     case 'report_full':
@@ -166,6 +187,8 @@ export const routeErrorText = (code: string, status: number): string => {
       return `The picture is over the limit of ${formatBytes(IMAGE_MAX_BYTES)}.`
     case 'bad_signature':
       return 'The server did not accept the picture as a JPEG or PNG image.'
+    case 'has_metadata':
+      return 'The picture still carries hidden information (such as where it was taken), so it was not added. Try another picture or save it again as a new file.'
     case 'read_only':
       return 'This report is archived and cannot be changed.'
     case 'not_found':

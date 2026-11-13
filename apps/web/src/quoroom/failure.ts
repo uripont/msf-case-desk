@@ -63,6 +63,16 @@ const StaleShape = Schema.Struct({
 export const isStaleSave = (error: unknown): boolean =>
   Schema.is(StaleShape)(error)
 
+const ReloadShape = Schema.Struct({
+  _tag: Schema.Literal('Conflict'),
+  reason: Schema.Literals(['stale_save', 'changed_meanwhile']),
+})
+
+// NOTE: A refusal that continuing cannot cure: the working copy or what it is
+// compared with changed. The share screen offers to load it again.
+export const isReloadConflict = (error: unknown): boolean =>
+  Schema.is(ReloadShape)(error)
+
 export const failureOf = (error: unknown): Failure =>
   Option.match(decodeErrorShape(error), {
     onNone: () => Failure.Unavailable(),

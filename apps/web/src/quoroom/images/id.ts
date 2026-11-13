@@ -1,5 +1,6 @@
-import { BrowserCrypto } from '@effect/platform-browser'
 import { Crypto, Effect } from 'effect'
+
+import { BrowserCrypto } from '@effect/platform-browser'
 
 // NOTE: The identifier of an upload, which becomes the image's ID. Chosen by
 // the browser and the same for every chunk of one image (`ImageChunkQuery`),

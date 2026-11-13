@@ -25,8 +25,12 @@ export const nextColumnWidth = (
     current !== undefined && current !== null && current > 0
       ? current
       : Math.round(measured)
-  const moved = direction === 'widen' ? start + COLUMN_STEP : start - COLUMN_STEP
-  return Math.min(COLUMN_MAX_WIDTH, Math.max(COLUMN_MIN_WIDTH, Math.round(moved)))
+  const moved =
+    direction === 'widen' ? start + COLUMN_STEP : start - COLUMN_STEP
+  return Math.min(
+    COLUMN_MAX_WIDTH,
+    Math.max(COLUMN_MIN_WIDTH, Math.round(moved)),
+  )
 }
 
 // NOTE: The widths of the cells of a column that spans several columns, with

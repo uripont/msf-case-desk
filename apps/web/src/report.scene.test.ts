@@ -30,6 +30,7 @@ import * as Reports from './quoroom/reports'
 import {
   REPORT_ID,
   SAVED_AT,
+  SCOPE,
   SECOND_AUTHOR,
   detailOf,
   loadedReport,
@@ -47,6 +48,7 @@ const reportModelFor = (
     clickedLinkTo(`/r/${REPORT_ID}`),
     reportMessage(
       Report.Message.SucceededLoadReport({
+        scope: SCOPE,
         loaded: loadedReport(template, options),
       }),
     ),
@@ -240,6 +242,7 @@ describe('structured fields', () => {
       Command.resolve(
         Report.SaveSection,
         Report.Message.SucceededSaveSection({
+          scope: SCOPE,
           sectionId: 'case-details',
           saveCounter: 1,
           savedAt: SAVED_AT,
@@ -287,6 +290,7 @@ describe('branching', () => {
       Command.resolve(
         Report.SaveSection,
         Report.Message.SucceededSaveSection({
+          scope: SCOPE,
           sectionId: 'jurisdiction-materiality',
           saveCounter: 1,
           savedAt: SAVED_AT,
@@ -297,6 +301,7 @@ describe('branching', () => {
       Command.resolve(
         Report.SaveSection,
         Report.Message.SucceededSaveSection({
+          scope: SCOPE,
           sectionId: 'jurisdiction-materiality',
           saveCounter: 2,
           savedAt: SAVED_AT,
@@ -320,6 +325,7 @@ describe('co-authors', () => {
       Command.resolve(
         Report.AddCoAuthor,
         Report.Message.SucceededAddCoAuthor({
+          scope: SCOPE,
           account: { id: SECOND_AUTHOR.accountId, name: SECOND_AUTHOR.name },
         }),
       ),

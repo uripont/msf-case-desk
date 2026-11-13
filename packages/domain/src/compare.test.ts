@@ -12,6 +12,7 @@ import {
   type RichTextDoc,
   type SectionContent,
   type SectionEntry,
+  automaticChanges,
   canonicalRichText,
   compareDrafts,
   emptyContent,
@@ -1135,5 +1136,36 @@ describe('comparing drafts: examples', () => {
       'person:p1/label': { label: 'Witness' },
     })
     expect(Result.isSuccess(fixed)).toBe(true)
+  })
+})
+
+describe('changes taken automatically', () => {
+  test('lists what each side changed, an added entry once, and leaves out conflicts', () => {
+    const base = draft([thing('a', 'A', doc('x'))])
+    const ours = draft([thing('a', 'A', doc('ours')), thing('o1', 'Ours', doc('new'))])
+    const theirs = draft([thing('a', 'A', doc('theirs')), thing('t1', 'Theirs')])
+    const merge = compareDrafts(T, { base, ours, theirs })
+    expect(merge.conflicts.map(c => c.key)).toEqual([thingKey('a', '/i:thing-body')])
+    expect(automaticChanges(merge)).toEqual([
+      { key: thingKey('o1'), side: 'ours', change: 'added', title: 'Ours' },
+      { key: thingKey('t1'), side: 'theirs', change: 'added', title: 'Theirs' },
+    ])
+  })
+
+  test('one-sided edits, removals and identical edits are listed with their side', () => {
+    const base = draft([thing('a', 'A', doc('x')), thing('b', 'B')])
+    const ours = draft([thing('a', 'A', doc('y'))])
+    const theirs = draft([thing('a', 'A', doc('y')), thing('b', 'B')])
+    const merge = compareDrafts(T, { base, ours, theirs })
+    expect(merge.conflicts).toEqual([])
+    expect(automaticChanges(merge)).toEqual([
+      { key: thingKey('a', '/i:thing-body'), side: 'both', change: 'changed' },
+      { key: thingKey('b'), side: 'ours', change: 'removed', title: 'B' },
+    ])
+  })
+
+  test('no change on either side lists nothing', () => {
+    const base = draft([thing('a', 'A')])
+    expect(automaticChanges(compareDrafts(T, { base, ours: base, theirs: base }))).toEqual([])
   })
 })

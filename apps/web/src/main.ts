@@ -76,9 +76,11 @@ import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
+import * as History from './quoroom/history'
 import * as Link from './quoroom/link'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
+import * as Share from './quoroom/share'
 import * as Unit from './quoroom/unit'
 import {
   AppRoute,
@@ -144,7 +146,21 @@ export const ConfigLoad = defineTaggedUnion({
 })
 export type ConfigLoad = typeof ConfigLoad.Type
 
+// NOTE: An address the author asked for while the report has edits that are
+// not saved. The page asks first (stage 4 review): stay, wait for the save and
+// then go, or go without it. Nothing leaves a report with unsaved edits
+// silently.
+export const Leaving = Schema.Struct({
+  url: Url,
+  fragment: Schema.optionalKey(Schema.Redacted(Schema.String)),
+  isWaiting: Schema.Boolean,
+})
+export type Leaving = typeof Leaving.Type
+
+export const LEAVE_HEADING_ID = 'leave-report-heading'
+
 export const Model = Schema.Struct({
+  maybeLeaving: Schema.Option(Leaving),
   route: AppRoute,
   config: ConfigLoad,
   maybeLogoSrc: Schema.Option(Schema.String),
@@ -158,6 +174,8 @@ export const Model = Schema.Struct({
   unit: Unit.Model,
   reports: Reports.Model,
   report: Report.Model,
+  share: Share.Model,
+  history: History.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
   ruleSets: Schema.Array(RuleSet),
@@ -203,6 +221,9 @@ export const Message = defineMessageUnion({
     url: Url,
     fragment: Schema.optionalKey(Schema.Redacted(Schema.String)),
   },
+  ClickedStayOnReport: {},
+  ClickedWaitToLeaveReport: {},
+  ClickedLeaveReportUnsaved: {},
   CompletedPushUrl: {},
   CompletedReplaceUrl: {},
   CompletedLoadExternal: {},
@@ -216,6 +237,8 @@ export const Message = defineMessageUnion({
   GotUnitMessage: { message: Unit.Message },
   GotReportsMessage: { message: Reports.Message },
   GotReportMessage: { message: Report.Message },
+  GotShareMessage: { message: Share.Message },
+  GotHistoryMessage: { message: History.Message },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
   UpdatedLoginEmail: { value: Schema.String },
@@ -312,6 +335,7 @@ const emptyLoginForm = LoginForm.make({
 })
 
 export const initialModel = Model.make({
+  maybeLeaving: Option.none(),
   route: AppRoute.Desk(),
   config: ConfigLoad.Loading(),
   maybeLogoSrc: Option.none(),
@@ -325,6 +349,8 @@ export const initialModel = Model.make({
   unit: Unit.initialModel,
   reports: Reports.initialModel,
   report: Report.initialModel,
+  share: Share.initialModel,
+  history: History.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
   ruleSets: [],
@@ -702,7 +728,10 @@ const signedOut = (model: Model): Model =>
     admin: () => Admin.initialModel,
     unit: () => Unit.initialModel,
     reports: () => Reports.initialModel,
-    report: () => Report.initialModel,
+    report: Report.cleared,
+    share: Share.cleared,
+    history: History.cleared,
+    maybeLeaving: () => Option.none(),
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
     ruleSets: () => [],
@@ -784,6 +813,14 @@ const foldReport = Update.foldChild({
   toParentMessage: message => Message.GotReportMessage({ message }),
 })
 
+const retryReportSave = Update.foldChildStep({
+  update: Report.retrySave,
+  read: (model: Model) => Option.some(model.report),
+  write: (model, nextReport) =>
+    modifyFields(model, { report: () => nextReport }),
+  toParentMessage: message => Message.GotReportMessage({ message }),
+})
+
 const enterAccount = Update.foldChildStep({
   update: Account.enter,
   read: (model: Model) => Option.some(model.account),
@@ -809,6 +846,21 @@ const enterUnit = (origin: string) =>
     toParentMessage: message => Message.GotUnitMessage({ message }),
   })
 
+const foldShare = Update.foldChild({
+  update: Share.update,
+  read: (model: Model) => Option.some(model.share),
+  write: (model, nextShare) => modifyFields(model, { share: () => nextShare }),
+  toParentMessage: message => Message.GotShareMessage({ message }),
+})
+
+const foldHistory = Update.foldChild({
+  update: History.update,
+  read: (model: Model) => Option.some(model.history),
+  write: (model, nextHistory) =>
+    modifyFields(model, { history: () => nextHistory }),
+  toParentMessage: message => Message.GotHistoryMessage({ message }),
+})
+
 const enterReports = Update.foldChildStep({
   update: Reports.enter,
   read: (model: Model) => Option.some(model.reports),
@@ -817,9 +869,38 @@ const enterReports = Update.foldChildStep({
   toParentMessage: message => Message.GotReportsMessage({ message }),
 })
 
+const enterShare = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (child: Share.Model) =>
+      Share.enter(origin, reportId, child.generation + 1),
+    read: (model: Model) => Option.some(model.share),
+    write: (model, nextShare) =>
+      modifyFields(model, { share: () => nextShare }),
+    toParentMessage: message => Message.GotShareMessage({ message }),
+  })
+
+const enterHistory = (
+  origin: string,
+  reportId: string,
+  maybeDraft: Option.Option<number>,
+) =>
+  Update.foldChildStep({
+    update: (child: History.Model) =>
+      History.enter(origin, reportId, child.generation + 1, maybeDraft),
+    read: (model: Model) => Option.some(model.history),
+    write: (model, nextHistory) =>
+      modifyFields(model, { history: () => nextHistory }),
+    toParentMessage: message => Message.GotHistoryMessage({ message }),
+  })
+
+// NOTE: The same report entered again keeps its Model while that holds edits
+// that are not saved; anything else starts over, as a new entry.
 const enterReport = (origin: string, reportId: string) =>
   Update.foldChildStep({
-    update: (_child: Report.Model) => Report.enter(origin, reportId),
+    update: (child: Report.Model) =>
+      child.reportId === reportId && Report.hasUnsavedEdits(child)
+        ? { model: child }
+        : Report.enter(origin, reportId, child.generation + 1),
     read: (model: Model) => Option.some(model.report),
     write: (model, nextReport) =>
       modifyFields(model, { report: () => nextReport }),
@@ -840,6 +921,11 @@ const enterRoute = (
     Reports: () => enterReports(model),
     Link: () => ({ model }),
     Report: ({ reportId }) => enterReport(model.origin, reportId)(model),
+    Share: ({ reportId }) => enterShare(model.origin, reportId)(model),
+    Drafts: ({ reportId }) =>
+      enterHistory(model.origin, reportId, Option.none())(model),
+    Draft: ({ reportId, draft }) =>
+      enterHistory(model.origin, reportId, Option.some(draft))(model),
     Revision: () => ({ model }),
     NotFound: () => ({ model }),
   })
@@ -938,6 +1024,69 @@ const goTo = (
 
 const isSameRoute = (a: AppRoute, b: AppRoute): boolean =>
   pathOf(a) === pathOf(b)
+
+const mustAskBeforeLeaving = (model: Model, url: Url): boolean =>
+  AppRoute.guards.Report(model.route) &&
+  Report.hasUnsavedEdits(model.report) &&
+  !isSameRoute(urlToAppRoute(url), model.route)
+
+const askBeforeLeaving = (
+  model: Model,
+  url: Url,
+  fragment: Redacted.Redacted<string> | undefined,
+): Update.Return<Model, Message> => ({
+  model: modifyFields(model, {
+    maybeLeaving: () =>
+      Option.some(
+        fragment === undefined
+          ? { url, isWaiting: false }
+          : { url, fragment, isWaiting: false },
+      ),
+  }),
+  commands: [FocusElement({ selector: `#${LEAVE_HEADING_ID}` })],
+})
+
+// NOTE: Gives up the report's Model only when the author chose to leave
+// without the save; once everything is saved it is kept as it is.
+const leaveNow = (
+  model: Model,
+  leaving: Leaving,
+  isGivingUp: boolean,
+): Update.Return<Model, Message> => {
+  const went = goTo(
+    modifyFields(model, {
+      maybeLeaving: () => Option.none(),
+      report: report => (isGivingUp ? Report.cleared(report) : report),
+    }),
+    leaving.url,
+    Option.fromNullishOr(leaving.fragment),
+  )
+  return {
+    model: went.model,
+    commands: [
+      PushUrl({ url: urlToString(leaving.url) }),
+      ...(went.commands ?? []),
+    ],
+  }
+}
+
+// NOTE: Waiting to leave ends on its own when the report is saved.
+const leaveWhenSaved = (
+  step: Update.Return<Model, Message>,
+): Update.Return<Model, Message> =>
+  Option.match(step.model.maybeLeaving, {
+    onNone: () => step,
+    onSome: leaving => {
+      if (!leaving.isWaiting || Report.hasUnsavedEdits(step.model.report)) {
+        return step
+      }
+      const left = leaveNow(step.model, leaving, false)
+      return {
+        model: left.model,
+        commands: [...(step.commands ?? []), ...(left.commands ?? [])],
+      }
+    },
+  })
 
 // NOTE: an address that carries a token, on the link page.
 const opensLink = (
@@ -1043,29 +1192,70 @@ export const update = (model: Model, message: Message) =>
     }),
     ClickedLink: ({ request, fragment }) =>
       UrlRequest.match<Update.Return<Model, Message>>(request, {
-        Internal: ({ url }) =>
-          isSameRoute(urlToAppRoute(url), model.route) &&
-          !opensLink(url, fragment)
-            ? { model }
-            : (() => {
-                const went = goTo(model, url, Option.fromNullishOr(fragment))
-                return {
-                  model: went.model,
-                  commands: [
-                    PushUrl({ url: urlToString(url) }),
-                    ...(went.commands ?? []),
-                  ],
-                }
-              })(),
+        Internal: ({ url }) => {
+          if (
+            isSameRoute(urlToAppRoute(url), model.route) &&
+            !opensLink(url, fragment)
+          ) {
+            return { model }
+          }
+          if (mustAskBeforeLeaving(model, url)) {
+            return askBeforeLeaving(model, url, fragment)
+          }
+          const went = goTo(model, url, Option.fromNullishOr(fragment))
+          return {
+            model: went.model,
+            commands: [
+              PushUrl({ url: urlToString(url) }),
+              ...(went.commands ?? []),
+            ],
+          }
+        },
         External: ({ href }) => ({
           model,
           commands: [LoadExternal({ href })],
         }),
       }),
-    ChangedUrl: ({ url, fragment }) =>
-      isSameRoute(urlToAppRoute(url), model.route) && !opensLink(url, fragment)
-        ? { model }
-        : goTo(model, url, Option.fromNullishOr(fragment)),
+    ChangedUrl: ({ url, fragment }) => {
+      if (
+        isSameRoute(urlToAppRoute(url), model.route) &&
+        !opensLink(url, fragment)
+      ) {
+        return { model }
+      }
+      if (mustAskBeforeLeaving(model, url)) {
+        const asked = askBeforeLeaving(model, url, fragment)
+        return {
+          model: asked.model,
+          commands: [
+            PushUrl({ url: pathOf(model.route) }),
+            ...(asked.commands ?? []),
+          ],
+        }
+      }
+      return goTo(model, url, Option.fromNullishOr(fragment))
+    },
+    ClickedStayOnReport: () => ({
+      model: modifyFields(model, { maybeLeaving: () => Option.none() }),
+    }),
+    ClickedWaitToLeaveReport: () =>
+      Option.match(model.maybeLeaving, {
+        onNone: () => ({ model }),
+        onSome: leaving =>
+          leaveWhenSaved(
+            retryReportSave(
+              modifyFields(model, {
+                maybeLeaving: () =>
+                  Option.some({ ...leaving, isWaiting: true }),
+              }),
+            ),
+          ),
+      }),
+    ClickedLeaveReportUnsaved: () =>
+      Option.match(model.maybeLeaving, {
+        onNone: () => ({ model }),
+        onSome: leaving => leaveNow(model, leaving, true),
+      }),
     CompletedPushUrl: () => ({ model }),
     CompletedReplaceUrl: () => ({ model }),
     CompletedLoadExternal: () => ({ model }),
@@ -1084,7 +1274,10 @@ export const update = (model: Model, message: Message) =>
     GotAdminMessage: ({ message }) => foldAdmin(model, message),
     GotUnitMessage: ({ message }) => foldUnit(model, message),
     GotReportsMessage: ({ message }) => foldReports(model, message),
-    GotReportMessage: ({ message }) => foldReport(model, message),
+    GotReportMessage: ({ message }) =>
+      leaveWhenSaved(foldReport(model, message)),
+    GotShareMessage: ({ message }) => foldShare(model, message),
+    GotHistoryMessage: ({ message }) => foldHistory(model, message),
     SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({
@@ -1242,17 +1435,37 @@ const appSubscriptions = Subscription.make<Model, Message>()(_entry => ({
   ),
 }))
 
+// NOTE: Polling "who is drafting" and retrying a save belong to the report
+// screen and run only while it is shown. The warning before the tab closes
+// stays on for as long as the report holds edits that are not saved, and the
+// window events an editor sends as it goes away must be heard at the very
+// moment the screen changes, so those do not wait for the route.
 const reportSubscriptions = Subscription.lift(Report.subscriptions)<
   Model,
   Message
 >({
   read: model => Option.some(model.report),
   toParentMessage: message => Message.GotReportMessage({ message }),
+  when: {
+    drafting: model => AppRoute.guards.Report(model.route),
+    saveRetry: model => AppRoute.guards.Report(model.route),
+  },
+})
+
+const historySubscriptions = Subscription.lift(History.subscriptions)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.history),
+  toParentMessage: message => Message.GotHistoryMessage({ message }),
+  when: model =>
+    AppRoute.guards.Drafts(model.route) || AppRoute.guards.Draft(model.route),
 })
 
 export const subscriptions = Subscription.aggregate(
   appSubscriptions,
   reportSubscriptions,
+  historySubscriptions,
 )
 
 // VIEW TRANSITION

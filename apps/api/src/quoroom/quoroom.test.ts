@@ -2,8 +2,10 @@ import { Effect } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
 import { SCENARIOS, PEOPLE, SECRET, TEXT, type World, makeWorld, richContent, withFigure } from './testkit'
+import { INTAKE_TEMPLATE } from '@case-desk/domain'
 import { sha256Hex } from './content'
 import { cleanupStale } from './core'
+import { makePng } from './imageFixtures'
 
 // NOTE: Stage 2c: the Quoroom RPC through the real handler stack (the app, the
 // RPC server, the middleware that reads the session cookie), on the in-memory
@@ -258,7 +260,7 @@ describe.each(SCENARIOS)('$name', scenario => {
   test('the cleanup for the notification pass removes an unreferenced image after a day, and nothing a draft uses', async () => {
     const w = await world()
     const reportId = await w.createReport()
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 20 }, () => 5)])
+    const png = makePng()
     const query = (id: string) =>
       `uploadId=${id}&owner=${reportId}&index=0&chunks=1&mime=image%2Fpng&width=1&height=1&size=${png.length}`
     expect((await w.raw('alice', `/api/images?${query('img-stray')}`, { method: 'POST', body: png })).status).toBe(200)
@@ -277,7 +279,7 @@ describe.each(SCENARIOS)('$name', scenario => {
     const reportId = await w.createReport()
     const bad = await w.raw('alice', '/api/images/%E0%A4%A/0?context=working_copy')
     expect(bad.status).toBe(400)
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 20 }, () => 3)])
+    const png = makePng()
     const query = `uploadId=img-1&owner=${reportId}&index=0&chunks=1&mime=image%2Fpng&width=1&height=1&size=${png.length}`
     const first = await w.raw('alice', `/api/images?${query}`, { method: 'POST', body: png })
     const retry = await w.raw('alice', `/api/images?${query}`, { method: 'POST', body: png })
@@ -289,7 +291,7 @@ describe.each(SCENARIOS)('$name', scenario => {
   test('an image not marked safe is never served to a redacted role', async () => {
     const w = await world()
     const reportId = await w.createReport()
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 40 }, () => 7)])
+    const png = makePng()
     const query = `uploadId=img-1&owner=${reportId}&index=0&chunks=1&mime=image%2Fpng&width=1&height=1&size=${png.length}`
     const uploaded = await w.raw('alice', `/api/images?${query}`, {
       method: 'POST',
@@ -404,6 +406,8 @@ describe.each(SCENARIOS)('$name', scenario => {
     expect(stale.comparison.baseDraft).toBe(0)
     expect(stale.comparison.theirsDraft).toBe(1)
     expect(stale.comparison.conflicts.length).toBeGreaterThan(0)
+    // NOTE: both changed the same item, so nothing was taken without a choice.
+    expect(stale.comparison.automatic).toEqual([])
 
     const history = await w.call('alice', c => c.GetHistory({ reportId }))
     expect(history.drafts.map(d => d.number)).toEqual([0, 1])
@@ -478,6 +482,67 @@ describe.each(SCENARIOS)('$name', scenario => {
       c.ResolveComment({ reportId, commentId: shared.id, resolved: true }),
     )
     expect(resolved.resolved).toBe(true)
+  })
+
+  test('authors comment on a draft, reply and resolve among themselves; no reviewer sees or touches them', async () => {
+    const w = await world()
+    const { reportId, draft } = await w.published()
+    await w.call('alice', c => c.AddCoAuthor({ reportId, accountId: 'bob' }))
+    const quoted = TEXT.slice(0, 4)
+    const anchor = { kind: 'text' as const, sectionId, itemId, from: 0, to: quoted.length, quoted }
+    const mayComment = scenario.template.roles
+      .find(role => role.id === scenario.authorsRole)
+      ?.permissions.includes('comment_drafts')
+    // NOTE: the built-in template gives its drafting role `comment_drafts`, the
+    // invented panel template leaves it out. Asserted, so a change to either
+    // template fails here instead of silently taking the other branch.
+    expect(mayComment).toBe(scenario.template.id === INTAKE_TEMPLATE.id)
+    if (mayComment !== true) {
+      expect(
+        tagOf(await w.refused('bob', c => c.AddDraftComment({ reportId, draft: draft.number, anchor, body: 'No.' }))),
+      ).toBe('NotPermitted')
+      return
+    }
+    const made = await w.call('bob', c =>
+      c.AddDraftComment({ reportId, draft: draft.number, anchor, body: 'Please check this phrase.' }),
+    )
+    expect(made).toMatchObject({ authorName: 'Bob Author', resolved: false, visibility: 'authors', anchor: { quoted } })
+    const seen = await w.call('alice', c => c.ListDraftComments({ reportId, draft: draft.number }))
+    expect(seen.map(entry => entry.id)).toEqual([made.id])
+    const section = await w.call('alice', c =>
+      c.AddDraftComment({ reportId, draft: draft.number, anchor: { kind: 'section', sectionId }, body: 'A note on the whole section.' }),
+    )
+    expect(section.anchor).toEqual({ kind: 'section', sectionId })
+
+    const replied = await w.call('alice', c =>
+      c.ReplyToComment({ reportId, commentId: made.id, body: 'Done, thank you.' }),
+    )
+    expect(replied.replies.map(reply => reply.authorName)).toEqual(['Alice Author'])
+    const resolved = await w.call('alice', c =>
+      c.ResolveComment({ reportId, commentId: made.id, resolved: true }),
+    )
+    expect(resolved.resolved).toBe(true)
+    expect(
+      (await w.call('bob', c => c.ListDraftComments({ reportId, draft: draft.number }))).find(entry => entry.id === made.id)
+        ?.resolved,
+    ).toBe(true)
+    const reopened = await w.call('bob', c => c.ResolveComment({ reportId, commentId: made.id, resolved: false }))
+    expect(reopened.resolved).toBe(false)
+
+    // NOTE: a reviewer (and a stranger) is told nothing: the comments of a
+    // draft answer exactly like a draft that does not exist.
+    for (const who of ['carol', 'frank'] as const) {
+      const answers = await Promise.all([
+        w.refused(who, c => c.ListDraftComments({ reportId, draft: draft.number })),
+        w.refused(who, c => c.AddDraftComment({ reportId, draft: draft.number, anchor, body: 'Hello.' })),
+        w.refused(who, c => c.ResolveComment({ reportId, commentId: made.id, resolved: true })),
+        w.refused(who, c => c.ReplyToComment({ reportId, commentId: made.id, body: 'Hello.' })),
+      ])
+      for (const error of answers) expect(tagOf(error)).toBe('NotFound')
+    }
+    const reviewerSide = await w.call('carol', c => c.ListReviewerComments({ reportId, revision: 1 }))
+    expect(JSON.stringify(reviewerSide)).not.toContain('Please check this phrase')
+    expect((await w.call('alice', c => c.ListDraftComments({ reportId, draft: draft.number }))).find(entry => entry.id === made.id)?.resolved).toBe(false)
   })
 
   test('deadlines are settled on every read and refuse late writes', async () => {

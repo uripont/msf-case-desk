@@ -27,15 +27,33 @@ import {
 
 describe('fitWithin', () => {
   test('shrinks the longest side to the limit and keeps the proportions', () => {
-    expect(fitWithin({ width: 4000, height: 3000 })).toEqual({ width: 1600, height: 1200 })
-    expect(fitWithin({ width: 3000, height: 4000 })).toEqual({ width: 1200, height: 1600 })
-    expect(fitWithin({ width: 1601, height: 1601 })).toEqual({ width: 1600, height: 1600 })
+    expect(fitWithin({ width: 4000, height: 3000 })).toEqual({
+      width: 1600,
+      height: 1200,
+    })
+    expect(fitWithin({ width: 3000, height: 4000 })).toEqual({
+      width: 1200,
+      height: 1600,
+    })
+    expect(fitWithin({ width: 1601, height: 1601 })).toEqual({
+      width: 1600,
+      height: 1600,
+    })
   })
 
   test('never enlarges and never goes below one pixel', () => {
-    expect(fitWithin({ width: 800, height: 600 })).toEqual({ width: 800, height: 600 })
-    expect(fitWithin({ width: 1600, height: 1600 })).toEqual({ width: 1600, height: 1600 })
-    expect(fitWithin({ width: 100_000, height: 10 })).toEqual({ width: 1600, height: 1 })
+    expect(fitWithin({ width: 800, height: 600 })).toEqual({
+      width: 800,
+      height: 600,
+    })
+    expect(fitWithin({ width: 1600, height: 1600 })).toEqual({
+      width: 1600,
+      height: 1600,
+    })
+    expect(fitWithin({ width: 100_000, height: 10 })).toEqual({
+      width: 1600,
+      height: 1,
+    })
   })
 
   test('is within the route limit whatever the input', () => {
@@ -47,7 +65,9 @@ describe('fitWithin', () => {
       [65_535, 65_535],
     ].forEach(([width = 1, height = 1]) => {
       const fitted = fitWithin({ width, height })
-      expect(Math.max(fitted.width, fitted.height)).toBeLessThanOrEqual(IMAGE_MAX_SIDE)
+      expect(Math.max(fitted.width, fitted.height)).toBeLessThanOrEqual(
+        IMAGE_MAX_SIDE,
+      )
       expect(Math.min(fitted.width, fitted.height)).toBeGreaterThanOrEqual(1)
     })
   })
@@ -55,17 +75,23 @@ describe('fitWithin', () => {
 
 describe('hasTransparency', () => {
   test('an opaque picture has none', () => {
-    expect(hasTransparency(new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]))).toBe(false)
+    expect(
+      hasTransparency(new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255])),
+    ).toBe(false)
     expect(hasTransparency(new Uint8ClampedArray([]))).toBe(false)
   })
 
   test('one translucent pixel is enough, wherever it is', () => {
-    expect(hasTransparency(new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 254]))).toBe(true)
+    expect(
+      hasTransparency(new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 254])),
+    ).toBe(true)
     expect(hasTransparency(new Uint8ClampedArray([1, 2, 3, 0]))).toBe(true)
   })
 
   test('only the alpha byte counts', () => {
-    expect(hasTransparency(new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255]))).toBe(false)
+    expect(
+      hasTransparency(new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255])),
+    ).toBe(false)
   })
 })
 
@@ -85,8 +111,12 @@ describe('the output format and the quality retry', () => {
   })
 
   test('within the limit is accepted, at exactly the limit too', () => {
-    expect(decideAfterEncoding(formatFor(false), 0, 10)).toEqual({ kind: 'accept' })
-    expect(decideAfterEncoding(formatFor(false), 0, IMAGE_MAX_BYTES)).toEqual({ kind: 'accept' })
+    expect(decideAfterEncoding(formatFor(false), 0, 10)).toEqual({
+      kind: 'accept',
+    })
+    expect(decideAfterEncoding(formatFor(false), 0, IMAGE_MAX_BYTES)).toEqual({
+      kind: 'accept',
+    })
   })
 
   test('a JPEG over the limit gets one lower quality, then is refused', () => {
@@ -95,14 +125,47 @@ describe('the output format and the quality retry', () => {
       kind: 'retry',
       quality: JPEG_QUALITIES[1],
     })
-    expect(decideAfterEncoding(jpeg, 1, IMAGE_MAX_BYTES + 1)).toEqual({ kind: 'refuse' })
+    expect(decideAfterEncoding(jpeg, 1, IMAGE_MAX_BYTES + 1)).toEqual({
+      kind: 'refuse',
+    })
     expect(decideAfterEncoding(jpeg, 1, 1000)).toEqual({ kind: 'accept' })
   })
 
-  test('a PNG over the limit is refused at once', () => {
-    expect(decideAfterEncoding(formatFor(true), 0, IMAGE_MAX_BYTES + 1)).toEqual({
-      kind: 'refuse',
+  test('a PNG over the limit is tried again at 1200 and 900 pixels, then refused', () => {
+    const png = formatFor(true)
+    expect(png.sides).toEqual([IMAGE_MAX_SIDE, 1200, 900])
+    const over = IMAGE_MAX_BYTES + 1
+    expect(decideAfterEncoding(png, 0, over, 0)).toEqual({
+      kind: 'shrink',
+      side: 1200,
     })
+    expect(decideAfterEncoding(png, 0, over, 1)).toEqual({
+      kind: 'shrink',
+      side: 900,
+    })
+    expect(decideAfterEncoding(png, 0, over, 2)).toEqual({ kind: 'refuse' })
+    expect(decideAfterEncoding(png, 0, IMAGE_MAX_BYTES, 1)).toEqual({
+      kind: 'accept',
+    })
+  })
+
+  test('a JPEG is never drawn smaller, only given a lower quality', () => {
+    expect(formatFor(false).sides).toEqual([IMAGE_MAX_SIDE])
+  })
+})
+
+describe('the refusals', () => {
+  test('a file over the caps says what the limit is', () => {
+    expect(
+      refusalText({ kind: 'file_too_large', bytes: 45_000_000 }),
+    ).toContain('30.0 MB')
+    expect(
+      refusalText({ kind: 'too_many_pixels', pixels: 250_000_000 }),
+    ).toContain('100 million')
+  })
+
+  test('the route code for hidden information has words', () => {
+    expect(routeErrorText('has_metadata', 415)).toContain('hidden information')
   })
 })
 
@@ -165,7 +228,9 @@ describe('progress and words', () => {
     const usage = { usedBytes: 4_500_000, limitBytes: 20_000_000 }
     expect(remainingBytes(usage)).toBe(15_500_000)
     expect(usageText(usage)).toContain('4.5 MB of 20.0 MB used, 15.5 MB left')
-    expect(remainingBytes({ usedBytes: 30_000_000, limitBytes: 20_000_000 })).toBe(0)
+    expect(
+      remainingBytes({ usedBytes: 30_000_000, limitBytes: 20_000_000 }),
+    ).toBe(0)
   })
 
   test('an image that does not fit what is left is refused, an unknown space is not a refusal', () => {
@@ -175,12 +240,12 @@ describe('progress and words', () => {
   })
 
   test('every refusal says what to do or what the limit is', () => {
-    expect(refusalText({ kind: 'too_large_after_encoding', bytes: 1_800_000 })).toMatch(
-      /1\.8 MB.*limit is 1\.0 MB/,
-    )
-    expect(refusalText({ kind: 'report_full', remaining: 100_000, bytes: 600_000 })).toMatch(
-      /600 KB.*100 KB of image space left/,
-    )
+    expect(
+      refusalText({ kind: 'too_large_after_encoding', bytes: 1_800_000 }),
+    ).toMatch(/1\.8 MB.*limit is 1\.0 MB/)
+    expect(
+      refusalText({ kind: 'report_full', remaining: 100_000, bytes: 600_000 }),
+    ).toMatch(/600 KB.*100 KB of image space left/)
     expect(refusalText({ kind: 'not_an_image' })).toMatch(/not a picture/)
     expect(refusalText({ kind: 'unreadable' })).toMatch(/could not be read/)
   })
@@ -194,7 +259,11 @@ describe('progress and words', () => {
   })
 
   test('only network and server trouble is retried, a full database is not', () => {
-    ;[0, 408, 429, 500, 502, 503].forEach(status => expect(isRetryable(status)).toBe(true))
-    ;[400, 404, 409, 413, 415, 507].forEach(status => expect(isRetryable(status)).toBe(false))
+    ;[0, 408, 429, 500, 502, 503].forEach(status =>
+      expect(isRetryable(status)).toBe(true),
+    )
+    ;[400, 404, 409, 413, 415, 507].forEach(status =>
+      expect(isRetryable(status)).toBe(false),
+    )
   })
 })

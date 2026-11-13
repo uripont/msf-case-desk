@@ -14,6 +14,7 @@ import {
 } from '@case-desk/domain'
 
 import { bytesToBase64 } from './content'
+import { checkImageBytes } from './imageCheck'
 import {
   type Deps,
   QuoroomClock,
@@ -154,6 +155,25 @@ const upload = (request: Request, userId: string, url: URL) =>
           return fail('database_full')
         default:
           return fail('bad_request')
+      }
+    }
+    if (outcome.complete && outcome.image !== null) {
+      // NOTE: the whole image is checked once it is complete (`imageCheck.ts`),
+      // across its chunks; one that carries metadata is deleted again.
+      const stored: Array<Uint8Array> = []
+      for (let at = 0; at < outcome.image.chunkCount; at += 1) {
+        const text = yield* db.readImageChunk(query.uploadId, at)
+        if (text === null) return fail('bad_request')
+        stored.push(Uint8Array.from(atob(text), c => c.charCodeAt(0)))
+      }
+      const joined = new Uint8Array(stored.reduce((n, part) => n + part.length, 0))
+      stored.reduce((offset, part) => (joined.set(part, offset), offset + part.length), 0)
+      const verdict = checkImageBytes(query.mime, joined)
+      if (verdict !== 'clean') {
+        yield* db.deleteUnreferencedImage(query.uploadId)
+        return verdict === 'has_metadata'
+          ? fail('has_metadata', 'the picture carries metadata')
+          : fail('bad_signature')
       }
     }
     return ok({

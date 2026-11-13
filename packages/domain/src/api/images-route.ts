@@ -134,6 +134,9 @@ export const IMAGE_ERROR_CODES = [
   'too_large',
   // 415: the bytes are not a JPEG or a PNG (checked by their signature).
   'bad_signature',
+  // 415: the picture carries metadata (EXIF, XMP, PNG text chunks); the
+  // browser re-encodes pictures, so a file that has some was not prepared by it.
+  'has_metadata',
   // 409: the report holds `IMAGE_REPORT_LIMIT_BYTES` of referenced images.
   'report_limit',
   // 507: the database passed `DATABASE_LIMIT_BYTES`; uploads stop.
@@ -149,6 +152,7 @@ export const IMAGE_ERROR_STATUS: Readonly<
   bad_request: 400,
   too_large: 413,
   bad_signature: 415,
+  has_metadata: 415,
   report_limit: 409,
   database_full: 507,
   read_only: 409,

@@ -4,20 +4,26 @@ import { Editor } from '@tiptap/core'
 import { TableMap, cellAround } from '@tiptap/pm/tables'
 
 import { type PreparedImage, prepareImage } from '../images/encode'
-import {
-  fitsReport,
-  refusalText,
-} from '../images/plan'
 import { newUploadId } from '../images/id'
+import { fitsReport, refusalText } from '../images/plan'
 import { uploadImage } from '../images/upload'
-import { type ColumnDirection, nextColumnWidth, withColumnWidth } from './columns'
+import {
+  type ColumnDirection,
+  nextColumnWidth,
+  withColumnWidth,
+} from './columns'
 import { quoroomExtensions } from './extensions'
 import {
   EMPTY_RICH_TEXT_JSON,
   normaliseEditorJson,
+  selectionAnchor,
   serializeRichText,
 } from './richText'
-import { EDITOR_TAG } from './spec'
+import {
+  EDITOR_FINAL_EVENT,
+  EDITOR_TAG,
+  EDITOR_UPLOAD_CANCELLED_EVENT,
+} from './spec'
 import {
   BLOCK_STYLES,
   BUTTON_LABELS,
@@ -55,7 +61,15 @@ import {
 // local edit raises it and is announced in `change` with that number, so the
 // echo of it coming back through the Model has a version that is not greater
 // and is ignored, which keeps the caret where it is. To replace the text from
-// outside, the Model raises the version.
+// outside, the Model raises the version, or, to replace the text whatever the
+// element has taken meanwhile (a reload), raises `generation`: a new generation
+// makes the element take the content at once, and report the text it had not
+// sent yet in a `discarded` event, so it is kept and not lost.
+//
+// An element that is removed sends what it still holds. Foldkit has taken its
+// listeners off by then, so the last `change` and the end of a picture that was
+// being sent go out as events on the window, tagged with the `owner` property
+// (the Model's description of whose text this is).
 
 const DEBOUNCE_MS = 250
 const MAX_WAIT_MS = 1000
@@ -91,15 +105,14 @@ function resizeColumn(editor: Editor, direction: ColumnDirection): void {
   }
   const dom = view.nodeDOM($cell.pos)
   const measured = dom instanceof HTMLElement ? dom.offsetWidth : 0
-  const width = nextColumnWidth(
-    anchor.attrs.colwidth?.[0],
-    measured,
-    direction,
-  )
+  const width = nextColumnWidth(anchor.attrs.colwidth?.[0], measured, direction)
   const tr = state.tr
   Array.from({ length: map.height }, (_, row) => row).forEach(row => {
     const at = map.map[row * map.width + column]
-    if (at === undefined || (row > 0 && at === map.map[(row - 1) * map.width + column])) {
+    if (
+      at === undefined ||
+      (row > 0 && at === map.map[(row - 1) * map.width + column])
+    ) {
       return
     }
     const cell = table.nodeAt(at)
@@ -214,6 +227,10 @@ class QuoroomEditor extends HTMLElement {
   #pendingVersion = 0
   #applyScheduled = false
   #knownVersion = -1
+  #pendingGeneration = 0
+  #appliedGeneration = -1
+  #owner = ''
+  #upload: AbortController | undefined
   #lastContent = EMPTY_RICH_TEXT_JSON
   #disabled = false
   #label = ''
@@ -247,6 +264,23 @@ class QuoroomEditor extends HTMLElement {
   set version(value: number) {
     this.#pendingVersion = value
     this.#scheduleApply()
+  }
+
+  get generation(): number {
+    return this.#pendingGeneration
+  }
+
+  set generation(value: number) {
+    this.#pendingGeneration = value
+    this.#scheduleApply()
+  }
+
+  get owner(): string {
+    return this.#owner
+  }
+
+  set owner(value: string) {
+    this.#owner = value
   }
 
   get disabled(): boolean {
@@ -296,11 +330,13 @@ class QuoroomEditor extends HTMLElement {
   }
 
   disconnectedCallback(): void {
-    this.#flush()
+    this.#flush(true)
+    this.#upload?.abort()
     clearTimeout(this.#selectionTimer)
     this.#editor?.destroy()
     this.#editor = undefined
     this.#knownVersion = -1
+    this.#appliedGeneration = -1
     this.#lastContent = EMPTY_RICH_TEXT_JSON
     this.replaceChildren()
     this.#buttons.clear()
@@ -321,8 +357,16 @@ class QuoroomEditor extends HTMLElement {
 
   #applyIncoming(): void {
     const editor = this.#editor
-    if (editor === undefined || this.#pendingVersion <= this.#knownVersion) {
+    const isReset = this.#pendingGeneration !== this.#appliedGeneration
+    if (
+      editor === undefined ||
+      (!isReset && this.#pendingVersion <= this.#knownVersion)
+    ) {
       return
+    }
+    if (isReset) {
+      this.#reportDiscarded()
+      this.#appliedGeneration = this.#pendingGeneration
     }
     this.#knownVersion = this.#pendingVersion
     const parsed = this.#parse()
@@ -334,6 +378,34 @@ class QuoroomEditor extends HTMLElement {
     this.#lastContent = this.#pendingContent
     this.#showStatus('')
     this.#refreshToolbar()
+  }
+
+  // NOTE: Keystrokes still waiting for their `change` when the text is
+  // replaced from outside are sent as `discarded`, never as a change.
+  #reportDiscarded(): void {
+    const editor = this.#editor
+    if (editor === undefined || this.#debounce === undefined) {
+      return
+    }
+    clearTimeout(this.#debounce)
+    this.#debounce = undefined
+    if (this.#maxWait !== undefined) {
+      clearTimeout(this.#maxWait)
+      this.#maxWait = undefined
+    }
+    Result.match(normaliseEditorJson(editor.getJSON()), {
+      onFailure: () => undefined,
+      onSuccess: doc => {
+        const content = serializeRichText(doc)
+        if (content !== this.#lastContent) {
+          this.dispatchEvent(
+            new CustomEvent('discarded', {
+              detail: { content, version: this.#knownVersion },
+            }),
+          )
+        }
+      },
+    })
   }
 
   #parse(): ReturnType<typeof JSON.parse> | undefined {
@@ -638,10 +710,7 @@ class QuoroomEditor extends HTMLElement {
 
   // NOTE: A picture pasted or dropped into the text. Anything that is not a
   // picture is left to the editor.
-  #takeImage(
-    files: FileList | null | undefined,
-    event: Event,
-  ): boolean {
+  #takeImage(files: FileList | null | undefined, event: Event): boolean {
     const picture = Array.from(files ?? []).find(file =>
       file.type.startsWith('image/'),
     )
@@ -659,7 +728,12 @@ class QuoroomEditor extends HTMLElement {
     }
     this.#setBusy(true)
     this.#say('Preparing the picture.', '', false)
+    const signal = this.#startUpload()
     const prepared = await prepareImage(file)
+    if (signal.aborted) {
+      this.#cancelUpload()
+      return
+    }
     if (!prepared.ok) {
       this.#say('', refusalText(prepared.refusal), false)
       this.#setBusy(false)
@@ -680,21 +754,44 @@ class QuoroomEditor extends HTMLElement {
       this.#setBusy(false)
       return
     }
-    this.#unsent = {
-      image: prepared.image,
-      uploadId: await newUploadId(),
-      next: 0,
+    const uploadId = await newUploadId()
+    if (signal.aborted) {
+      this.#cancelUpload()
+      return
     }
-    await this.#sendUnsent()
+    this.#unsent = { image: prepared.image, uploadId, next: 0 }
+    await this.#sendUnsent(signal)
   }
 
-  async #sendUnsent(): Promise<void> {
+  #startUpload(): AbortSignal {
+    this.#upload?.abort()
+    const controller = new AbortController()
+    this.#upload = controller
+    return controller.signal
+  }
+
+  // NOTE: The element went away while a picture was being prepared or sent.
+  // The upload is stopped, nothing is inserted, and the Model says so.
+  #cancelUpload(): void {
+    this.#unsent = undefined
+    if (this.#owner !== '') {
+      window.dispatchEvent(
+        new CustomEvent(EDITOR_UPLOAD_CANCELLED_EVENT, {
+          detail: { owner: this.#owner },
+        }),
+      )
+    }
+  }
+
+  async #sendUnsent(known?: AbortSignal): Promise<void> {
     const unsent = this.#unsent
     if (unsent === undefined) {
       return
     }
+    const signal = known ?? this.#startUpload()
     this.#setBusy(true)
     const result = await uploadImage({
+      signal,
       reportId: this.#report,
       uploadId: unsent.uploadId,
       image: unsent.image,
@@ -706,6 +803,10 @@ class QuoroomEditor extends HTMLElement {
           false,
         ),
     })
+    if (signal.aborted) {
+      this.#cancelUpload()
+      return
+    }
     if (result.ok) {
       this.#unsent = undefined
       this.#insertFigure(unsent.uploadId)
@@ -777,7 +878,7 @@ class QuoroomEditor extends HTMLElement {
     }
   }
 
-  #flush(): void {
+  #flush(isFinal = false): void {
     if (this.#debounce !== undefined) {
       clearTimeout(this.#debounce)
       this.#debounce = undefined
@@ -810,6 +911,17 @@ class QuoroomEditor extends HTMLElement {
             detail: { content, version: this.#knownVersion },
           }),
         )
+        if (isFinal && this.#owner !== '') {
+          window.dispatchEvent(
+            new CustomEvent(EDITOR_FINAL_EVENT, {
+              detail: {
+                owner: this.#owner,
+                content,
+                version: this.#knownVersion,
+              },
+            }),
+          )
+        }
       },
     })
   }
@@ -835,15 +947,14 @@ class QuoroomEditor extends HTMLElement {
       return
     }
     this.#hadSelection = hasSelection
+    // NOTE: Reported as text offsets of the shared anchor scheme (domain
+    // `richtext-offsets.ts`), not as ProseMirror positions.
+    const anchor = hasSelection
+      ? selectionAnchor(editor.getJSON(), from, to)
+      : Option.none()
     this.dispatchEvent(
       new CustomEvent('selection', {
-        detail: {
-          from,
-          to,
-          text: hasSelection
-            ? editor.state.doc.textBetween(from, to, '\n')
-            : '',
-        },
+        detail: Option.getOrElse(anchor, () => ({ from: 0, to: 0, text: '' })),
       }),
     )
   }

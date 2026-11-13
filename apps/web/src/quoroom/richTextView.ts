@@ -26,6 +26,14 @@ import { imageElement } from './images/spec'
 // never widens the page. An image is fetched and shown by the image element
 // (stage 4d), with its caption and whether it is marked safe to share.
 
+// NOTE: Every text block (paragraph, heading, figure caption) carries this
+// data attribute, in document order. The selection reader (`selection.ts`)
+// finds anchors through it, in the text-offset scheme of the domain
+// (`richtext-offsets.ts`): the text of the blocks, a '\n' between them, a
+// hard break as '\n', so nothing the view adds (labels, bullets, the "Marked
+// safe to share" line, the image) is counted.
+export const RICH_TEXT_BLOCK = 'rt-block'
+
 const HEADING_CLASS = 'mt-2 font-bold text-msf-black'
 
 const withMark =
@@ -66,6 +74,7 @@ const headingView = <M>(
   level: number,
   children: ReadonlyArray<Html>,
 ): Html => {
+  const block = h.DataAttribute(RICH_TEXT_BLOCK, '')
   const className = clsx(
     HEADING_CLASS,
     level === 1 && 'text-2xl',
@@ -74,10 +83,10 @@ const headingView = <M>(
   )
   const tag = HEADING_TAGS[level - 1] ?? 'h6'
   return tag === 'h4'
-    ? h.h4([h.Class(className)], children)
+    ? h.h4([h.Class(className), block], children)
     : tag === 'h5'
-      ? h.h5([h.Class(className)], children)
-      : h.h6([h.Class(className)], children)
+      ? h.h5([h.Class(className), block], children)
+      : h.h6([h.Class(className), block], children)
 }
 
 const listItemView = <M>(h: HtmlBuilder<M>, item: ListItemNode): Html =>
@@ -88,7 +97,10 @@ const listItemView = <M>(h: HtmlBuilder<M>, item: ListItemNode): Html =>
 
 const listBlockView = <M>(h: HtmlBuilder<M>, block: ListBlock): Html => {
   if (block.type === 'paragraph') {
-    return h.p([h.Class('text-pretty')], inlines(h, block.content))
+    return h.p(
+      [h.Class('text-pretty'), h.DataAttribute(RICH_TEXT_BLOCK, '')],
+      inlines(h, block.content),
+    )
   }
   if (block.type === 'heading') {
     return headingView(h, block.attrs.level, inlines(h, block.content))
@@ -136,6 +148,7 @@ const blockView = <M>(
   h: HtmlBuilder<M>,
   block: BlockNode,
   reportId: string,
+  imageContext: string,
 ): Html => {
   if (block.type === 'table') {
     return h.div(
@@ -180,6 +193,7 @@ const blockView = <M>(
           : picture([
               picture.ImageId(block.attrs.imageId),
               picture.Report(reportId),
+              picture.Context(imageContext),
               picture.Alt(block.attrs.alt),
               h.Class('block max-w-full border border-msf-line bg-msf-mist'),
             ]),
@@ -199,7 +213,10 @@ const blockView = <M>(
           ],
         ),
         h.figcaption(
-          [h.Class('text-sm text-msf-grey')],
+          [
+            h.Class('text-sm text-msf-grey'),
+            h.DataAttribute(RICH_TEXT_BLOCK, ''),
+          ],
           inlines(h, block.content),
         ),
       ],
@@ -215,6 +232,9 @@ export const richTextView = <M>(
   // NOTE: The report whose images are shown. Empty: no images are fetched and a
   // figure is a labelled box.
   reportId = '',
+  // NOTE: The version the images are read through (`imageContextToken`); empty
+  // is the author's working copy.
+  imageContext = '',
 ): Html =>
   isRichTextEmpty(doc)
     ? h.p(
@@ -226,5 +246,7 @@ export const richTextView = <M>(
           h.Class('flex min-w-0 flex-col gap-3 text-lg text-msf-ink'),
           ...attributes,
         ],
-        Array.map(doc.content, block => blockView(h, block, reportId)),
+        Array.map(doc.content, block =>
+          blockView(h, block, reportId, imageContext),
+        ),
       )

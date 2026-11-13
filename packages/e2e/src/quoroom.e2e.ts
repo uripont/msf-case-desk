@@ -692,10 +692,12 @@ const main = async (): Promise<void> => {
     // types, makes text bold, a list, a link (an unsafe address is refused), a
     // table with an added row and a resized column, undoes, and after a reload
     // the stored content is the same string.
+    let intakePath = ''
     await step('rich text on a phone: format, list, link, table, resize, undo, reload', async () => {
       const first = pilotPage
       assert.ok(first !== undefined, 'no pilot page')
       const reportPath = new URL(first.url()).pathname
+      intakePath = reportPath
       const page = first
       const requested: Array<string> = []
       page.on('request', request => requested.push(request.url()))
@@ -1277,6 +1279,17 @@ const main = async (): Promise<void> => {
       await page.waitForTimeout(300)
       assert.equal(dialogType, 'beforeunload', 'leaving with unsaved edits did not ask')
       assert.equal(page.isClosed(), false, 'the page closed although the author stayed')
+      // Leaving by a link of the app asks as well (stage 4 review), and staying keeps the edit.
+      await page.getByRole('link', { name: 'Home' }).click()
+      await page.getByRole('heading', { name: 'This report has changes that are not saved' }).waitFor()
+      await shot(page, 'save-2-leave-asked')
+      await page.getByRole('button', { name: 'Stay on this report' }).click()
+      await page.getByRole('heading', { name: 'This report has changes that are not saved' }).waitFor({ state: 'detached' })
+      assert.equal(
+        await titleBox.inputValue(),
+        'Staffing history, edited offline',
+        'staying on the report lost the edit',
+      )
       await page.context().setOffline(false)
       await page.getByText(/Saved at \d\d:\d\d/).waitFor({ timeout: 20_000 })
       await page.waitForTimeout(300)
@@ -1329,11 +1342,46 @@ const main = async (): Promise<void> => {
       assert.ok(kept.includes('Written in the second tab') || kept.includes('Staffing history'), 'the kept edit shows nothing')
       await shot(second, 'tabs-2-kept')
       await second.getByRole('button', { name: 'Put my version of Background back' }).click()
+      // Putting it back replaces what the other tab saved, so it asks first.
+      await second.getByRole('button', { name: 'Replace the saved version' }).click()
       await settled(second)
       const after = JSON.stringify(await storedSection(second, 'background'))
       assert.ok(after.includes('Written in the second tab'), 'the kept edit was not put back')
       await noSideScroll(second)
       await second.close()
+    })
+
+    await step('leaving the text by a link of the app keeps what was typed a moment before', async () => {
+      const page = pilotPage
+      assert.ok(page !== undefined, 'no pilot page')
+      await page.goto(`${pilotUrl}${intakePath}`)
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await openIn(page, /Summary of the complaint/)
+      await page.getByRole('textbox', { name: 'Summary' }).waitFor()
+      await page.getByRole('textbox', { name: 'Summary' }).locator('p').first().click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' farewell-marker')
+      await page.getByText('farewell-marker').waitFor({ timeout: 2000 })
+      // No pause: the text is still inside the editor's delay when the link is used.
+      await page.getByRole('link', { name: 'Home' }).click()
+      const asked = page.getByRole('heading', { name: 'This report has changes that are not saved' })
+      const wasAsked = await asked.waitFor({ timeout: 1500 }).then(
+        () => true,
+        () => false,
+      )
+      if (wasAsked) {
+        await page.getByRole('button', { name: 'Wait for the save, then leave' }).click()
+      }
+      await page.waitForURL(`${pilotUrl}/`, { waitUntil: 'commit' })
+      // The save goes on after the screen is left; a hard reload would cut it off.
+      await page.waitForTimeout(1500)
+      await page.goto(`${pilotUrl}${intakePath}`)
+      await page.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await page.waitForTimeout(500)
+      const stored = JSON.stringify(await storedSection(page, 'summary'))
+      assert.ok(stored.includes('farewell-marker'), `what was typed just before leaving was lost (asked: ${String(wasAsked)})`)
+      await page.goto(`${pilotUrl}${investigationPath}`)
+      await page.getByRole('heading', { name: 'Investigation report', level: 1 }).waitFor()
     })
 
     await step('a report that fills every item of the investigation template is stored as expected, with no instruction text', async () => {
@@ -1424,6 +1472,184 @@ const main = async (): Promise<void> => {
       for (const instruction of instructionsOf(version.template)) {
         assert.ok(!text.includes(instruction), `stored content holds an instruction text: ${instruction.slice(0, 40)}`)
       }
+    })
+
+    // NOTE: Stage 4g, at 375 px: two authors start from the same draft. Each
+    // adds a different allegation and both change the investigator. The first
+    // shares; the second sees the comparison with only the investigator as a
+    // conflict and both allegations taken automatically, resolves, and gets
+    // the next draft. Shared drafts never change. One author comments on a
+    // phrase of the other's draft and the other resolves the comment.
+    await step('two authors share from one draft: the comparison, the automatic changes, immutable drafts, comments', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      await pia.goto(`${pilotUrl}/admin`)
+      await pia.getByRole('heading', { name: 'Administration' }).waitFor()
+      await pia.getByLabel('E-mail', { exact: true }).fill('bea.second@case-desk.test')
+      await pia.getByLabel('Name', { exact: true }).fill('Bea Second')
+      await pia.getByLabel('Capability', { exact: true }).selectOption('author')
+      await pia.getByLabel('Unit', { exact: true }).selectOption({ label: 'Pilot Unit (PIL)' })
+      await pia.getByRole('button', { name: 'Give capability' }).click()
+      await pia.getByRole('textbox', { name: 'Link' }).waitFor()
+      const beaLink = await copiedLink(pia)
+      const bea = await person(launched)
+      await activate(bea, beaLink.replace(/^https?:\/\/[^/]+/, pilotUrl), 'bea')
+
+      await pia.goto(`${pilotUrl}/reports`)
+      await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pia
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Intake and initial assessment (version 1)' })
+      await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0004')
+      await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic sharing case file')
+      await pia.getByRole('button', { name: 'Create report' }).click()
+      await pia.getByRole('link', { name: 'Open report PIL-0004' }).click()
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const reportId = reportIdOf(pia)
+      await pia.locator('#co-author-choice').selectOption({ label: 'Bea Second' })
+      await pia.getByRole('button', { name: 'Add co-author' }).click()
+      await pia.getByText(/Bea Second/).first().waitFor()
+
+      const details = (text: string): Json => ({
+        values: { investigator: { type: 'text', text } },
+        sections: {},
+      })
+      const allegation = (id: string, text: string): Json => ({
+        values: {
+          'allegation-list': {
+            type: 'repeated',
+            entries: [{ id, values: { 'allegation-type': { type: 'text', text } } }],
+          },
+        },
+        sections: {},
+      })
+      const prepare = async (page: Page, who: string, id: string): Promise<void> => {
+        const copy = await rpc(page, 'StartWorkingCopy', { reportId })
+        assert.equal(copy.baseDraft, 0)
+        let counter: number = copy.saveCounter
+        const first = await rpc(page, 'SaveSection', {
+          reportId,
+          sectionId: 'case-details',
+          saveCounter: counter,
+          content: details(`Investigator named by ${who}`),
+        })
+        counter = first.saveCounter
+        await rpc(page, 'SaveSection', {
+          reportId,
+          sectionId: 'allegations',
+          saveCounter: counter,
+          content: allegation(id, `Allegation added by ${who}`),
+        })
+      }
+      await prepare(pia, 'Pia', 'pia-1')
+      await prepare(bea, 'Bea', 'bea-1')
+
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await bea.goto(`${pilotUrl}/r/${reportId}`)
+      await bea.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      await pia
+        .getByText(/Bea Second is working from Draft 0, last saved \d\d:\d\d/)
+        .waitFor()
+      await shot(pia, 'share-1-who-is-drafting')
+
+      // The first author shares.
+      await pia.getByRole('link', { name: 'Share as Draft 1' }).click()
+      await pia.getByRole('button', { name: 'Share as Draft 1' }).click()
+      await pia.getByText('Shared as Draft 1.').waitFor()
+      await shot(pia, 'share-2-first-shared')
+
+      const sectionsOf = async (page: Page, draft: number): Promise<string> =>
+        JSON.stringify([
+          await rpc(page, 'GetDraftSection', { reportId, draft, sectionId: 'case-details', view: 'original' }),
+          await rpc(page, 'GetDraftSection', { reportId, draft, sectionId: 'allegations', view: 'original' }),
+        ])
+      const draftOne = await sectionsOf(pia, 1)
+      assert.ok(draftOne.includes('Investigator named by Pia'))
+
+      // The second author shares on a stale base and sees the comparison.
+      await bea.goto(`${pilotUrl}/r/${reportId}/share`)
+      const go = bea.getByRole('button', { name: 'Share as Draft 2' })
+      const heading = bea.getByRole('heading', { name: 'Compare with Draft 1' })
+      await go.or(heading).first().waitFor()
+      if (await go.isVisible()) await go.click()
+      await heading.waitFor()
+      assert.equal(await bea.getByRole('button', { name: /^Keep my version of/ }).count(), 1)
+      const automatic = bea.getByRole('list', { name: 'Changes taken automatically' })
+      await automatic.waitFor()
+      assert.ok((await automatic.getByRole('listitem').count()) >= 1, 'no change is listed as automatic')
+      assert.match(await automatic.innerText(), /llegation/)
+      await shot(bea, 'share-3-comparison')
+      await bea.getByRole('button', { name: /^Keep my version of/ }).click()
+      await bea.getByText('Chosen: mine.').waitFor()
+      await bea.getByRole('button', { name: /^Resolve and share as Draft 2/ }).click()
+      await bea.getByText('Shared as Draft 2.').waitFor()
+      await shot(bea, 'share-4-resolved')
+
+      const two = JSON.parse(await sectionsOf(bea, 2))
+      assert.ok(JSON.stringify(two[0]).includes('Investigator named by Bea'))
+      const ids: Array<string> = two[1].content.values['allegation-list'].entries.map((entry: Json) => entry.id)
+      assert.deepEqual([...ids].sort(), ['bea-1', 'pia-1'])
+      const draftTwo = await sectionsOf(bea, 2)
+
+      // Later shares and edits leave shared drafts as they were.
+      const again = await rpc(pia, 'StartWorkingCopy', { reportId, baseDraft: 2, replace: true })
+      await rpc(pia, 'SaveSection', {
+        reportId,
+        sectionId: 'case-details',
+        saveCounter: again.saveCounter,
+        content: details('Investigator named later by Pia'),
+      })
+      await pia.goto(`${pilotUrl}/r/${reportId}/share`)
+      await pia.getByRole('button', { name: 'Share as Draft 3' }).click()
+      await pia.getByText('Shared as Draft 3.').waitFor()
+      assert.equal(await sectionsOf(pia, 1), draftOne, 'Draft 1 changed')
+      assert.equal(await sectionsOf(pia, 2), draftTwo, 'Draft 2 changed')
+
+      // History and a comment on a phrase of the first author's draft.
+      await bea.goto(`${pilotUrl}/r/${reportId}/drafts`)
+      await bea.getByRole('list', { name: 'Shared drafts' }).getByText(/Pia Second|Pia Pilot/).first().waitFor()
+      await shot(bea, 'share-5-history')
+      await bea.goto(`${pilotUrl}/r/${reportId}/drafts/1`)
+      const item = bea.locator('[data-comment-item="investigator"]')
+      await item.waitFor()
+      assert.equal(await bea.locator('.tiptap, quoroom-editor').count(), 0, 'an editor is in the read-only view')
+      const selected = await bea.evaluate(phrase => {
+        const element = document.querySelector('[data-comment-item="investigator"]')
+        if (element === null) return false
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+        let node: Node | null = walker.nextNode()
+        while (node !== null) {
+          const at = (node.textContent ?? '').indexOf(phrase)
+          if (at >= 0) {
+            const range = document.createRange()
+            range.setStart(node, at)
+            range.setEnd(node, at + phrase.length)
+            const selection = window.getSelection()
+            selection?.removeAllRanges()
+            selection?.addRange(range)
+            return true
+          }
+          node = walker.nextNode()
+        }
+        return false
+      }, 'named by Pia')
+      assert.ok(selected, 'the phrase was not found')
+      await bea.getByText('Selected: "named by Pia"').waitFor()
+      await bea.getByRole('button', { name: 'Comment on the selected text' }).click()
+      await bea.getByLabel('Your comment').fill('Please name the role as well.')
+      await bea.getByRole('button', { name: 'Add comment' }).click()
+      await bea.getByText('Please name the role as well.').waitFor()
+      await shot(bea, 'share-6-comment')
+
+      await pia.goto(`${pilotUrl}/r/${reportId}/drafts/1`)
+      await pia.getByText('Please name the role as well.').waitFor()
+      await shot(pia, 'share-7-comment-seen')
+      await pia.getByRole('button', { name: 'Resolve this comment' }).click()
+      await pia.getByRole('button', { name: 'Reopen this comment' }).waitFor()
+      await shot(pia, 'share-8-resolved')
+      assert.equal(await sectionsOf(pia, 1), draftOne, 'Draft 1 changed after comments')
+      await bea.context().close()
     })
   } finally {
     await browser?.close()

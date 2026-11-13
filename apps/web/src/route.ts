@@ -22,6 +22,9 @@ export const AppRoute = defineRouteUnion({
   Admin: {},
   Link: {},
   Report: { reportId: Schema.String },
+  Share: { reportId: Schema.String },
+  Drafts: { reportId: Schema.String },
+  Draft: { reportId: Schema.String, draft: Schema.Int },
   Revision: { reportId: Schema.String, revision: Schema.Int },
   NotFound: { path: Schema.String },
 })
@@ -49,6 +52,25 @@ const reportRouter = pipe(
   Route.slash(Route.string('reportId')),
   Route.mapTo(AppRoute.Report),
 )
+const shareRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('share')),
+  Route.mapTo(AppRoute.Share),
+)
+const draftsRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('drafts')),
+  Route.mapTo(AppRoute.Drafts),
+)
+const draftRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('drafts')),
+  Route.slash(Route.int('draft')),
+  Route.mapTo(AppRoute.Draft),
+)
 const revisionRouter = pipe(
   Route.literal('r'),
   Route.slash(Route.string('reportId')),
@@ -68,6 +90,9 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     adminRouter,
     linkRouter,
     revisionRouter,
+    draftRouter,
+    draftsRouter,
+    shareRouter,
     reportRouter,
   ),
   AppRoute.NotFound,
@@ -84,6 +109,9 @@ export const pathOf = (route: AppRoute): string =>
     Admin: () => adminRouter(),
     Link: () => linkRouter(),
     Report: ({ reportId }) => reportRouter({ reportId }),
+    Share: ({ reportId }) => shareRouter({ reportId }),
+    Drafts: ({ reportId }) => draftsRouter({ reportId }),
+    Draft: ({ reportId, draft }) => draftRouter({ reportId, draft }),
     Revision: ({ reportId, revision }) =>
       revisionRouter({ reportId, revision }),
     NotFound: ({ path }) => path,
@@ -103,6 +131,9 @@ export const needsSession = (route: AppRoute): boolean =>
     Admin: () => true,
     Link: () => false,
     Report: () => true,
+    Share: () => true,
+    Drafts: () => true,
+    Draft: () => true,
     Revision: () => true,
     NotFound: () => false,
   })
@@ -120,6 +151,9 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Admin: () => false,
     Link: () => false,
     Report: () => false,
+    Share: () => false,
+    Drafts: () => false,
+    Draft: () => false,
     Revision: () => false,
     NotFound: () => false,
   })

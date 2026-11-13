@@ -23,7 +23,7 @@ The contract lives in `packages/domain/src/api/`. `CaseDeskRpcs` (iteration 2, `
 
 ## `/api/images`
 
-Not part of the RPC (`images-route.ts`). `POST /api/images?<ImageChunkQuery>` takes the raw bytes of one chunk (at most 700 KB, `application/octet-stream`) and answers `ImageChunkResult`; the last chunk completes the image and returns its `ImageMeta`. `GET /api/images/<id>/<index>?<ImageReadQuery>` answers `ImageChunkRead`, the stored base64 text of one chunk, only if the image is referenced by the version named in the query that the caller may read (and, for a `redacted` role, marked safe there). Errors are `{ code, message }` with the HTTP status in `IMAGE_ERROR_STATUS`. Limits: 1 MB per image, 1600 px, 20 MB of referenced images per report, uploads refused once the database passes 400 MB.
+Not part of the RPC (`images-route.ts`). `POST /api/images?<ImageChunkQuery>` takes the raw bytes of one chunk (at most 700 KB, `application/octet-stream`) and answers `ImageChunkResult`; the last chunk completes the image and returns its `ImageMeta`. `GET /api/images/<id>/<index>?<ImageReadQuery>` answers `ImageChunkRead`, the stored base64 text of one chunk, only if the image is referenced by the version named in the query that the caller may read (and, for a `redacted` role, marked safe there). A completed image is checked across all its chunks: one that carries metadata (JPEG APP1/APP13/comment, PNG tEXt/zTXt/iTXt/eXIf/tIME) is deleted and refused with `has_metadata` (415); anything that is not a JPEG or PNG is `bad_signature`. Errors are `{ code, message }` with the HTTP status in `IMAGE_ERROR_STATUS`. Limits: 1 MB per image, 1600 px, 20 MB of referenced images per report, uploads refused once the database passes 400 MB.
 
 ## Procedures by area
 

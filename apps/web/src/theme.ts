@@ -1,4 +1,8 @@
-import { DEFAULT_THEME, type FontFamily, type PublicTheme } from '@case-desk/domain'
+import {
+  DEFAULT_THEME,
+  type FontFamily,
+  type PublicTheme,
+} from '@case-desk/domain'
 
 // NOTE: The look of the deployment (D24). `/api/config` gives the theme, and
 // the app applies it as CSS custom properties on its root element. The class

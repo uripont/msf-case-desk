@@ -49,6 +49,13 @@ export type CaseValues = Readonly<{
 export type RichTextContext<M> = Readonly<{
   editor: EditorState
   versionOf: (steps: ReadonlyArray<ItemStep>, itemId: string) => number
+  generation: number
+  ownerOf: (steps: ReadonlyArray<ItemStep>, itemId: string) => string
+  onDiscarded: (
+    steps: ReadonlyArray<ItemStep>,
+    itemId: string,
+    content: string,
+  ) => M
   onChange: (
     steps: ReadonlyArray<ItemStep>,
     itemId: string,
@@ -653,11 +660,16 @@ const editorReady = <M>(
     h.Class(editorBox),
     editor.Content(richTextForItem(richTextDocOf(value))),
     editor.Version(rich.versionOf(context.steps, item.id)),
+    editor.Generation(rich.generation),
+    editor.Owner(rich.ownerOf(context.steps, item.id)),
     editor.Disabled(false),
     editor.Label(item.label),
     editor.Report(rich.reportId),
     editor.Remaining(rich.remaining),
     editor.OnImage(() => rich.onImage()),
+    editor.OnDiscarded(detail =>
+      rich.onDiscarded(context.steps, item.id, detail.content),
+    ),
     editor.OnChange(detail =>
       rich.onChange(context.steps, item.id, detail.content, detail.version),
     ),

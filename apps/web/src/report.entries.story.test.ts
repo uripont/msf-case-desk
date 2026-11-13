@@ -11,10 +11,16 @@ import {
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'
 import { authorModel } from './quoroom.fixtures'
-import { Failure } from './quoroom/failure'
 import { sectionTarget } from './quoroom/entryEdit'
+import { Failure } from './quoroom/failure'
 import * as Report from './quoroom/report'
-import { REPORT_ID, SAVED_AT, loadedReport } from './report.fixtures'
+import {
+  REPORT_ID,
+  SAVED_AT,
+  SCOPE,
+  loadedReport,
+  staleSaveFacts,
+} from './report.fixtures'
 
 // NOTE: Stage 4e and 4f, as a person would drive them: entries, *not
 // applicable*, and the save states, checked on the Model and the Commands.
@@ -27,6 +33,7 @@ const investigation = () =>
     clickedLinkTo(`/r/${REPORT_ID}`),
     reportMessage(
       Report.Message.SucceededLoadReport({
+        scope: SCOPE,
         loaded: loadedReport(INVESTIGATION_TEMPLATE, {
           state: 'drafting',
         }),
@@ -56,7 +63,7 @@ const withEntries = (...ids: ReadonlyArray<string>) =>
     investigation(),
     ...ids.flatMap(entryId => [
       Report.Message.ClickedAddEntry({ target }),
-      Report.Message.GeneratedEntryId({ target, entryId }),
+      Report.Message.GeneratedEntryId({ scope: SCOPE, target, entryId }),
     ]),
   )
 
@@ -69,7 +76,13 @@ describe('entries of a repeatable subsection', () => {
     expect(names(asked)).toEqual([Report.NewEntryId.name])
     const added = update(
       asked.model,
-      reportMessage(Report.Message.GeneratedEntryId({ target, entryId: 'b1' })),
+      reportMessage(
+        Report.Message.GeneratedEntryId({
+          scope: SCOPE,
+          target,
+          entryId: 'b1',
+        }),
+      ),
     )
     expect(
       entriesOfKey(added.model.report.contents, BACKGROUND).map(e => e.id),
@@ -84,7 +97,9 @@ describe('entries of a repeatable subsection', () => {
   test('a failed ID adds nothing and says so', () => {
     const step = update(
       investigation(),
-      reportMessage(Report.Message.GeneratedEntryId({ target, entryId: '' })),
+      reportMessage(
+        Report.Message.GeneratedEntryId({ scope: SCOPE, target, entryId: '' }),
+      ),
     )
     expect(entriesOfKey(step.model.report.contents, BACKGROUND)).toEqual([])
     expect(Option.isSome(step.model.report.maybeEditNote)).toBe(true)
@@ -222,14 +237,14 @@ describe('the save states', () => {
   test('a save refused by the guard stops sending and keeps the edit', () => {
     const stale = send(
       edited().model,
-      Report.Message.StaleSaveSection({ sectionId: 'background' }),
+      Report.Message.SucceededReadStaleSection(staleSaveFacts('background')),
     )
     expect(stale.model.report.save._tag).toBe('Stale')
     expect(stale.model.report.dirtySectionIds).toEqual(['background'])
     const more = send(
       stale.model,
       Report.Message.ClickedAddEntry({ target }),
-      Report.Message.GeneratedEntryId({ target, entryId: 'b2' }),
+      Report.Message.GeneratedEntryId({ scope: SCOPE, target, entryId: 'b2' }),
     )
     expect(names(more)).not.toContain(Report.SaveSection.name)
     expect(entriesOfKey(more.model.report.contents, BACKGROUND)).toHaveLength(2)
@@ -239,7 +254,7 @@ describe('the save states', () => {
   test('reloading keeps what the server does not have, to copy or put back', () => {
     const stale = send(
       edited().model,
-      Report.Message.StaleSaveSection({ sectionId: 'background' }),
+      Report.Message.SucceededReadStaleSection(staleSaveFacts('background')),
     )
     const reloading = send(
       stale.model,
@@ -249,6 +264,7 @@ describe('the save states', () => {
     const reloaded = send(
       reloading.model,
       Report.Message.SucceededReloadWorkingCopy({
+        scope: SCOPE,
         contents: {},
         saveCounter: 4,
         savedAt: SAVED_AT,
@@ -266,12 +282,13 @@ describe('the save states', () => {
     expect(reloaded.model.report.keptEdits.map(edit => edit.sectionId)).toEqual(
       ['background'],
     )
-    expect(reloaded.model.report.editorBase).toBeGreaterThan(
-      stale.model.report.editorBase,
+    expect(reloaded.model.report.editorGeneration).toBeGreaterThan(
+      stale.model.report.editorGeneration,
     )
     const reapplied = send(
       reloaded.model,
       Report.Message.ClickedReapplyEdit({ sectionId: 'background' }),
+      Report.Message.ConfirmedReapplyEdit(),
     )
     expect(
       entriesOfKey(reapplied.model.report.contents, BACKGROUND).map(e => e.id),
@@ -283,11 +300,12 @@ describe('the save states', () => {
   test('a discarded kept edit is gone', () => {
     const stale = send(
       edited().model,
-      Report.Message.StaleSaveSection({ sectionId: 'background' }),
+      Report.Message.SucceededReadStaleSection(staleSaveFacts('background')),
     )
     const reloaded = send(
       stale.model,
       Report.Message.SucceededReloadWorkingCopy({
+        scope: SCOPE,
         contents: {},
         saveCounter: 2,
         savedAt: SAVED_AT,
@@ -311,7 +329,7 @@ describe('the save states', () => {
     const added = send(
       offline.model,
       Report.Message.ClickedAddEntry({ target }),
-      Report.Message.GeneratedEntryId({ target, entryId: 'b1' }),
+      Report.Message.GeneratedEntryId({ scope: SCOPE, target, entryId: 'b1' }),
     )
     expect(names(added)).not.toContain(Report.SaveSection.name)
     expect(added.model.report.dirtySectionIds).toEqual(['background'])
@@ -326,6 +344,7 @@ describe('the save states', () => {
     const failed = send(
       edited().model,
       Report.Message.FailedSaveSection({
+        scope: SCOPE,
         sectionId: 'background',
         failure: Failure.Unavailable(),
       }),
@@ -339,6 +358,7 @@ describe('the save states', () => {
     const saved = send(
       edited().model,
       Report.Message.SucceededSaveSection({
+        scope: SCOPE,
         sectionId: 'background',
         saveCounter: 1,
         savedAt: SAVED_AT,
@@ -364,7 +384,7 @@ describe('starting again from the latest shared draft', () => {
     expect(names(confirmed)).toEqual([Report.ReplaceWorkingCopy.name])
     const replaced = send(
       confirmed.model,
-      Report.Message.SucceededReplaceCopy(),
+      Report.Message.SucceededReplaceCopy({ scope: SCOPE }),
     )
     expect(names(replaced)).toEqual([Report.LoadReport.name])
     expect(replaced.model.report.contents).toEqual({})
