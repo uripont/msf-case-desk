@@ -273,6 +273,9 @@ export type DraftRecord = Readonly<{
   shareId: string
   people: string
   caseTitleRedacted: string
+  // NOTE: the case reference as a redacted reader sees it (empty for a draft
+  // made before the twin was stored).
+  caseReferenceRedacted: string
   redactionConfirmedAt: number | null
   revisions: ReadonlyArray<number>
 }>
@@ -441,6 +444,9 @@ export type ReviewerRoundRecord = Readonly<{
   deadlineAt: number
   deadlineZone: string
   caseReference: string
+  // NOTE: the reference as the draft of the revision stored it for redacted
+  // readers; a role with the `full` view reads `caseReference`.
+  caseReferenceRedacted: string
   templateId: string
   templateVersion: number
   publishedAt: number
@@ -590,6 +596,11 @@ export type FinishShareInput = Readonly<{
   baseDraft: number
   expectedSections: number
   redactedCaseTitle: string
+  redactedCaseReference: string
+  // NOTE: the case file as the share was read and confirmed: the batch is
+  // refused (`case_changed`) unless the case file still has this title and
+  // reference, so the redacted twins stored are those of the preview.
+  caseGuard: Readonly<{ title: string; reference: string }>
   // NOTE: the working copy's `people` text the staged sections were redacted
   // with and its hash: refused unless the working copy still has exactly that
   // text and every staged section of this share was redacted with it.
@@ -620,7 +631,7 @@ export type FinishShareOutcome =
   | Readonly<{ _tag: 'AlreadyShared'; number: number }>
   | Readonly<{ _tag: 'Refused'; reason: 'stale_base'; latest: number }>
   | Refused<
-      'share_incomplete' | 'no_working_copy' | 'people_changed' | PublishRefusal
+      'share_incomplete' | 'no_working_copy' | 'people_changed' | 'case_changed' | PublishRefusal
     >
 
 export type StagedSectionRecord = Readonly<{
@@ -1321,6 +1332,13 @@ export interface ReportRepositoryApi {
       safeOnly: boolean
     }>,
   ) => Eff<string | null>
+  // NOTE: withdrawing an image takes effect at once: the image stops being
+  // safe in the latest draft, which is the flag redacted readers of every
+  // revision are checked against. A later share decides again.
+  readonly withdrawImage: (
+    reportId: string,
+    imageId: string,
+  ) => Eff<void>
   readonly listReportImages: (
     reportId: string,
   ) => Eff<ReadonlyArray<ImageRecord>>
@@ -1464,6 +1482,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   readImageChunk: 1,
   readDraftImageChunk: 1,
   readRevisionImageChunk: 1,
+  withdrawImage: 1,
   listReportImages: 1,
   imageStats: 2,
   deleteUnreferencedImage: 6,

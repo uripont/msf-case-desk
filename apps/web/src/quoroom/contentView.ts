@@ -14,6 +14,7 @@ import {
   formatDate,
 } from '@case-desk/domain'
 
+import { markedChildren } from './marked'
 import { richTextView } from './richTextView'
 
 // NOTE: A section of a shared draft, or one unit of it, read-only (stage 4g):
@@ -35,6 +36,9 @@ export type ViewContext = Readonly<{
   people: ReadonlyArray<Person>
   // NOTE: Set on screens where text may be commented on.
   topSectionId: string
+  // NOTE: Strings the redacted preview highlights (labels in place of names,
+  // the placeholder of a withheld image).
+  marks?: ReadonlyArray<string>
 }>
 
 const EMPTY = 'Nothing written.'
@@ -63,10 +67,11 @@ const plain = <M>(
   h: HtmlBuilder<M>,
   text: string,
   attributes: ReadonlyArray<Attribute<M>>,
+  marks: ReadonlyArray<string>,
 ): Html =>
   text === ''
     ? h.p([h.Class('text-base text-msf-grey')], [EMPTY])
-    : h.p([...attributes], [text])
+    : h.p([...attributes], markedChildren(h, text, marks))
 
 export const valueText = (
   item: Item,
@@ -122,6 +127,7 @@ const itemRow = <M>(
               [...attributes('min-w-0')],
               context.reportId,
               context.imageContext,
+              context.marks ?? [],
             )
           : value.type === 'repeated'
             ? h.empty
@@ -129,6 +135,7 @@ const itemRow = <M>(
                 h,
                 valueText(item, value, context.people),
                 attributes('whitespace-pre-wrap text-lg text-msf-ink'),
+                context.marks ?? [],
               )
   return h.div(
     [h.Class('flex min-w-0 flex-col gap-1'), h.DataAttribute('item', item.id)],
@@ -165,7 +172,11 @@ const repeatedItemView = <M>(
             [
               h.p(
                 [h.Class('text-lg font-bold text-msf-black')],
-                [entryDisplayTitle(entry, item.entryLabel, index)],
+                markedChildren(
+                  h,
+                  entryDisplayTitle(entry, item.entryLabel, index),
+                  context.marks ?? [],
+                ),
               ),
               ...Array.map(item.items, inner =>
                 itemRow(h, inner, entry.values[inner.id], context, [
@@ -180,7 +191,12 @@ const repeatedItemView = <M>(
   })
 }
 
-const heading = <M>(h: HtmlBuilder<M>, depth: number, text: string): Html =>
+const heading = <M>(
+  h: HtmlBuilder<M>,
+  depth: number,
+  text: string,
+  marks: ReadonlyArray<string>,
+): Html =>
   h.p(
     [
       h.Class(
@@ -190,7 +206,7 @@ const heading = <M>(h: HtmlBuilder<M>, depth: number, text: string): Html =>
         ),
       ),
     ],
-    [text],
+    markedChildren(h, text, marks),
   )
 
 const entryView = <M>(
@@ -209,7 +225,12 @@ const entryView = <M>(
       h.DataAttribute('entry', entry.id),
     ],
     [
-      heading(h, depth, entryDisplayTitle(entry, section.title, index)),
+      heading(
+        h,
+        depth,
+        entryDisplayTitle(entry, section.title, index),
+        context.marks ?? [],
+      ),
       ...Array.map(section.items, item =>
         itemRow(h, item, entry.values[item.id], context, [
           ...entryPath,
@@ -244,12 +265,16 @@ const sectionBody = <M>(
       h.DataAttribute('section', section.id),
     ],
     [
-      depth === 0 ? h.empty : heading(h, depth, section.title),
+      depth === 0 ? h.empty : heading(h, depth, section.title, []),
       notApplicable === undefined
         ? h.empty
         : h.p(
             [h.Class('text-base font-medium text-msf-ink')],
-            [`Not applicable: ${notApplicable.reason}`],
+            markedChildren(
+              h,
+              `Not applicable: ${notApplicable.reason}`,
+              context.marks ?? [],
+            ),
           ),
       section.repeat === undefined
         ? h.div(

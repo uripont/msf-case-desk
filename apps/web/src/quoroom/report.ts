@@ -98,6 +98,12 @@ import { Failure, failureOf, failureText, isStaleSave } from './failure'
 import { type CaseValues, type FieldContext, itemField } from './fields'
 import { FormState, formStatus, isSubmitting } from './formState'
 import { IMAGE_LIMITS_TEXT, remainingBytes, usageText } from './images/plan'
+import {
+  PreviewView,
+  previewSection,
+  viewNote,
+  viewToggle,
+} from './redactedView'
 import { PageScope, isCurrentPage } from './scope'
 import {
   failureAlert,
@@ -215,6 +221,7 @@ export const Model = Schema.Struct({
   dirtySectionIds: Schema.Array(Schema.String),
   maybeSelectedKey: Schema.Option(Schema.String),
   isNavigatorOpen: Schema.Boolean,
+  view: PreviewView,
   unitMembers: Schema.Array(UnitMember),
   coAuthorChoice: Schema.String,
   coAuthorForm: FormState,
@@ -256,6 +263,7 @@ export const initialModel = Model.make({
   dirtySectionIds: [],
   maybeSelectedKey: Option.none(),
   isNavigatorOpen: false,
+  view: 'original',
   unitMembers: [],
   coAuthorChoice: '',
   coAuthorForm: FormState.Editing(),
@@ -304,6 +312,7 @@ export const Message = defineMessageUnion({
   ClickedRetryLoad: {},
   SelectedSection: { key: Schema.String },
   ToggledNavigator: {},
+  ChoseView: { view: PreviewView },
   ChangedItem: {
     sectionKey: Schema.String,
     steps: Schema.Array(StepSchema),
@@ -1304,6 +1313,9 @@ const updateCurrent = (model: Model, message: Message) =>
     }),
     SelectedSection: ({ key }) =>
       Update.combine(model, [selectSection(key), requestEditor]),
+    ChoseView: ({ view }) => ({
+      model: modifyFields(model, { view: () => view }),
+    }),
     ToggledNavigator: () => ({
       model: modifyFields(model, { isNavigatorOpen: open => !open }),
     }),
@@ -2639,44 +2651,66 @@ const sectionView = (
                 ),
               ],
             ),
-            ...Option.match(
-              Option.fromNullishOr(sectionOfKey(template, row.key)),
-              {
-                onNone: () => [
+            ...(model.view === 'redacted'
+              ? [
                   h.p(
-                    [h.Class('text-base text-msf-grey')],
-                    ['This section is no longer in the report.'],
+                    [h.Class('text-base text-msf-ink')],
+                    [viewNote('redacted')],
                   ),
-                ],
-                onSome: section => [
-                  ...sectionBody(
-                    model,
-                    detail,
-                    template,
-                    outline,
-                    row,
-                    section,
+                  previewSection(
                     h,
+                    {
+                      template,
+                      people: model.people,
+                      contents: model.contents,
+                      reportId: model.reportId,
+                      caseTitle: detail.summary.caseFile.title,
+                    },
+                    'redacted',
+                    topSectionIdOfKey(row.key),
                   ),
-                  notApplicableReasonOf(model.contents, row.key) !==
-                    undefined && row.entryId === undefined
-                    ? h.empty
-                    : subsectionList(
-                        section,
-                        row.key,
+                ]
+              : []),
+            ...(model.view === 'redacted'
+              ? []
+              : Option.match(
+                  Option.fromNullishOr(sectionOfKey(template, row.key)),
+                  {
+                    onNone: () => [
+                      h.p(
+                        [h.Class('text-base text-msf-grey')],
+                        ['This section is no longer in the report.'],
+                      ),
+                    ],
+                    onSome: section => [
+                      ...sectionBody(
                         model,
+                        detail,
+                        template,
                         outline,
-                        editability(
-                          template,
-                          detail.summary.state,
-                          detail.permissions,
-                          topSectionIdOfKey(row.key),
-                        ).kind === 'read_only',
+                        row,
+                        section,
                         h,
                       ),
-                ],
-              },
-            ),
+                      notApplicableReasonOf(model.contents, row.key) !==
+                        undefined && row.entryId === undefined
+                        ? h.empty
+                        : subsectionList(
+                            section,
+                            row.key,
+                            model,
+                            outline,
+                            editability(
+                              template,
+                              detail.summary.state,
+                              detail.permissions,
+                              topSectionIdOfKey(row.key),
+                            ).kind === 'read_only',
+                            h,
+                          ),
+                    ],
+                  },
+                )),
             stepButtons(outline.rows, selectedKey, h),
           ],
         ),
@@ -3180,6 +3214,24 @@ const loadedView = (
       keptEditsPanel(model, template, h),
       confirmationPanel(model, h),
       endedBanner(outline.end, h),
+      h.div(
+        [h.Class('flex flex-wrap items-center gap-4')],
+        [
+          viewToggle(h, model.view, view => Message.ChoseView({ view })),
+          h.a(
+            [
+              h.Href(pathOf(AppRoute.Names({ reportId: model.reportId }))),
+              h.Class(
+                clsx(
+                  'inline-flex min-h-10 items-center border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                  focusRing,
+                ),
+              ),
+            ],
+            [`People and names (${model.people.length})`],
+          ),
+        ],
+      ),
       h.div(
         [
           h.Class(

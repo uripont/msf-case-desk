@@ -258,6 +258,7 @@ export const reportRepositoryContract = (
           confirmation?: NonNullable<
             Parameters<ReportRepositoryApi['finishShare']>[0]['confirmation']
           >
+          caseGuard?: { title: string; reference: string }
         } = {},
       ) =>
         run(
@@ -269,6 +270,8 @@ export const reportRepositoryContract = (
             baseDraft: options.baseDraft,
             expectedSections: options.sections.length,
             redactedCaseTitle: 'Case [redacted]',
+            redactedCaseReference: 'REF [redacted]',
+            caseGuard: extra.caseGuard ?? { title: 'Case One', reference: 'REF-1' },
             people,
             peopleHash: `people:${people}`,
             now,
@@ -1211,6 +1214,8 @@ export const reportRepositoryContract = (
             baseDraft: 0,
             expectedSections: 2,
             redactedCaseTitle: 't',
+            redactedCaseReference: 'r',
+            caseGuard: { title: 'Case One', reference: 'REF-1' },
             people: '[]',
             peopleHash: 'people:[]',
             now: 70,
@@ -1219,6 +1224,24 @@ export const reportRepositoryContract = (
         ),
       ).toEqual({ _tag: 'Refused', reason: 'share_incomplete' })
       expect(await run(s.r.listDrafts(REPORT))).toHaveLength(1)
+    })
+
+    test('a share is refused when the case file changed since it was read, and stores the twins it was given', async () => {
+      const s = await setup()
+      const staged = await share(s, {
+        baseDraft: 0,
+        shareId: 'share-case',
+        sections: [{ id: 'sec-a', content: '{"a":1}' }],
+      })
+      expect(
+        await staged.finish({ caseGuard: { title: 'Another title', reference: 'REF-1' } }),
+      ).toEqual({ _tag: 'Refused', reason: 'case_changed' })
+      expect(await run(s.r.listDrafts(REPORT))).toHaveLength(1)
+      expect(await staged.finish()).toMatchObject({ _tag: 'Shared', number: 1 })
+      expect(await run(s.r.getDraft(REPORT, 1))).toMatchObject({
+        caseTitleRedacted: 'Case [redacted]',
+        caseReferenceRedacted: 'REF [redacted]',
+      })
     })
 
     test('two authors sharing from the same base: exactly one draft, the other is told it is stale', async () => {
@@ -2372,6 +2395,7 @@ export const reportRepositoryContract = (
       await run(
         r.putImageChunk(chunkInput({ imageId: 'img-loose', data: png })),
       )
+      await run(r.putImageChunk(chunkInput({ imageId: 'img-ok', data: png })))
       const before = await run(r.imageStats(REPORT))
       const staged = await share(s, {
         baseDraft: 0,
@@ -2381,7 +2405,7 @@ export const reportRepositoryContract = (
             id: 'sec-a',
             content: '{"a":1}',
             images:
-              '[{"id":"img-safe","safe":true},{"id":"img-unsafe","safe":false}]',
+              '[{"id":"img-safe","safe":true},{"id":"img-unsafe","safe":false},{"id":"img-ok","safe":true}]',
           },
           {
             id: 'sec-b',
@@ -2450,6 +2474,19 @@ export const reportRepositoryContract = (
           }),
         ),
       ).toBeNull()
+      const readSafe = () =>
+        run(
+          r.readRevisionImageChunk({
+            reportId: REPORT,
+            revision: 1,
+            imageId: 'img-ok',
+            index: 0,
+            safeOnly: true,
+          }),
+        )
+      expect(await readSafe()).toBe(png)
+      await run(r.withdrawImage(REPORT, 'img-ok'))
+      expect(await readSafe()).toBeNull()
       expect((await run(r.getImage('img-safe')))?.referenced).toBe(true)
       expect(await run(r.deleteUnreferencedImage('img-safe'))).toEqual({
         _tag: 'Refused',

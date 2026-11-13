@@ -66,10 +66,26 @@ export const highlightedTexts = (
     .sort((a, b) => b.length - a.length),
 ]
 
+// NOTE: The case file as a redacted reader sees it: the title and the
+// reference, redacted with the people list. The confirmation of a share covers
+// the canonical JSON of this (D14), so a title changed after the preview is not
+// the share the author saw. The server and the browser both make it here.
+export const redactedCaseOf = (
+  people: ReadonlyArray<Person>,
+  title: string,
+  reference: string,
+): Readonly<{ title: string; reference: string }> => {
+  const redactor = redactorFor(people)
+  return { title: redactor.text(title), reference: redactor.text(reference) }
+}
+
 export type TextPart = Readonly<{ text: string; marked: boolean }>
 
 // NOTE: A text cut into the parts that are marked and the parts that are not,
-// by the longest string first and without regard to case.
+// by the longest string first and without regard to case. Lowercasing can
+// change the length of a character ("\u0130"), so the search runs on a
+// lowercased copy built one character at a time, with the range of the
+// original each lowered unit came from; the parts are cut from the original.
 export const markedParts = (
   text: string,
   marks: ReadonlyArray<string>,
@@ -77,34 +93,44 @@ export const markedParts = (
   if (marks.length === 0 || text === '') {
     return [{ text, marked: false }]
   }
-  const lower = text.toLowerCase()
+  let lower = ''
+  const origStart: Array<number> = []
+  const origEnd: Array<number> = []
+  let index = 0
+  for (const ch of text) {
+    const low = ch.toLowerCase()
+    for (let i = 0; i < low.length; i++) {
+      origStart.push(index)
+      origEnd.push(index + ch.length)
+    }
+    lower += low
+    index += ch.length
+  }
   const candidates = marks
     .filter(mark => mark !== '')
     .map(mark => mark.toLowerCase())
   const parts: Array<TextPart> = []
   let plainFrom = 0
   let at = 0
-  while (at < text.length) {
+  while (at < lower.length) {
     let found = ''
     for (const mark of candidates) {
-      if (
-        mark.length > found.length &&
-        lower.startsWith(mark, at) &&
-        lower.length === text.length
-      ) {
+      if (mark.length > found.length && lower.startsWith(mark, at)) {
         found = mark
       }
     }
-    if (found === '') {
+    const start = origStart[at] as number
+    if (found === '' || start < plainFrom) {
       at += 1
       continue
     }
-    if (at > plainFrom) {
-      parts.push({ text: text.slice(plainFrom, at), marked: false })
+    const end = origEnd[at + found.length - 1] as number
+    if (start > plainFrom) {
+      parts.push({ text: text.slice(plainFrom, start), marked: false })
     }
-    parts.push({ text: text.slice(at, at + found.length), marked: true })
+    parts.push({ text: text.slice(start, end), marked: true })
     at += found.length
-    plainFrom = at
+    plainFrom = end
   }
   if (plainFrom < text.length) {
     parts.push({ text: text.slice(plainFrom), marked: false })

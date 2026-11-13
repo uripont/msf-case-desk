@@ -323,6 +323,7 @@ const wcOf = (r: Row) => ({
 
 const DRAFT_SELECT = `SELECT d.report_id, d.number, d.base_number, d.author_id,
   u.name AS author_name, d.shared_at, d.share_id, d.people, d.case_title_redacted,
+  d.case_reference_redacted,
   c.confirmed_at,
   (SELECT group_concat(number) FROM revisions
     WHERE report_id = d.report_id AND draft_number = d.number) AS revision_numbers
@@ -340,6 +341,7 @@ const draftOf = (r: Row): DraftRecord => ({
   shareId: s(r['share_id']),
   people: s(r['people']),
   caseTitleRedacted: s(r['case_title_redacted']),
+  caseReferenceRedacted: s(r['case_reference_redacted']),
   redactionConfirmedAt: nn(r['confirmed_at']),
   revisions:
     r['revision_numbers'] === null || r['revision_numbers'] === undefined
@@ -1519,7 +1521,8 @@ const ops: Impl = {
       },
       {
         sql: `INSERT INTO drafts (report_id, number, base_number, author_id, shared_at,
-          share_id, people, case_title_redacted) VALUES (?, 0, NULL, ?, ?, ?, '[]', '')`,
+          share_id, people, case_title_redacted, case_reference_redacted)
+          VALUES (?, 0, NULL, ?, ?, ?, '[]', '', '')`,
         values: [
           input.reportId,
           input.createdBy,
@@ -1930,12 +1933,14 @@ const ops: Impl = {
     const steps = compact<GuardedStep>([
       {
         sql: `INSERT INTO drafts (report_id, number, base_number, author_id, shared_at,
-          share_id, people, case_title_redacted)
+          share_id, people, case_title_redacted, case_reference_redacted)
           SELECT w.report_id, (SELECT MAX(number) + 1 FROM drafts WHERE report_id = w.report_id),
-            ?, w.user_id, ?, ?, w.people, ?
+            ?, w.user_id, ?, ?, w.people, ?, ?
           FROM working_copies w JOIN reports r ON r.id = w.report_id
           WHERE w.report_id = ? AND w.user_id = ? AND w.base_draft = ? AND r.state <> 'archived'
           AND w.people = ?
+          AND EXISTS (SELECT 1 FROM case_files cf WHERE cf.id = r.case_file_id
+            AND cf.title = ? AND cf.reference = ?)
           AND NOT EXISTS (SELECT 1 FROM share_staging WHERE share_id = ? AND people_hash <> ?)
           AND (SELECT MAX(number) FROM drafts WHERE report_id = w.report_id) = ?
           AND (SELECT COUNT(*) FROM share_staging
@@ -1947,10 +1952,13 @@ const ops: Impl = {
           input.now,
           input.shareId,
           input.redactedCaseTitle,
+          input.redactedCaseReference,
           input.reportId,
           input.userId,
           input.baseDraft,
           input.people,
+          input.caseGuard.title,
+          input.caseGuard.reference,
           input.shareId,
           input.peopleHash,
           input.baseDraft,
@@ -2056,6 +2064,8 @@ const ops: Impl = {
             (SELECT redacted_hash FROM share_staging WHERE share_id = ? AND report_id = ? ORDER BY ordinal, section_id))) AS confirmed,
         (SELECT COUNT(*) FROM working_copies WHERE report_id = ? AND user_id = ? AND people = ?) AS people_same,
         (SELECT COUNT(*) FROM share_staging WHERE share_id = ? AND people_hash <> ?) AS people_mixed,
+        (SELECT COUNT(*) FROM case_files cf JOIN reports rp ON rp.case_file_id = cf.id
+          WHERE rp.id = ? AND cf.title = ? AND cf.reference = ?) AS case_same,
         (SELECT COALESCE(MAX(number), 0) FROM revisions WHERE report_id = ?) AS last_revision,
         (SELECT COUNT(*) FROM report_members m, json_each(?) j
           WHERE m.report_id = ? AND m.user_id = json_extract(j.value, '$.userId')) AS overlap`,
@@ -2080,6 +2090,9 @@ const ops: Impl = {
       input.shareId,
       input.peopleHash,
       input.reportId,
+      input.caseGuard.title,
+      input.caseGuard.reference,
+      input.reportId,
       JSON.stringify(input.publish?.participants ?? []),
       input.reportId,
     )
@@ -2101,6 +2114,9 @@ const ops: Impl = {
     }
     if (n(why['people_same']) === 0 || n(why['people_mixed']) > 0) {
       return { _tag: 'Refused', reason: 'people_changed' }
+    }
+    if (n(why['case_same']) === 0) {
+      return { _tag: 'Refused', reason: 'case_changed' }
     }
     if (n(why['staged']) !== input.expectedSections) {
       return { _tag: 'Refused', reason: 'share_incomplete' }
@@ -2405,7 +2421,10 @@ const ops: Impl = {
       await rows(
         db,
         `SELECT r.report_id, r.revision_number, r.id AS round_id, r.closing, r.state,
-          r.deadline_at, r.deadline_zone, cf.reference, rep.template_id, rep.template_version,
+          r.deadline_at, r.deadline_zone, cf.reference,
+          (SELECT d.case_reference_redacted FROM drafts d
+            WHERE d.report_id = r.report_id AND d.number = v.draft_number) AS reference_redacted,
+          rep.template_id, rep.template_version,
           v.published_at, p.role_id,
           (SELECT decision FROM reviews WHERE round_id = r.id AND reviewer_id = p.user_id
             AND decision <> 'comment' ORDER BY sent_at DESC, id DESC LIMIT 1) AS decision,
@@ -2440,6 +2459,7 @@ const ops: Impl = {
       deadlineAt: n(r['deadline_at']),
       deadlineZone: s(r['deadline_zone']),
       caseReference: s(r['reference']),
+      caseReferenceRedacted: s(r['reference_redacted']),
       templateId: s(r['template_id']),
       templateVersion: n(r['template_version']),
       publishedAt: n(r['published_at']),
@@ -3181,7 +3201,11 @@ const ops: Impl = {
         JOIN image_chunks c ON c.image_id = d.image_id
         JOIN images i ON i.id = d.image_id
         WHERE v.report_id = ? AND v.number = ? AND d.image_id = ? AND c.idx = ?
-        AND (? = 0 OR d.safe = 1) AND i.complete = 1`,
+        AND (? = 0 OR (d.safe = 1 AND EXISTS (
+          SELECT 1 FROM draft_images l
+          WHERE l.report_id = v.report_id AND l.image_id = d.image_id AND l.safe = 1
+            AND l.draft_number = (SELECT MAX(number) FROM drafts WHERE report_id = v.report_id))))
+        AND i.complete = 1`,
       input.reportId,
       input.revision,
       input.imageId,
@@ -3189,6 +3213,17 @@ const ops: Impl = {
       flag(input.safeOnly),
     )
     return found === null ? null : s(found['data'])
+  },
+  withdrawImage: async (db, reportId, imageId) => {
+    await exec(
+      db,
+      `UPDATE draft_images SET safe = 0
+        WHERE report_id = ? AND image_id = ?
+        AND draft_number = (SELECT MAX(number) FROM drafts WHERE report_id = ?)`,
+      reportId,
+      imageId,
+      reportId,
+    )
   },
   listReportImages: async (db, reportId) =>
     (

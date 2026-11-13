@@ -248,6 +248,10 @@ export const ShareSectionResult = Schema.Struct({
   // NOTE: SHA-256 (hex) of the people list the section was redacted with. One
   // list covers the whole share: every section of it carries the same value.
   peopleHash: Schema.String,
+  // NOTE: SHA-256 (hex) of the canonical JSON of the case title and reference
+  // as redacted with that list (`redactedCaseOf`), read from the case file
+  // when the section was staged. The confirmation covers it too.
+  caseHash: Schema.String,
 })
 
 export const DraftHeader = Schema.Struct({
@@ -306,6 +310,10 @@ export const DraftOutline = Schema.Struct({
   header: DraftHeader,
   sections: Schema.Array(SectionRef),
   peopleCount: Count,
+  // NOTE: The case title and reference as stored redacted for this draft: the
+  // part of its redaction preview the sections do not hold.
+  redactedCaseTitle: Schema.optionalKey(Schema.String),
+  redactedCaseReference: Schema.optionalKey(Schema.String),
 })
 
 // NOTE: An author may read a shared draft as written or as stored for

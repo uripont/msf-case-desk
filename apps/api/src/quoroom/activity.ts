@@ -25,6 +25,7 @@ import {
   eventsOf,
   flowFailure,
   jobsFor,
+  loadTemplates,
   roundOf,
   store,
   timeZoneOk,
@@ -520,7 +521,24 @@ export const activityHandlers: Pick<
       const reports = yield* db.listReportsForMember(user.id)
       const reference = new Map<string, string>()
       for (const report of reports) reference.set(report.id, report.caseFile.reference)
-      for (const round of rounds) reference.set(round.reportId, round.caseReference)
+      // NOTE: a reviewer's reference is the one their role may read: the
+      // redacted twin of the draft for a redacted role (D14).
+      const templates = yield* loadTemplates(
+        db,
+        rounds.map(round => ({
+          templateId: round.templateId,
+          version: round.templateVersion,
+        })),
+      )
+      for (const round of rounds) {
+        const role = templates
+          .get(`${round.templateId}@${round.templateVersion}`)
+          ?.roles.find(entry => entry.id === round.roleId)
+        reference.set(
+          round.reportId,
+          role?.view === 'full' ? round.caseReference : round.caseReferenceRedacted,
+        )
+      }
       const zone = new Map(
         rounds.map(round => [`${round.reportId}/${round.revision}`, round.deadlineZone]),
       )

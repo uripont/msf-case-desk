@@ -4,6 +4,7 @@ import { RpcClient, RpcSerialization } from 'effect/rpc'
 
 import {
   DEFAULT_NOTIFICATION_CONFIG,
+  canonicalJson,
   INTAKE_TEMPLATE,
   QuoroomRpcs,
   ReportRepository,
@@ -401,6 +402,7 @@ export const makeWorld = async (scenario: Scenario) => {
     const outline = await call(who, c => c.GetWorkingCopy({ reportId }))
     const hashes: Array<string> = []
     let peopleHash = ''
+    let caseHash = ''
     for (const section of outline.sections) {
       const staged = await call(who, c =>
         c.ShareSection({
@@ -412,12 +414,15 @@ export const makeWorld = async (scenario: Scenario) => {
       )
       hashes.push(staged.redactedHash)
       peopleHash = staged.peopleHash
+      caseHash = staged.caseHash
     }
     // NOTE: the redaction preview the author saw is the hash of the staged
     // redacted content and of the people list; the server checks it against
     // what is staged and what the working copy has.
     const seen =
-      confirm === true ? await sha256Hex(`${hashes.join(',')}|${peopleHash}`) : undefined
+      confirm === true
+        ? await sha256Hex(`${hashes.join(',')}|${peopleHash}|${caseHash}`)
+        : undefined
     const outcome = await call(who, c =>
       c.FinishShare({
         reportId,
@@ -468,12 +473,32 @@ export const makeWorld = async (scenario: Scenario) => {
     draft: number,
     closing = false,
   ) => {
+    // NOTE: what the browser does before it confirms: it reads the redacted
+    // text it shows, the people list and the redacted case title and
+    // reference of the staged draft, and hashes them itself. The hash is never
+    // taken from the server's own header (`GetHistory`).
     const outline = await call(who, c => c.GetDraftOutline({ reportId, draft }))
+    const hashes: Array<string> = []
+    for (const section of outline.sections) {
+      const shown = await call(who, c =>
+        c.GetDraftSection({ reportId, draft, sectionId: section.sectionId, view: 'redacted' }),
+      )
+      hashes.push(await sha256Hex(canonicalJson(shown.content)))
+    }
+    const people = await call(who, c => c.GetPeople({ reportId, draft }))
+    const peopleHash = await sha256Hex(JSON.stringify(people.people))
+    const caseHash = await sha256Hex(
+      canonicalJson({
+        title: outline.redactedCaseTitle ?? '',
+        reference: outline.redactedCaseReference ?? '',
+      }),
+    )
+    const redactedHash = await sha256Hex(`${hashes.join(',')}|${peopleHash}|${caseHash}`)
     await call(who, c =>
       c.ConfirmRedaction({
         reportId,
         draft,
-        redactedHash: outline.header.redactedHash,
+        redactedHash,
       }),
     )
     return call(who, c =>

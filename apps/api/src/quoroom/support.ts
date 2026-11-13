@@ -23,6 +23,7 @@ import {
   Validation,
   applyEvent,
   automaticChanges,
+  canonicalJson,
   chooseParticipants,
   draftLabel,
   revisionTitle,
@@ -86,10 +87,17 @@ export const dataOf = (
 export const peopleHashOf = (people: string): Promise<string> =>
   sha256Hex(people)
 
+// NOTE: the case file is part of what is confirmed too: the hash of the
+// canonical JSON of its redacted title and reference (`redactedCaseOf`).
+export const caseHashOf = (title: string, reference: string): Promise<string> =>
+  sha256Hex(canonicalJson({ title, reference }))
+
 export const hashOfJoined = async (
   joined: string,
   people: string,
-): Promise<string> => sha256Hex(`${joined}|${await peopleHashOf(people)}`)
+  caseHash: string,
+): Promise<string> =>
+  sha256Hex(`${joined}|${await peopleHashOf(people)}|${caseHash}`)
 
 export const draftHeader = (
   db: Store,
@@ -100,10 +108,11 @@ export const draftHeader = (
     const draft = yield* db.getDraft(reportId, number)
     if (draft === null) return undefined
     const sections = yield* db.listDraftSections(reportId, number)
-    const hash = yield* Effect.promise(() =>
+    const hash = yield* Effect.promise(async () =>
       hashOfJoined(
         sections.map(section => section.version).join(','),
         draft.people,
+        await caseHashOf(draft.caseTitleRedacted, draft.caseReferenceRedacted),
       ),
     )
     return {

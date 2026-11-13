@@ -20,6 +20,7 @@ import {
   draftingRoleOf,
   peopleListProblems,
   redactedSectionOf,
+  redactedCaseOf,
   redactorFor,
   resolveMerge,
 } from '@case-desk/domain'
@@ -52,6 +53,7 @@ import {
   comparisonOf,
   dataOf,
   draftHeader,
+  caseHashOf,
   hashOfJoined,
   peopleHashOf,
   member,
@@ -89,6 +91,22 @@ const ownCopy = (
     const copy = yield* db.getWorkingCopy(reportId, userId)
     if (copy === null) return yield* Effect.fail(new NotFound())
     return copy
+  })
+
+// NOTE: a people list that has a problem is never used to redact anything:
+// sharing refuses it, whatever way it got into the working copy.
+const requireValidPeople = (text: string) =>
+  Effect.gen(function* () {
+    const problems = peopleListProblems(peopleOf(text))
+    if (problems.length > 0) {
+      return yield* Effect.fail(
+        new Validation({
+          problems: problems.map(entry =>
+            problem('people', entry.code, entry.path, entry.message),
+          ),
+        }),
+      )
+    }
   })
 
 const writableCopy = (
@@ -548,6 +566,7 @@ export const authorHandlers: Pick<
       if (copy.saveCounter !== saveCounter) {
         return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
+      yield* requireValidPeople(copy.people)
       const row = yield* db.getWorkingCopySection(reportId, user.id, sectionId)
       const original: SectionContent =
         row === null ? EMPTY_SECTION : parseSection(row.content)
@@ -567,6 +586,16 @@ export const authorHandlers: Pick<
         sha256Hex(canonicalJson(redacted)),
       )
       const peopleHash = yield* Effect.promise(() => peopleHashOf(copy.people))
+      // NOTE: the case file is read now, at staging time, and what the preview
+      // shows of it is covered by the confirmation; `FinishShare` guards on it.
+      const redactedCase = redactedCaseOf(
+        peopleOf(copy.people),
+        loaded.record.caseFile.title,
+        loaded.record.caseFile.reference,
+      )
+      const caseHash = yield* Effect.promise(() =>
+        caseHashOf(redactedCase.title, redactedCase.reference),
+      )
       const clock = yield* QuoroomClock
       const now = yield* clock.now
       const outcome = yield* db.stageShareSection({
@@ -588,7 +617,7 @@ export const authorHandlers: Pick<
       if (outcome._tag !== 'Staged') {
         return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
-      return { shareId, sectionId, staged: 1, redactedHash, peopleHash }
+      return { shareId, sectionId, staged: 1, redactedHash, peopleHash, caseHash }
     }),
 
   FinishShare: ({
@@ -609,6 +638,7 @@ export const authorHandlers: Pick<
       if (copy.saveCounter !== saveCounter) {
         return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
+      yield* requireValidPeople(copy.people)
       const reportKey = loaded.record.id
       const stale = () =>
         Effect.gen(function* () {
@@ -676,6 +706,14 @@ export const authorHandlers: Pick<
       const staged = yield* db.listStagedSections(shareId, reportKey, user.id)
       const joined = staged.map(section => section.redactedHash).join(',')
       const peopleHash = yield* Effect.promise(() => peopleHashOf(copy.people))
+      const redactedCase = redactedCaseOf(
+        peopleOf(copy.people),
+        loaded.record.caseFile.title,
+        loaded.record.caseFile.reference,
+      )
+      const caseHash = yield* Effect.promise(() =>
+        caseHashOf(redactedCase.title, redactedCase.reference),
+      )
       let confirmed = false
       if (redactionHash !== undefined) {
         if (staged.length !== expected) {
@@ -687,7 +725,9 @@ export const authorHandlers: Pick<
         if (
           staged.some(section => section.peopleHash !== peopleHash) ||
           redactionHash !==
-            (yield* Effect.promise(() => hashOfJoined(joined, copy.people)))
+            (yield* Effect.promise(() =>
+              hashOfJoined(joined, copy.people, caseHash),
+            ))
         ) {
           return yield* Effect.fail(
             validation('publish', 'redaction_not_confirmed'),
@@ -708,14 +748,19 @@ export const authorHandlers: Pick<
               true,
               confirmed,
             )
-      const redactor = redactorFor(peopleOf(copy.people))
       const outcome = yield* db.finishShare({
         shareId,
         reportId: reportKey,
         userId: user.id,
         baseDraft: copy.baseDraft,
         expectedSections: expected,
-        redactedCaseTitle: redactor.text(loaded.record.caseFile.title),
+        redactedCaseTitle: redactedCase.title,
+        redactedCaseReference: redactedCase.reference,
+        // NOTE: the batch is guarded on the case file this was read from.
+        caseGuard: {
+          title: loaded.record.caseFile.title,
+          reference: loaded.record.caseFile.reference,
+        },
         people: copy.people,
         peopleHash,
         now: loaded.now,
@@ -767,6 +812,7 @@ export const authorHandlers: Pick<
               }),
             )
           case 'not_confirmed':
+          case 'case_changed':
           case 'people_changed':
             return yield* Effect.fail(
               confirmed || outcome.reason === 'not_confirmed'
@@ -893,7 +939,13 @@ export const authorHandlers: Pick<
             ? {}
             : { sharedBy: { id: draft.authorId, name: draft.authorName } }),
           sharedAt: draft.sharedAt,
-          redactedHash: yield* Effect.promise(() => hashOfJoined(joined, draft.people)),
+          redactedHash: yield* Effect.promise(async () =>
+            hashOfJoined(
+              joined,
+              draft.people,
+              await caseHashOf(draft.caseTitleRedacted, draft.caseReferenceRedacted),
+            ),
+          ),
           redactionConfirmed: draft.redactionConfirmedAt !== null,
         })
       }
@@ -921,6 +973,8 @@ export const authorHandlers: Pick<
         header,
         sections: sectionRefsOf(rows),
         peopleCount: peopleOf(found.people).length,
+        redactedCaseTitle: found.caseTitleRedacted,
+        redactedCaseReference: found.caseReferenceRedacted,
       }
     }),
 

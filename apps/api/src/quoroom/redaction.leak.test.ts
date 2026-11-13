@@ -1,3 +1,4 @@
+import { Effect, Result } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
 import {
@@ -9,11 +10,13 @@ import {
   type SectionContent,
   type Section,
   type Template,
+  anchorText,
 } from '@case-desk/domain'
 import { fullContent } from '@case-desk/domain/testing/fixtures'
 
 import { topLevelIds } from './content'
-import { makePng } from './imageFixtures'
+import { peopleOfRevision } from './reviewer'
+import { makePng, pngChunk } from './imageFixtures'
 import {
   type Client,
   type PersonName,
@@ -212,27 +215,83 @@ const plantedContent = (template: Template): ReportContent => {
 
 // ---- The independent tokenizer ------------------------------------------------------
 
+// NOTE: Every run of percent-escapes decoded on its own, so one literal `%`
+// never stops the others from being read, and decoded again until the text no
+// longer changes (a name escaped twice).
+const decodeStable = (text: string): string => {
+  let current = text
+  for (let round = 0; round < 8; round += 1) {
+    const next = current.replace(/(?:%[0-9a-fA-F]{2})+/g, run => {
+      try {
+        return decodeURIComponent(run)
+      } catch {
+        return run
+      }
+    })
+    if (next === current) break
+    current = next
+  }
+  return current
+}
+
 // NOTE: Text reduced to lower-case letters and digits, without accents,
 // whatever separated them, so a name cannot hide behind a space, a dot, an
 // accent or an escape.
-const letters = (text: string): string => {
-  let decoded = text
-  try {
-    decoded = decodeURIComponent(text)
-  } catch {
-    decoded = text
-  }
-  return `${text}\n${decoded}`
+const letters = (text: string): string =>
+  `${text}\n${decodeStable(text)}`
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\n]/gu, '')
+
+// NOTE: the bytes of the picture that is not marked safe carry a marker.
+const MARKER = 'unsafe-marker-q7x-not-for-reviewers'
+const markerBytes = [...MARKER].map(c => c.charCodeAt(0))
+const unsafePng = () => makePng([pngChunk('prVt', markerBytes)])
+const unsafeBase64 = btoa(String.fromCharCode(...unsafePng()))
+
+// NOTE: any base64-looking run of the text that decodes to bytes holding the
+// marker, or the whole picture as base64.
+const holdsImageBytes = (text: string): boolean => {
+  if (text.includes(unsafeBase64)) return true
+  for (const token of text.match(/[A-Za-z0-9+/_-]{16,}={0,2}/g) ?? []) {
+    for (const variant of [token, token.replace(/-/g, '+').replace(/_/g, '/')]) {
+      for (let drop = 0; drop < 4; drop += 1) {
+        const body = variant.slice(drop)
+        try {
+          const bytes = atob(body.slice(0, body.length - (body.length % 4)))
+          if (bytes.includes(MARKER)) return true
+        } catch {
+          // NOTE: not base64 at this alignment.
+        }
+      }
+    }
+  }
+  return false
 }
 
 const leaks = (text: string): ReadonlyArray<string> => [
   ...FORBIDDEN_WORDS.filter(word => letters(text).includes(word)),
   ...[UNSAFE_IMAGE].filter(id => text.includes(id)),
+  ...(holdsImageBytes(text) ? ['image bytes'] : []),
 ]
+
+// NOTE: no run of three letters of any alias in a quoted text (a selection
+// cut inside a name is as bad as the name).
+const ALIAS_LETTERS = PEOPLE.flatMap(person =>
+  [person.name, ...person.aliases].map(alias => letters(alias).replace(/\n/g, '')),
+)
+const aliasFragments = (quoted: string): ReadonlyArray<string> => {
+  const flat = letters(quoted).replace(/\n/g, '')
+  const found: Array<string> = []
+  for (const alias of ALIAS_LETTERS) {
+    for (let at = 0; at + 3 <= alias.length; at += 1) {
+      const gram = alias.slice(at, at + 3)
+      if (flat.includes(gram)) found.push(gram)
+    }
+  }
+  return found
+}
 
 // ---- Every procedure ------------------------------------------------------------------
 
@@ -420,6 +479,31 @@ describe('what a redacted role can reach', () => {
     }
   })
 
+  test('the tokenizer reads escapes safely, repeatedly, and finds image bytes', () => {
+    // NOTE: a literal % never stops the scan, and a name escaped twice is read.
+    expect(leaks('100% sure %zz and %5A%6Frana%20Veltkamp')).toEqual(['zorana', 'veltkamp'])
+    expect(leaks('%255A%256Frana')).toEqual(['zorana'])
+    expect(leaks('plain text')).toEqual([])
+    expect(leaks(`{"base64":"${unsafeBase64}"}`)).toEqual(['image bytes'])
+    expect(leaks(`{"base64":"${btoa(String.fromCharCode(...makePng()))}"}`)).toEqual([])
+  })
+
+  test('a revision or draft that cannot be found is refused, never an empty list of names', async () => {
+    const found = { getDraft: () => Effect.succeed(null) } as never
+    const loaded = {
+      record: { id: 'report-1' },
+      revisions: [{ number: 1, draftNumber: 1 }],
+    } as never
+    const missingDraft = await Effect.runPromise(
+      Effect.result(peopleOfRevision(found, loaded, 1)),
+    )
+    expect(Result.isFailure(missingDraft)).toBe(true)
+    const missingRevision = await Effect.runPromise(
+      Effect.result(peopleOfRevision(found, loaded, 7)),
+    )
+    expect(Result.isFailure(missingRevision)).toBe(true)
+  })
+
   describe.each(LEAK_SCENARIOS)('$name', scenario => {
     test('no alias and no unmarked image reaches any response a reviewer can get', async () => {
       const w = await makeWorld(scenario)
@@ -432,14 +516,16 @@ describe('what a redacted role can reach', () => {
       const summary = await w.call('alice', c =>
         c.CreateReport({
           unit: 'unit-1',
-          caseFile: { reference: 'REF-LEAK-1', title: `Case about ${FIRST}` },
+          caseFile: { reference: `REF-${FIRST}-1`, title: `Case about ${FIRST}` },
           templateId: template.id,
           templateVersion: template.version,
         }),
       )
       const reportId = summary.id
-      const png = makePng()
-      for (const id of [UNSAFE_IMAGE, SAFE_IMAGE]) {
+      for (const [id, png] of [
+        [UNSAFE_IMAGE, unsafePng()],
+        [SAFE_IMAGE, makePng()],
+      ] as const) {
         const uploaded = await w.raw('alice', `/api/images?${pngQuery(id, reportId, png.length)}`, {
           method: 'POST',
           headers: { 'content-type': 'application/octet-stream' },
@@ -508,15 +594,43 @@ describe('what a redacted role can reach', () => {
         expect(JSON.stringify(full)).toContain('Zorana')
         const text = JSON.stringify(full)
         void text
-        await w.call('erin', c =>
-          c.AddComment({
-            reportId,
-            revision,
-            anchor: { kind: 'text', sectionId, itemId, from: 0, to: 9, quoted: 'Statement' },
-            body: `${FIRST} should be asked again.`,
-            visibility: 'committee',
-          }),
-        )
+        // NOTE: selections of the full reviewer that start or end inside a
+        // name, over the text of the item as the anchor scheme counts it;
+        // every one is shared with the committee.
+        const itemText = anchorText(plantedDoc() as never)
+        const selections: Array<readonly [number, number]> = [[0, 9]]
+        for (const name of [FIRST, SECOND, 'Zorana', 'Veltkamp', 'Bertil', 'Nwosu']) {
+          let at = itemText.indexOf(name)
+          while (at !== -1 && selections.length < 40) {
+            selections.push(
+              [at + 2, at + name.length - 2],
+              [at - 4, at + 3],
+              [at + 3, at + name.length + 5],
+              [at + 1, at + 4],
+              [at + name.length - 3, at + name.length],
+            )
+            at = itemText.indexOf(name, at + 1)
+          }
+        }
+        for (const [from, to] of selections) {
+          const low = Math.max(0, from)
+          await w.call('erin', c =>
+            c.AddComment({
+              reportId,
+              revision,
+              anchor: {
+                kind: 'text',
+                sectionId,
+                itemId,
+                from: low,
+                to,
+                quoted: itemText.slice(low, to),
+              },
+              body: `${FIRST} should be asked again.`,
+              visibility: 'committee',
+            }),
+          )
+        }
         await w.call('erin', c => c.SendReview({ reportId, revision, decision: 'comment' }))
       }
       // NOTE: the case file is retitled after the share: still nothing new
@@ -551,6 +665,47 @@ describe('what a redacted role can reach', () => {
           seen.push(`${who} ${name}: ${text}`)
           expect(leaks(text), `${who} ${name}`).toEqual([])
         }
+        // NOTE: every top-level section, as a reviewer reads it (nested
+        // sections and entries are inside the content of their section).
+        for (const id of topLevelIds(template)) {
+          const text = await call(w, who, 'GetRevisionSection', { reportId, revision, sectionId: id })
+          seen.push(`${who} GetRevisionSection ${id}: ${text}`)
+          expect(leaks(text), `${who} section ${id}`).toEqual([])
+        }
+        // NOTE: a valid pending comment of the reviewer's own, edited and
+        // deleted: the answers of both are scanned too.
+        const pending = await w.call(who, c =>
+          c.AddComment({
+            reportId,
+            revision,
+            anchor: { kind: 'text', sectionId, itemId, from: 0, to: 6, quoted: 'Person' },
+            body: 'A note of mine.',
+            visibility: 'authors',
+          }),
+        )
+        for (const [name, request] of [
+          ['GetPendingReview', REVISION(context)],
+          ['UpdatePendingComment', { reportId, commentId: pending.id, body: 'Edited note.', visibility: 'committee' }],
+          ['GetPendingReview', REVISION(context)],
+          ['DeletePendingComment', { reportId, commentId: pending.id }],
+        ] as const) {
+          const text = await call(w, who, name, request)
+          seen.push(`${who} ${name} (own pending): ${text}`)
+          expect(leaks(text), `${who} ${name} own pending comment`).toEqual([])
+          expect(text).not.toContain('defect')
+        }
+        // NOTE: what a quoted text may hold: no run of three letters of any
+        // alias, whatever the selection of the full reviewer was.
+        const listed = (await w.call(who, c => c.ListReviewerComments({ reportId, revision }))) as ReadonlyArray<{
+          anchor: { quoted?: string }
+        }>
+        let quotes = 0
+        for (const comment of listed) {
+          if (comment.anchor.quoted === undefined) continue
+          quotes += 1
+          expect(aliasFragments(comment.anchor.quoted), `${who} quoted ${comment.anchor.quoted}`).toEqual([])
+        }
+        if (scenario.fullRole !== undefined) expect(quotes).toBeGreaterThan(0)
         // NOTE: the image route, in every context a reviewer can name. The
         // picture that was not marked safe is never served and its answer
         // names nothing.

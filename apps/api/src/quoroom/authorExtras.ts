@@ -311,6 +311,7 @@ export const authorExtraHandlers: Pick<
       const clock = yield* QuoroomClock
       const now = yield* clock.now
       if (touched.length === 0) {
+        if (!safe) yield* db.withdrawImage(reportId, imageId)
         return { saveCounter: copy.saveCounter, savedAt: copy.lastSavedAt, sections: [] }
       }
       const outcome = yield* db.saveWorkingCopy({
@@ -329,6 +330,9 @@ export const authorExtraHandlers: Pick<
       if (outcome._tag !== 'Saved') {
         return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
+      // NOTE: withdrawing is immediate for every published revision; marking
+      // safe takes effect when a draft with the mark is shared.
+      if (!safe) yield* db.withdrawImage(reportId, imageId)
       void loaded
       return {
         saveCounter: outcome.saveCounter,

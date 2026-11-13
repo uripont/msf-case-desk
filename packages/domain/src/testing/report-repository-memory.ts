@@ -55,6 +55,7 @@ type DraftRow = {
   shareId: string
   people: string
   caseTitleRedacted: string
+  caseReferenceRedacted: string
 }
 type DraftSectionRow = {
   reportId: string
@@ -375,6 +376,7 @@ export const makeMemoryReportRepository = (
       shareId: row.shareId,
       people: row.people,
       caseTitleRedacted: row.caseTitleRedacted,
+      caseReferenceRedacted: row.caseReferenceRedacted,
       redactionConfirmedAt:
         confirmations.find(
           c => c.reportId === row.reportId && c.draftNumber === row.number,
@@ -744,6 +746,12 @@ export const makeMemoryReportRepository = (
                       f => f.id === report.caseFileId,
                     ) as StoreCaseFileRecord
                   ).reference,
+                  caseReferenceRedacted:
+                    drafts.find(
+                      d =>
+                        d.reportId === round.reportId &&
+                        d.number === revision.draftNumber,
+                    )?.caseReferenceRedacted ?? '',
                   templateId: report.templateId,
                   templateVersion: report.templateVersion,
                   publishedAt: revision.publishedAt,
@@ -1354,6 +1362,7 @@ export const makeMemoryReportRepository = (
             shareId: `draft-0:${input.reportId}`,
             people: '[]',
             caseTitleRedacted: '',
+            caseReferenceRedacted: '',
           })
           addAudit(input.audit, { reportId: input.reportId, draftNumber: 0 })
           return { _tag: 'Created' } as const
@@ -1765,6 +1774,14 @@ export const makeMemoryReportRepository = (
           ) {
             return { _tag: 'Refused', reason: 'people_changed' }
           }
+          const caseFile = caseFiles.find(f => f.id === report.caseFileId)
+          if (
+            caseFile === undefined ||
+            caseFile.title !== input.caseGuard.title ||
+            caseFile.reference !== input.caseGuard.reference
+          ) {
+            return { _tag: 'Refused', reason: 'case_changed' }
+          }
           if (mine.length !== input.expectedSections) {
             return { _tag: 'Refused', reason: 'share_incomplete' }
           }
@@ -1805,6 +1822,7 @@ export const makeMemoryReportRepository = (
             shareId: input.shareId,
             people: wc.people,
             caseTitleRedacted: input.redactedCaseTitle,
+            caseReferenceRedacted: input.redactedCaseReference,
           })
           mine.forEach(s =>
             draftSections.push({
@@ -2747,10 +2765,39 @@ export const makeMemoryReportRepository = (
               d.imageId === input.imageId &&
               (!input.safeOnly || d.safe),
           )
+          // NOTE: a redacted reader also needs the image marked safe in the
+          // latest draft: an image withdrawn later is no longer served.
+          const latest = Math.max(
+            ...drafts.filter(d => d.reportId === input.reportId).map(d => d.number),
+          )
+          const current =
+            !input.safeOnly ||
+            draftImages.some(
+              d =>
+                d.reportId === input.reportId &&
+                d.draftNumber === latest &&
+                d.imageId === input.imageId &&
+                d.safe,
+            )
           const row = images.find(i => i.id === input.imageId)
-          return ref === undefined || row?.complete !== true
+          return ref === undefined || !current || row?.complete !== true
             ? null
             : (chunks.get(`${input.imageId}#${input.index}`) ?? null)
+        }),
+      withdrawImage: (reportId, imageId) =>
+        Effect.sync(() => {
+          const latest = Math.max(
+            ...drafts.filter(d => d.reportId === reportId).map(d => d.number),
+          )
+          draftImages.forEach(d => {
+            if (
+              d.reportId === reportId &&
+              d.draftNumber === latest &&
+              d.imageId === imageId
+            ) {
+              d.safe = false
+            }
+          })
         }),
       listReportImages: reportId =>
         Effect.sync(() =>

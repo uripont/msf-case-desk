@@ -54,6 +54,9 @@ describe('sharing a draft', () => {
         scope: SCOPE,
         shareId: 's1',
         index: 0,
+        redactedHash: 'h',
+        peopleHash: 'p',
+        caseHash: 'c',
       }),
     )
     expect(second.model.phase).toEqual(
@@ -65,6 +68,9 @@ describe('sharing a draft', () => {
         scope: SCOPE,
         shareId: 's1',
         index: 1,
+        redactedHash: 'h',
+        peopleHash: 'p',
+        caseHash: 'c',
       }),
     )
     expect(names(finishing)).toEqual([Share.FinishShare.name])
@@ -142,6 +148,9 @@ describe('sharing a draft', () => {
         scope: { reportId: 'report-1', generation: 1 },
         shareId: 's1',
         index: 0,
+        redactedHash: 'h',
+        peopleHash: 'p',
+        caseHash: 'c',
       }),
     )
     expect(late.model).toBe(first.model)
@@ -152,6 +161,9 @@ describe('sharing a draft', () => {
         scope: { reportId: 'report-2', generation: 0 },
         shareId: 's1',
         index: 0,
+        redactedHash: 'h',
+        peopleHash: 'p',
+        caseHash: 'c',
       }),
     )
     expect(other.model).toBe(first.model)

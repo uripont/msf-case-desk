@@ -14,10 +14,15 @@ import {
   type Person,
   ReportDetail,
   type Section,
+  SectionContent,
   type SectionEntry,
   ShareOutcome,
   Template,
+  canonicalJson,
   draftLabel,
+  peopleListProblems,
+  redactedCaseOf,
+  redactedSectionOf,
 } from '@case-desk/domain'
 import { BrowserCrypto } from '@effect/platform-browser'
 
@@ -41,6 +46,8 @@ import { editorElement } from './editor/spec'
 import { EditorState } from './editor/state'
 import { actionButton } from './entryViews'
 import { Failure, failureOf, failureText, isReloadConflict } from './failure'
+import { redactionHashOf, sha256Hex } from './hash'
+import { PreviewView, previewAll, viewNote, viewToggle } from './redactedView'
 import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { alertText, loadingText, panel, statusText } from './ui'
 import { LoadState } from './unit'
@@ -106,6 +113,17 @@ export const Model = Schema.Struct({
   maybeDetail: Schema.Option(ReportDetail),
   maybeTemplate: Schema.Option(Template),
   people: PeopleList,
+  // NOTE: The author's working copy, section by section, for the preview.
+  contents: Schema.Record(Schema.String, SectionContent),
+  view: PreviewView,
+  // NOTE: The hashes of the redacted sections the server staged, in section
+  // order, and the hash of the people list they were made with: what the
+  // confirmation is made of.
+  stagedHashes: Schema.Array(Schema.String),
+  peopleHash: Schema.String,
+  // NOTE: The server's hash of the redacted case title and reference read when
+  // the sections were staged; it is part of the confirmation.
+  caseHash: Schema.String,
   maybeCopy: Schema.Option(CopyOutline),
   maybeComparison: Schema.Option(Comparison),
   choices: Schema.Record(Schema.String, Choice),
@@ -123,6 +141,11 @@ export const initialModel = Model.make({
   maybeDetail: Option.none(),
   maybeTemplate: Option.none(),
   people: [],
+  contents: {},
+  view: 'redacted',
+  stagedHashes: [],
+  peopleHash: '',
+  caseHash: '',
   maybeCopy: Option.none(),
   maybeComparison: Option.none(),
   choices: {},
@@ -135,6 +158,7 @@ export const LoadedShare = Schema.Struct({
   detail: ReportDetail,
   template: Template,
   people: PeopleList,
+  contents: Schema.Record(Schema.String, SectionContent),
   copy: CopyOutline,
   maybeComparison: Schema.Option(Comparison),
 })
@@ -146,11 +170,15 @@ export const Message = defineMessageUnion({
   ClickedRetryLoad: {},
   ClickedReloadShare: {},
   ClickedShare: {},
+  ChoseView: { view: PreviewView },
   GeneratedShareId: { scope: PageScope, shareId: Schema.String },
   SucceededStageSection: {
     scope: PageScope,
     shareId: Schema.String,
     index: Schema.Int,
+    redactedHash: Schema.String,
+    peopleHash: Schema.String,
+    caseHash: Schema.String,
   },
   FailedStageSection: {
     scope: PageScope,
@@ -225,6 +253,15 @@ export const LoadShare = Command.define('LoadShare', {
         yield* client.StartWorkingCopy({ reportId })
         const outline = yield* client.GetWorkingCopy({ reportId })
         const people = yield* client.GetPeople({ reportId })
+        const sections = yield* Effect.forEach(
+          outline.sections,
+          section =>
+            client.GetWorkingCopySection({
+              reportId,
+              sectionId: section.sectionId,
+            }),
+          { concurrency: 4 },
+        )
         const maybeComparison = outline.behind
           ? Option.some(yield* client.PreviewMerge({ reportId }))
           : Option.none()
@@ -232,6 +269,9 @@ export const LoadShare = Command.define('LoadShare', {
           detail,
           template: version.template,
           people: people.people,
+          contents: Object.fromEntries(
+            sections.map(section => [section.sectionId, section.content]),
+          ),
           copy: copyOf(outline),
           maybeComparison,
         }
@@ -273,19 +313,57 @@ export const StageSection = Command.define('StageSection', {
     sectionId: Schema.String,
     saveCounter: Schema.Int,
     index: Schema.Int,
+    // NOTE: The redacted section as the author saw it in the preview, as
+    // canonical JSON. The server's hash of what it staged must be the hash of
+    // this text, or what is shared is not what was seen.
+    previewJson: Schema.String,
+    // NOTE: The redacted case title and reference as the preview showed them,
+    // as canonical JSON; the server's `caseHash` must be the hash of this.
+    previewCaseJson: Schema.String,
   },
   messages: [Message.SucceededStageSection, Message.FailedStageSection],
-  execute: ({ scope, shareId, sectionId, saveCounter, index }) =>
+  execute: ({
+    scope,
+    shareId,
+    sectionId,
+    saveCounter,
+    index,
+    previewJson,
+    previewCaseJson,
+  }) =>
     withQuoroom(client =>
-      client.ShareSection({
-        reportId: scope.reportId,
-        shareId,
-        sectionId,
-        saveCounter,
+      Effect.gen(function* () {
+        const staged = yield* client.ShareSection({
+          reportId: scope.reportId,
+          shareId,
+          sectionId,
+          saveCounter,
+        })
+        const seen = yield* Effect.promise(() => sha256Hex(previewJson))
+        const seenCase = yield* Effect.promise(() => sha256Hex(previewCaseJson))
+        return { staged, seen, seenCase }
       }),
     ).pipe(
-      Effect.map(() =>
-        Message.SucceededStageSection({ scope, shareId, index }),
+      Effect.map(({ staged, seen, seenCase }) =>
+        seen === staged.redactedHash && seenCase === staged.caseHash
+          ? Message.SucceededStageSection({
+              scope,
+              shareId,
+              index,
+              redactedHash: staged.redactedHash,
+              peopleHash: staged.peopleHash,
+              caseHash: staged.caseHash,
+            })
+          : Message.FailedStageSection({
+              scope,
+              shareId,
+              index,
+              failure: Failure.Refused({
+                message:
+                  'The text to be shared is not the text of the preview, so nothing was confirmed.',
+              }),
+              needsReload: true,
+            }),
       ),
       Effect.catch(error =>
         Effect.succeed(
@@ -306,11 +384,27 @@ export const FinishShare = Command.define('FinishShare', {
     scope: PageScope,
     shareId: Schema.String,
     saveCounter: Schema.Int,
+    stagedHashes: Schema.Array(Schema.String),
+    peopleHash: Schema.String,
+    caseHash: Schema.String,
   },
   messages: [Message.SucceededFinishShare, Message.FailedFinishShare],
-  execute: ({ scope, shareId, saveCounter }) =>
+  execute: ({ scope, shareId, saveCounter, stagedHashes, peopleHash, caseHash }) =>
     withQuoroom(client =>
-      client.FinishShare({ reportId: scope.reportId, shareId, saveCounter }),
+      Effect.gen(function* () {
+        // NOTE: The confirmation of the preview (D14): the hash of what was
+        // staged and of the people list it was made with. The server checks it
+        // against what it holds and writes it with the draft.
+        const redactionHash = yield* Effect.promise(() =>
+          redactionHashOf(stagedHashes, peopleHash, caseHash),
+        )
+        return yield* client.FinishShare({
+          reportId: scope.reportId,
+          shareId,
+          saveCounter,
+          redactionHash,
+        })
+      }),
     ).pipe(
       Effect.map(outcome =>
         Message.SucceededFinishShare({ scope, shareId, outcome }),
@@ -419,6 +513,44 @@ export const cleared = (model: Model): Model =>
 
 // UPDATE
 
+const EMPTY_SECTION: SectionContent = { values: {}, sections: {} }
+
+// NOTE: The redacted section as the preview shows it, as the canonical text the
+// server's hash is made of (`redactedSectionOf`, shared with the server).
+const previewJsonOf = (model: Model, sectionId: string): string =>
+  Option.match(model.maybeTemplate, {
+    onNone: () => '',
+    onSome: template =>
+      canonicalJson(
+        redactedSectionOf(
+          template,
+          model.people,
+          sectionId,
+          model.contents[sectionId] ?? EMPTY_SECTION,
+        ),
+      ),
+  })
+
+// NOTE: The case title and reference as the preview shows them, redacted, as
+// the text the server's `caseHash` must be the hash of.
+const previewCaseJsonOf = (model: Model): string =>
+  Option.match(model.maybeDetail, {
+    onNone: () => '',
+    onSome: detail =>
+      canonicalJson(
+        redactedCaseOf(
+          model.people,
+          detail.summary.caseFile.title,
+          detail.summary.caseFile.reference,
+        ),
+      ),
+  })
+
+// NOTE: A list the server would refuse to redact with (a duplicate label, a
+// label that holds a name) cannot be shared; the people screen says why.
+export const peopleProblemCount = (model: Model): number =>
+  peopleListProblems(model.people).length
+
 const stageCommand = (
   model: Model,
   shareId: string,
@@ -438,12 +570,16 @@ const stageCommand = (
                 scope: pageScopeOf(model),
                 shareId,
                 saveCounter: copy.saveCounter,
+                stagedHashes: model.stagedHashes,
+                peopleHash: model.peopleHash,
+                caseHash: model.caseHash,
               }),
             ],
           }
         : {
             model: modifyFields(model, {
               phase: () => Phase.Staging({ shareId, next: index }),
+              stagedHashes: hashes => Array.take(hashes, index),
             }),
             commands: [
               StageSection({
@@ -452,6 +588,8 @@ const stageCommand = (
                 sectionId,
                 saveCounter: copy.saveCounter,
                 index,
+                previewJson: previewJsonOf(model, sectionId),
+                previewCaseJson: previewCaseJsonOf(model),
               }),
             ],
           }
@@ -489,6 +627,10 @@ const updateCurrent = (model: Model, message: Message) =>
         maybeDetail: () => Option.some(loaded.detail),
         maybeTemplate: () => Option.some(loaded.template),
         people: () => loaded.people,
+        contents: () => loaded.contents,
+        stagedHashes: () => [],
+        peopleHash: () => '',
+        caseHash: () => '',
         maybeCopy: () => Option.some(loaded.copy),
         maybeComparison: () => loaded.maybeComparison,
         phase: () =>
@@ -513,8 +655,13 @@ const updateCurrent = (model: Model, message: Message) =>
       }),
       commands: [LoadShare({ scope: pageScopeOf(model) })],
     }),
+    ChoseView: ({ view }) => ({
+      model: modifyFields(model, { view: () => view }),
+    }),
     ClickedShare: () =>
-      Phase.guards.Ready(model.phase) && canShare(model)
+      Phase.guards.Ready(model.phase) &&
+      canShare(model) &&
+      peopleProblemCount(model) === 0
         ? { model, commands: [NewShareId({ scope: pageScopeOf(model) })] }
         : { model },
     GeneratedShareId: ({ shareId }) =>
@@ -535,9 +682,20 @@ const updateCurrent = (model: Model, message: Message) =>
             shareId,
             0,
           ),
-    SucceededStageSection: ({ shareId, index }) =>
+    SucceededStageSection: ({ shareId, index, redactedHash, peopleHash, caseHash }) =>
       isSharing(model, shareId)
-        ? stageCommand(model, shareId, index + 1)
+        ? stageCommand(
+            modifyFields(model, {
+              stagedHashes: hashes => [
+                ...Array.take(hashes, index),
+                redactedHash,
+              ],
+              peopleHash: () => peopleHash,
+              caseHash: () => caseHash,
+            }),
+            shareId,
+            index + 1,
+          )
         : { model },
     FailedStageSection: ({ shareId, index, failure, needsReload }) =>
       isSharing(model, shareId)
@@ -720,8 +878,15 @@ const updateCurrent = (model: Model, message: Message) =>
         maybeComparison: () => Option.none(),
         choices: () => ({}),
         phase: () => Phase.Ready(),
+        load: () => LoadState.Loading(),
+        contents: () => ({}),
+        stagedHashes: () => [],
+        peopleHash: () => '',
+        caseHash: () => '',
       }),
-      commands: [NewShareId({ scope: pageScopeOf(model) })],
+      // NOTE: The combined text is read again and shown as the preview, so
+      // the author confirms exactly what the combination will share.
+      commands: [LoadShare({ scope: pageScopeOf(model) })],
     }),
     FailedResolveMerge: ({ failure }) => ({
       model: modifyFields(model, {
@@ -1366,7 +1531,7 @@ const comparisonView = (
         [
           isBusy
             ? 'Combining…'
-            : `Resolve and share as ${draftLabel(copy.latestDraft + 1)}`,
+            : `Resolve and review ${draftLabel(copy.latestDraft + 1)}`,
         ],
       ),
     ],
@@ -1464,6 +1629,91 @@ const shell = (
     ],
   )
 
+// NOTE: The preview before the share (D14): the author reads the text the
+// reviewers of a redacted role will get, every replacement highlighted, and
+// confirms exactly that. The browser compares what the server staged with what
+// it showed and sends the hash of it with `FinishShare`.
+const readyView = (
+  h: HtmlBuilder<Message>,
+  model: Model,
+  template: Template,
+  next: string,
+): Html => {
+  const problems = peopleProblemCount(model)
+  const caseTitle = Option.match(model.maybeDetail, {
+    onNone: () => '',
+    onSome: detail => detail.summary.caseFile.title,
+  })
+  return h.div(
+    [h.Class('flex min-w-0 flex-col gap-6')],
+    [
+      h.section(
+        [
+          h.AriaLabel('Preview of what will be shared'),
+          h.Class('flex min-w-0 flex-col gap-4 border-t-2 border-msf-ink pt-5'),
+        ],
+        [
+          h.h2(
+            [h.Class('text-2xl font-black tracking-tight')],
+            ['Check the redacted version'],
+          ),
+          h.p(
+            [h.Class('text-base text-msf-grey')],
+            [
+              `${model.people.length === 0 ? 'The people list is empty, so no name is replaced. ' : ''}${viewNote(model.view)}`,
+            ],
+          ),
+          viewToggle(h, model.view, view => Message.ChoseView({ view })),
+          previewAll(
+            h,
+            {
+              template,
+              people: model.people,
+              contents: model.contents,
+              reportId: model.reportId,
+              caseTitle,
+            },
+            model.view,
+          ),
+        ],
+      ),
+      h.a(
+        [
+          h.Href(pathOf(AppRoute.Names({ reportId: model.reportId }))),
+          h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+        ],
+        ['People, names and pictures'],
+      ),
+      problems > 0
+        ? alertText(
+            h,
+            'The list of people has a problem (a repeated label, or a label that holds a name). Fix it before sharing.',
+          )
+        : h.empty,
+      h.button(
+        [
+          h.Type('button'),
+          h.Disabled(problems > 0),
+          h.Class(
+            clsx(
+              'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-msf-red px-6 text-lg font-medium text-white transition-colors hover:bg-msf-black disabled:cursor-not-allowed disabled:opacity-50',
+              focusRing,
+            ),
+          ),
+          h.OnClick(Message.ClickedShare()),
+        ],
+        [`Confirm the redacted version and share as ${next}`],
+      ),
+      h.p(
+        [h.Class('max-w-prose text-base text-msf-grey')],
+        [
+          'Sharing confirms that you read the redacted version above. Reviewers of a redacted role only ever receive that text.',
+        ],
+      ),
+    ],
+  )
+}
+
 const loadedView = (
   h: HtmlBuilder<Message>,
   model: Model,
@@ -1549,19 +1799,7 @@ const loadedView = (
           ],
         ),
         canShare(model)
-          ? h.button(
-              [
-                h.Type('button'),
-                h.Class(
-                  clsx(
-                    'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-msf-red px-6 text-lg font-medium text-white transition-colors hover:bg-msf-black',
-                    focusRing,
-                  ),
-                ),
-                h.OnClick(Message.ClickedShare()),
-              ],
-              [`Share as ${next}`],
-            )
+          ? readyView(h, model, template, next)
           : h.p(
               [h.Role('status'), h.Class('text-lg text-msf-grey')],
               ['There is nothing new to share.'],

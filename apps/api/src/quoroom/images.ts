@@ -184,70 +184,102 @@ const upload = (request: Request, userId: string, url: URL) =>
     })
   })
 
+const served = (image: ImageRecord, id: string, index: number, chunk: string) =>
+  ok({
+    id,
+    index,
+    chunks: image.chunkCount,
+    mime: image.mime,
+    width: image.width,
+    height: image.height,
+    base64: chunk,
+  })
+
 const read = (userId: string, id: string, index: number, url: URL) =>
   Effect.gen(function* () {
     const decoded = decodeRead(queryOf(url))
     if (Result.isFailure(decoded)) return fail('bad_request')
     const query = decoded.success
     const db = yield* store
+    // NOTE: the parameters are validated and the caller authorized BEFORE the
+    // image is looked up, so a missing parameter, an image that is not
+    // referenced by the version asked for and one that does not exist all
+    // answer the same `not_found`: the route is no oracle for image IDs.
+    if (query.context === 'theme') {
+      const image = yield* db.getImage(id)
+      if (
+        image === null ||
+        !image.complete ||
+        index < 0 ||
+        index >= image.chunkCount ||
+        image.owner.kind !== 'theme'
+      ) {
+        return fail('not_found')
+      }
+      const chunk = yield* db.readImageChunk(id, index)
+      if (chunk === null) return fail('not_found')
+      return served(image, id, index, chunk)
+    }
+    const reportId = query.report
+    if (reportId === undefined) return fail('not_found')
+    let version:
+      | Readonly<{ kind: 'working_copy' }>
+      | Readonly<{ kind: 'draft'; number: number }>
+      | Readonly<{ kind: 'revision'; number: number; safeOnly: boolean }>
+    if (query.context === 'working_copy') {
+      yield* authorizeReport(userId, reportId, {
+        type: 'read_working_copy',
+        ownerId: userId,
+      })
+      version = { kind: 'working_copy' }
+    } else if (query.context === 'draft') {
+      if (query.draft === undefined) return fail('not_found')
+      yield* authorizeReport(userId, reportId, {
+        type: 'read_draft',
+        number: query.draft,
+      })
+      version = { kind: 'draft', number: query.draft }
+    } else {
+      if (query.revision === undefined) return fail('not_found')
+      const allowed = yield* authorizeReport(userId, reportId, {
+        type: 'read_revision',
+        revision: query.revision,
+      })
+      // NOTE: the server's choice: a redacted role gets safe images only.
+      version = {
+        kind: 'revision',
+        number: query.revision,
+        safeOnly: allowed.view !== 'original',
+      }
+    }
     const image = yield* db.getImage(id)
     if (image === null || !image.complete) return fail('not_found')
     if (index < 0 || index >= image.chunkCount) return fail('not_found')
-    let chunk: string | null = null
-    if (query.context === 'theme') {
-      if (image.owner.kind !== 'theme') return fail('not_found')
+    if (image.owner.kind !== 'report' || image.owner.reportId !== reportId) {
+      return fail('not_found')
+    }
+    let chunk: string | null
+    if (version.kind === 'working_copy') {
       chunk = yield* db.readImageChunk(id, index)
+    } else if (version.kind === 'draft') {
+      chunk = yield* db.readDraftImageChunk({
+        reportId,
+        draftNumber: version.number,
+        imageId: id,
+        index,
+        safeOnly: false,
+      })
     } else {
-      if (query.report === undefined) return fail('bad_request')
-      const reportId = query.report
-      if (image.owner.kind !== 'report' || image.owner.reportId !== reportId) {
-        return fail('not_found')
-      }
-      if (query.context === 'working_copy') {
-        yield* authorizeReport(userId, reportId, {
-          type: 'read_working_copy',
-          ownerId: userId,
-        })
-        chunk = yield* db.readImageChunk(id, index)
-      } else if (query.context === 'draft') {
-        if (query.draft === undefined) return fail('bad_request')
-        yield* authorizeReport(userId, reportId, {
-          type: 'read_draft',
-          number: query.draft,
-        })
-        chunk = yield* db.readDraftImageChunk({
-          reportId,
-          draftNumber: query.draft,
-          imageId: id,
-          index,
-          safeOnly: false,
-        })
-      } else {
-        if (query.revision === undefined) return fail('bad_request')
-        const allowed = yield* authorizeReport(userId, reportId, {
-          type: 'read_revision',
-          revision: query.revision,
-        })
-        chunk = yield* db.readRevisionImageChunk({
-          reportId,
-          revision: query.revision,
-          imageId: id,
-          index,
-          // NOTE: the server's choice: a redacted role gets safe images only.
-          safeOnly: allowed.view !== 'original',
-        })
-      }
+      chunk = yield* db.readRevisionImageChunk({
+        reportId,
+        revision: version.number,
+        imageId: id,
+        index,
+        safeOnly: version.safeOnly,
+      })
     }
     if (chunk === null) return fail('not_found')
-    return ok({
-      id,
-      index,
-      chunks: image.chunkCount,
-      mime: image.mime,
-      width: image.width,
-      height: image.height,
-      base64: chunk,
-    })
+    return served(image, id, index, chunk)
   })
 
 export const makeImageHandler = (

@@ -384,6 +384,50 @@ export const containsAlias = (
   text: string,
 ): boolean => findAliasMatches(people, text).length > 0
 
+// NOTE: The quoted text of a selection, for a reader who has the redacted
+// text. A selection is made on the original text, so one that starts or ends
+// inside a name would show a fragment of it. The range is first widened to
+// every name it touches (`matches` of the matcher) and to whole words, and
+// only then are the names in it replaced by their labels, so the result is a
+// part of the redacted text and never a cut piece of an alias (D14). `from`
+// and `to` are offsets of `text`, as in `richtext-offsets.ts`.
+export const redactedQuote = (
+  people: ReadonlyArray<Person>,
+  text: string,
+  from: number,
+  to: number,
+): string => {
+  const matcher = makeMatcher(people)
+  const matches = matcher.matches(text)
+  let low = Math.max(0, Math.min(from, to, text.length))
+  let high = Math.min(text.length, Math.max(from, to, 0))
+  const isWord = (index: number): boolean =>
+    index >= 0 &&
+    index < text.length &&
+    /[\p{L}\p{N}\p{M}]/u.test(text.charAt(index))
+  for (;;) {
+    const before = `${low}:${high}`
+    for (const match of matches) {
+      if (match.start < high && match.end > low) {
+        low = Math.min(low, match.start)
+        high = Math.max(high, match.end)
+      }
+    }
+    while (low > 0 && isWord(low - 1) && isWord(low)) low--
+    while (high < text.length && isWord(high - 1) && isWord(high)) high++
+    if (`${low}:${high}` === before) break
+  }
+  let out = ''
+  let cursor = low
+  for (const match of matches) {
+    if (match.start >= low && match.end <= high) {
+      out += text.slice(cursor, match.start) + match.label
+      cursor = match.end
+    }
+  }
+  return out + text.slice(cursor, high)
+}
+
 // ---- Limits --------------------------------------------------------------------------------
 
 const fit = (text: string, max: number, trimmed: boolean): string => {

@@ -354,6 +354,106 @@ describe.each(SCENARIOS)('$name', scenario => {
       base64: string
     }
     expect(served.base64.length).toBeGreaterThan(0)
+
+    // NOTE: unmarking is the same single flag: the picture is listed as not
+    // safe and the next revision no longer serves it to the redacted role.
+    const again = await w.call('alice', c => c.GetWorkingCopy({ reportId }))
+    const unmarked = await w.call('alice', c =>
+      c.MarkImageSafe({ reportId, imageId: 'img-1', safe: false, saveCounter: again.saveCounter }),
+    )
+    expect(unmarked.sections).toEqual([sectionId])
+    const after = await w.call('alice', c => c.ListImages({ reportId }))
+    expect(after.images[0]).toMatchObject({ id: 'img-1', safeToShare: false })
+    // NOTE: withdrawing is immediate, with no new share: a redacted reviewer
+    // of the revision that served it a moment ago gets 404 at once.
+    expect((await read('carol', 'context=revision&revision=2')).status).toBe(404)
+    const third = await w.stageAndFinish('alice', reportId, 'share-3', unmarked.saveCounter)
+    if (third.outcome.kind !== 'shared') throw new Error('not shared')
+    await w.publish('alice', reportId, third.outcome.draft.number)
+    expect((await read('carol', 'context=revision&revision=3')).status).toBe(404)
+    // NOTE: a published revision is immutable, but serving an image to a
+    // redacted role needs the picture marked safe in that revision's draft AND
+    // in the latest draft: withdrawn later, revision 2 no longer serves it.
+    expect((await read('carol', 'context=revision&revision=2')).status).toBe(404)
+    // NOTE: the original view of the full role is unaffected by the flag.
+    if (scenario.fullRole !== undefined) {
+      expect((await read('erin', 'context=revision&revision=2')).status).toBe(200)
+    }
+  })
+
+  test('a case title changed after the preview is not the share the author confirmed', async () => {
+    const w = await world()
+    const reportId = await w.createReport()
+    const started = await w.call('alice', c => c.StartWorkingCopy({ reportId }))
+    const people = await w.call('alice', c =>
+      c.SavePeople({ reportId, saveCounter: started.saveCounter, people: PEOPLE }),
+    )
+    const saved = await w.call('alice', c =>
+      c.SaveSection({
+        reportId,
+        sectionId,
+        saveCounter: people.saveCounter,
+        content: richContent(itemId, TEXT),
+      }),
+    )
+    const stage = async () => {
+      const outline = await w.call('alice', c => c.GetWorkingCopy({ reportId }))
+      const hashes: Array<string> = []
+      let peopleHash = ''
+      let caseHash = ''
+      for (const section of outline.sections) {
+        const staged = await w.call('alice', c =>
+          c.ShareSection({ reportId, shareId: 'share-case', sectionId: section.sectionId, saveCounter: saved.saveCounter }),
+        )
+        hashes.push(staged.redactedHash)
+        peopleHash = staged.peopleHash
+        caseHash = staged.caseHash
+      }
+      return sha256Hex(`${hashes.join(',')}|${peopleHash}|${caseHash}`)
+    }
+    const seen = await stage()
+    const files = await w.call('alice', c => c.ListCaseFiles({ unit: 'unit-1' }))
+    const caseFileId = files[0]?.id ?? ''
+    await w.call('alice', c => c.UpdateCaseFile({ caseFileId, title: 'Another title entirely' }))
+    const refused = await w.refused('alice', c =>
+      c.FinishShare({ reportId, shareId: 'share-case', saveCounter: saved.saveCounter, redactionHash: seen }),
+    )
+    expect(JSON.stringify(refused)).toContain('redaction_not_confirmed')
+    // NOTE: staged again with the new title, the confirmation covers it.
+    const again = await stage()
+    const outcome = await w.call('alice', c =>
+      c.FinishShare({ reportId, shareId: 'share-case', saveCounter: saved.saveCounter, redactionHash: again }),
+    )
+    expect(outcome.kind).toBe('shared')
+  })
+
+  test('sharing refuses a people list with a problem, however it got into the working copy', async () => {
+    const w = await world()
+    const reportId = await w.createReport()
+    const started = await w.call('alice', c => c.StartWorkingCopy({ reportId }))
+    const bad = JSON.stringify([
+      { id: 'a', name: 'Ana Garcia', label: 'Person A', aliases: [] },
+      { id: 'b', name: 'Bo Mensah', label: 'Person A', aliases: [] },
+    ])
+    const saved = await Effect.runPromise(
+      w.repository.saveWorkingCopy({
+        reportId,
+        userId: 'alice',
+        expectedCounter: started.saveCounter,
+        sections: [],
+        people: bad,
+        now: 5,
+      }) as Effect.Effect<{ _tag: string; saveCounter: number }>,
+    )
+    expect(saved._tag).toBe('Saved')
+    const refusedStage = await w.refused('alice', c =>
+      c.ShareSection({ reportId, shareId: 'share-bad', sectionId, saveCounter: saved.saveCounter }),
+    )
+    expect(tagOf(refusedStage)).toBe('Validation')
+    const refusedFinish = await w.refused('alice', c =>
+      c.FinishShare({ reportId, shareId: 'share-bad', saveCounter: saved.saveCounter }),
+    )
+    expect(tagOf(refusedFinish)).toBe('Validation')
   })
 
   test('two concurrent shares on the same base give one draft and one comparison', async () => {
@@ -637,14 +737,16 @@ describe.each(SCENARIOS)('$name', scenario => {
         const outline = await w.call('alice', c => c.GetWorkingCopy({ reportId }))
         const hashes: Array<string> = []
         let peopleHash = ''
+        let caseHash = ''
         for (const section of outline.sections) {
           const staged = await w.call('alice', c =>
             c.ShareSection({ reportId, shareId, sectionId: section.sectionId, saveCounter: counter }),
           )
           hashes.push(staged.redactedHash)
           peopleHash = staged.peopleHash
+          caseHash = staged.caseHash
         }
-        return sha256Hex(`${hashes.join(',')}|${peopleHash}`)
+        return sha256Hex(`${hashes.join(',')}|${peopleHash}|${caseHash}`)
       }
       await stage('share-2', saved.saveCounter)
       const refused = await w.refused('alice', c =>

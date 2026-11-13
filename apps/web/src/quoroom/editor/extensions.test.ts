@@ -1,5 +1,6 @@
+// @vitest-environment happy-dom
 import { Result } from 'effect'
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test } from 'vitest'
 
 import { decodeRichText } from '@case-desk/domain'
 import { Editor } from '@tiptap/core'
@@ -9,12 +10,21 @@ import { normaliseEditorJson, serializeRichText } from './richText'
 
 const EMPTY = { type: 'doc', content: [{ type: 'paragraph' }] }
 
-const newEditor = (content: object = EMPTY) =>
-  new Editor({
+const openEditors: Array<Editor> = []
+
+afterEach(() => {
+  openEditors.splice(0).forEach(editor => editor.destroy())
+})
+
+const newEditor = (content: object = EMPTY) => {
+  const editor = new Editor({
     element: document.createElement('div'),
     extensions: quoroomExtensions(),
     content,
   })
+  openEditors.push(editor)
+  return editor
+}
 
 const docOf = (editor: Editor) =>
   Result.getOrThrow(normaliseEditorJson(editor.getJSON()))

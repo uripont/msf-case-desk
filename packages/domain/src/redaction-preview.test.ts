@@ -66,4 +66,18 @@ describe('markedParts', () => {
     ])
     expect(markedParts('', ['Person 1'])).toEqual([{ text: '', marked: false }])
   })
+
+  test('marks the right range when lowercasing changes the length of the text', () => {
+    const text = '\u0130stanbul: Person 1 said'
+    const parts = markedParts(text, ['Person 1'])
+    expect(parts.map(part => part.text).join('')).toBe(text)
+    expect(parts.filter(part => part.marked)).toEqual([
+      { text: 'Person 1', marked: true },
+    ])
+    expect(markedParts('\u0130 Image withheld \u0130', ['Image withheld'])).toEqual([
+      { text: '\u0130 ', marked: false },
+      { text: 'Image withheld', marked: true },
+      { text: ' \u0130', marked: false },
+    ])
+  })
 })

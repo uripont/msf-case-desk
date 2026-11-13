@@ -3,6 +3,7 @@ import type { RpcGroup } from 'effect/rpc'
 
 import {
   type Person,
+  type RichTextDoc,
   type QuoroomRpcs,
   type ReviewDecision,
   type StoreCommentRecord,
@@ -12,8 +13,10 @@ import {
   NotFound,
   Conflict,
   Validation,
+  anchorText,
   applyEvent,
   canSeeComment,
+  redactedQuote,
   redactorFor,
   reviewerRoleFor,
   revisionTitle,
@@ -107,13 +110,84 @@ const standingOf = (
 
 // NOTE: the people list of the draft a revision was made from, for the
 // redaction of text a redacted reader is shown.
-const peopleOfRevision = (db: Store, loaded: Loaded, revision: number) =>
+//
+// NOTE: fails closed. A revision or draft that cannot be found must never mean
+// "no names to redact": the caller is refused (`NotFound`) instead.
+export const peopleOfRevision = (
+  db: Pick<Store, 'getDraft'>,
+  loaded: Pick<Loaded, 'revisions' | 'record'>,
+  revision: number,
+) =>
   Effect.gen(function* () {
     const published = loaded.revisions.find(entry => entry.number === revision)
-    if (published === undefined) return [] as ReadonlyArray<Person>
+    if (published === undefined) return yield* Effect.fail(new NotFound())
     const draft = yield* db.getDraft(loaded.record.id, published.draftNumber)
-    return draft === null ? [] : peopleOf(draft.people)
+    if (draft === null) return yield* Effect.fail(new NotFound())
+    return peopleOf(draft.people) as ReadonlyArray<Person>
   })
+
+// NOTE: the case reference as the role may read it: the original for a `full`
+// role, the redacted twin stored with the draft otherwise, and the twin also
+// when the role or its template cannot be found.
+const referenceFor = (
+  template: Loaded['template'] | undefined,
+  row: Readonly<{
+    roleId: string
+    caseReference: string
+    caseReferenceRedacted: string
+  }>,
+): string =>
+  template?.roles.find(role => role.id === row.roleId)?.view === 'full'
+    ? row.caseReference
+    : row.caseReferenceRedacted
+
+// NOTE: every text a section holds as the anchor scheme counts it: the anchor
+// text of each rich text value and each plain text value, nested sections and
+// entries included.
+const anchorTexts = (value: unknown, out: Array<string> = []): Array<string> => {
+  if (Array.isArray(value)) {
+    for (const item of value) anchorTexts(item, out)
+    return out
+  }
+  if (value === null || typeof value !== 'object') return out
+  const record = value as Record<string, unknown>
+  if (record['type'] === 'rich_text' && record['doc'] !== undefined) {
+    try {
+      out.push(anchorText(record['doc'] as RichTextDoc))
+    } catch {
+      // NOTE: a document that cannot be read has no text to quote from.
+    }
+    return out
+  }
+  if (record['type'] === 'text' && typeof record['text'] === 'string') {
+    out.push(record['text'])
+    return out
+  }
+  for (const inner of Object.values(record)) anchorTexts(inner, out)
+  return out
+}
+
+// NOTE: the quoted text of a selection for a redacted reader, derived from the
+// text the selection was made on: the selection is located in a text of the
+// section (it must read exactly `quoted` at `from..to`), widened to whole
+// names and words and only then redacted (`redactedQuote`). A quote that
+// cannot be located is not shown; it is never cut out of a name.
+const quoteIn = (
+  texts: ReadonlyArray<string>,
+  people: ReadonlyArray<Person>,
+  anchor: Readonly<{ from: number; to: number; quoted: string }>,
+): string | undefined => {
+  const text = texts.find(
+    candidate =>
+      anchor.from >= 0 &&
+      anchor.from <= anchor.to &&
+      anchor.to <= candidate.length &&
+      candidate.slice(anchor.from, anchor.to) === anchor.quoted,
+  )
+  return text === undefined
+    ? undefined
+    : redactedQuote(people, text, anchor.from, anchor.to)
+}
 
 // NOTE: why a round takes no more reviews or comments.
 const roundClosed = (loaded: Loaded, revision: number) => {
@@ -205,7 +279,7 @@ export const reviewerHandlers: Pick<
           reportId: row.reportId,
           revision: row.revision,
           label: revisionTitle(row.revision, row.closing),
-          caseReference: row.caseReference,
+          caseReference: referenceFor(template, row),
           reportName: template.name,
           deadline: { at: row.deadlineAt, timeZone: row.deadlineZone },
           status:
@@ -236,13 +310,23 @@ export const reviewerHandlers: Pick<
         openOnly: true,
         pendingOnly: true,
       })
+      const templates = yield* loadTemplates(
+        db,
+        rows.map(row => ({
+          templateId: row.templateId,
+          version: row.templateVersion,
+        })),
+      )
       return rows
         .filter(row => row.deadlineAt > now)
         .map(row => ({
           reportId: row.reportId,
           revision: row.revision,
           label: revisionTitle(row.revision, row.closing),
-          caseReference: row.caseReference,
+          caseReference: referenceFor(
+            templates.get(`${row.templateId}@${row.templateVersion}`),
+            row,
+          ),
           deadline: { at: row.deadlineAt, timeZone: row.deadlineZone },
           commentCount: row.pendingComments,
           ...(row.pendingDecision === null
@@ -296,7 +380,10 @@ export const reviewerHandlers: Pick<
         reportId,
         revision,
         label: revisionTitle(revision, entry.round.closing),
-        caseReference: loaded.record.caseFile.reference,
+        caseReference:
+          view === 'original'
+            ? loaded.record.caseFile.reference
+            : (draft?.caseReferenceRedacted ?? ''),
         caseTitle:
           view === 'original'
             ? loaded.record.caseFile.title
@@ -352,9 +439,27 @@ export const reviewerHandlers: Pick<
         number: revision,
         audience: { kind: 'reviewer', userId: user.id },
       })
-      const redactor = redactorFor(
-        yield* peopleOfRevision(db, loaded, revision),
-      )
+      const people = yield* peopleOfRevision(db, loaded, revision)
+      const redactor = redactorFor(people)
+      // NOTE: the texts of a section as the anchors of its comments count
+      // them, read once per section and view (original for the quotes of a
+      // `full` reviewer, redacted for a redacted reader's own).
+      const texts = new Map<string, ReadonlyArray<string>>()
+      const textsOf = (sectionId: string, view: 'original' | 'redacted') =>
+        Effect.gen(function* () {
+          const key = `${view}:${sectionId}`
+          const known = texts.get(key)
+          if (known !== undefined) return known
+          const stored = yield* db.getRevisionSection(
+            reportId,
+            revision,
+            sectionId,
+            view,
+          )
+          const found = stored === null ? [] : anchorTexts(parseSection(stored))
+          texts.set(key, found)
+          return found
+        })
       const out = []
       for (const comment of listed.comments) {
         // NOTE: the same rule as `canSeeComment`, checked again here.
@@ -410,30 +515,43 @@ export const reviewerHandlers: Pick<
           // NOTE: a redacted reader's own words go through the redaction
           // too, so no alias comes back to anyone however it got in (D14).
           const anchor = anchorOf(comment)
-          out.push({
-            ...common,
-            anchor:
-              readerView === 'redacted' && anchor.kind === 'text'
-                ? { ...anchor, quoted: redactor.text(anchor.quoted) }
-                : anchor,
-          })
+          if (readerView === 'redacted' && anchor.kind === 'text') {
+            const located = quoteIn(
+              yield* textsOf(comment.sectionId, 'redacted'),
+              people,
+              anchor,
+            )
+            out.push({
+              ...common,
+              anchor: { ...anchor, quoted: located ?? redactor.text(anchor.quoted) },
+            })
+          } else {
+            out.push({ ...common, anchor })
+          }
         } else {
           // NOTE: positions point into a text this reader does not have, so
           // the comment sits on the section, with its quoted text in the
           // reader's own view (D14).
+          // NOTE: for a redacted reader the quote of a `full` reviewer is
+          // derived from the original text it was selected in, widened to
+          // whole names, then redacted; one that cannot be located is left out.
+          const anchor = anchorOf(comment)
+          const quoted =
+            anchor.kind !== 'text'
+              ? undefined
+              : readerView === 'redacted'
+                ? quoteIn(
+                    yield* textsOf(comment.sectionId, 'original'),
+                    people,
+                    anchor,
+                  )
+                : comment.quoted ?? undefined
           out.push({
             ...common,
             anchor: {
               kind: 'section_note' as const,
               sectionId: comment.sectionId,
-              ...(comment.quoted === null
-                ? {}
-                : {
-                    quoted:
-                      readerView === 'redacted'
-                        ? redactor.text(comment.quoted)
-                        : comment.quoted,
-                  }),
+              ...(quoted === undefined ? {} : { quoted }),
             },
           })
         }

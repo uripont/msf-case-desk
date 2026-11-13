@@ -151,5 +151,24 @@ describe.each(SCENARIOS)('$name', scenario => {
         expect(await read('erin', 'img-loose', `context=revision&revision=${revision}`)).toBe(404)
       }
     })
+
+    test('missing parameters answer the same for an image that exists and one that does not', async () => {
+      const { w, reportId, revision } = await setup()
+      const queries = [
+        'context=working_copy',
+        'context=draft',
+        'context=revision',
+        `report=${reportId}&context=draft`,
+        `report=${reportId}&context=revision`,
+        `context=revision&revision=${revision}`,
+      ]
+      for (const query of queries) {
+        const known = await w.raw('alice', `/api/images/img-used/0?${query}`)
+        const unknown = await w.raw('alice', `/api/images/img-nothing/0?${query}`)
+        expect(known.status, query).toBe(404)
+        expect(unknown.status, query).toBe(404)
+        expect(await known.json()).toEqual(await unknown.json())
+      }
+    })
   })
 })

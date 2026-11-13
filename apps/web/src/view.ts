@@ -41,6 +41,7 @@ import * as Admin from './quoroom/admin'
 import { actionButton } from './quoroom/entryViews'
 import * as History from './quoroom/history'
 import * as Link from './quoroom/link'
+import * as Names from './quoroom/names'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
 import * as Share from './quoroom/share'
@@ -817,6 +818,7 @@ const deskPageView = (
         Link: () => loadedDesk(model, h),
         Report: () => loadedDesk(model, h),
         Share: () => loadedDesk(model, h),
+        Names: () => loadedDesk(model, h),
         Drafts: () => loadedDesk(model, h),
         Draft: () => loadedDesk(model, h),
         Revision: () => loadedDesk(model, h),
@@ -1025,6 +1027,14 @@ const pageView = (
             model: model.share,
             view: Share.view,
             toParentMessage: message => Message.GotShareMessage({ message }),
+          }),
+        ],
+        Names: ({ reportId }) => [
+          h.submodel({
+            slotId: `names-${reportId}`,
+            model: model.names,
+            view: Names.view,
+            toParentMessage: message => Message.GotNamesMessage({ message }),
           }),
         ],
         Drafts: ({ reportId }) => [

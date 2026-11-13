@@ -78,6 +78,7 @@ import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as History from './quoroom/history'
 import * as Link from './quoroom/link'
+import * as Names from './quoroom/names'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
 import * as Share from './quoroom/share'
@@ -175,6 +176,7 @@ export const Model = Schema.Struct({
   reports: Reports.Model,
   report: Report.Model,
   share: Share.Model,
+  names: Names.Model,
   history: History.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
@@ -238,6 +240,7 @@ export const Message = defineMessageUnion({
   GotReportsMessage: { message: Reports.Message },
   GotReportMessage: { message: Report.Message },
   GotShareMessage: { message: Share.Message },
+  GotNamesMessage: { message: Names.Message },
   GotHistoryMessage: { message: History.Message },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
@@ -350,6 +353,7 @@ export const initialModel = Model.make({
   reports: Reports.initialModel,
   report: Report.initialModel,
   share: Share.initialModel,
+  names: Names.initialModel,
   history: History.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
@@ -730,6 +734,7 @@ const signedOut = (model: Model): Model =>
     reports: () => Reports.initialModel,
     report: Report.cleared,
     share: Share.cleared,
+    names: Names.cleared,
     history: History.cleared,
     maybeLeaving: () => Option.none(),
     deskLoad: () => DeskLoad.Loading(),
@@ -853,6 +858,13 @@ const foldShare = Update.foldChild({
   toParentMessage: message => Message.GotShareMessage({ message }),
 })
 
+const foldNames = Update.foldChild({
+  update: Names.update,
+  read: (model: Model) => Option.some(model.names),
+  write: (model, nextNames) => modifyFields(model, { names: () => nextNames }),
+  toParentMessage: message => Message.GotNamesMessage({ message }),
+})
+
 const foldHistory = Update.foldChild({
   update: History.update,
   read: (model: Model) => Option.some(model.history),
@@ -877,6 +889,16 @@ const enterShare = (origin: string, reportId: string) =>
     write: (model, nextShare) =>
       modifyFields(model, { share: () => nextShare }),
     toParentMessage: message => Message.GotShareMessage({ message }),
+  })
+
+const enterNames = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (child: Names.Model) =>
+      Names.enter(origin, reportId, child.generation + 1),
+    read: (model: Model) => Option.some(model.names),
+    write: (model, nextNames) =>
+      modifyFields(model, { names: () => nextNames }),
+    toParentMessage: message => Message.GotNamesMessage({ message }),
   })
 
 const enterHistory = (
@@ -922,6 +944,7 @@ const enterRoute = (
     Link: () => ({ model }),
     Report: ({ reportId }) => enterReport(model.origin, reportId)(model),
     Share: ({ reportId }) => enterShare(model.origin, reportId)(model),
+    Names: ({ reportId }) => enterNames(model.origin, reportId)(model),
     Drafts: ({ reportId }) =>
       enterHistory(model.origin, reportId, Option.none())(model),
     Draft: ({ reportId, draft }) =>
@@ -1277,6 +1300,7 @@ export const update = (model: Model, message: Message) =>
     GotReportMessage: ({ message }) =>
       leaveWhenSaved(foldReport(model, message)),
     GotShareMessage: ({ message }) => foldShare(model, message),
+    GotNamesMessage: ({ message }) => foldNames(model, message),
     GotHistoryMessage: ({ message }) => foldHistory(model, message),
     SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),

@@ -1582,7 +1582,8 @@ const main = async (): Promise<void> => {
       await shot(bea, 'share-3-comparison')
       await bea.getByRole('button', { name: /^Keep my version of/ }).click()
       await bea.getByText('Chosen: mine.').waitFor()
-      await bea.getByRole('button', { name: /^Resolve and share as Draft 2/ }).click()
+      await bea.getByRole('button', { name: /^Resolve and review Draft 2/ }).click()
+      await bea.getByRole('button', { name: /^Confirm the redacted version and share as Draft 2/ }).click()
       await bea.getByText('Shared as Draft 2.').waitFor()
       await shot(bea, 'share-4-resolved')
 
@@ -1650,6 +1651,123 @@ const main = async (): Promise<void> => {
       await shot(pia, 'share-8-resolved')
       assert.equal(await sectionsOf(pia, 1), draftOne, 'Draft 1 changed after comments')
       await bea.context().close()
+    })
+
+    await step('names and redaction on a phone: add a person, accept a suggestion, redacted view, mark an image safe, confirm the preview, share', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      await pia.goto(`${pilotUrl}/reports`)
+      await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pia
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Intake and initial assessment (version 1)' })
+      await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0005')
+      await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic redaction case file')
+      await pia.getByRole('button', { name: 'Create report' }).click()
+      await pia.getByRole('link', { name: 'Open report PIL-0005' }).click()
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const reportId = reportIdOf(pia)
+      const copy = await rpc(pia, 'StartWorkingCopy', { reportId })
+      await rpc(pia, 'SaveSection', {
+        reportId,
+        sectionId: 'case-details',
+        saveCounter: copy.saveCounter,
+        content: {
+          values: {
+            investigator: {
+              type: 'text',
+              text: 'Zorana Veltkamp interviewed Bertil Nwosu. Bertil Nwosu left. Zora stayed.',
+            },
+          },
+          sections: {},
+        },
+      })
+
+      // A picture in the summary, not marked safe.
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const row = pia.getByRole('button', { name: /Summary of the complaint/ })
+      if (!(await row.first().isVisible())) {
+        await pia.getByRole('button', { name: /^Sections/ }).click()
+      }
+      await row.first().click()
+      await pia.getByRole('textbox', { name: 'Summary' }).click()
+      const picture = Buffer.from(
+        await syntheticImage(pia, { width: 400, height: 300, kind: 'photo', quality: 0.9 }),
+        'base64',
+      )
+      const [chooser] = await Promise.all([
+        pia.waitForEvent('filechooser'),
+        pia.getByRole('button', { name: 'Insert image', exact: true }).click(),
+      ])
+      await chooser.setFiles({ name: 'synthetic-redaction.jpg', mimeType: 'image/jpeg', buffer: picture })
+      await pia.getByText('Picture added.').waitFor()
+      await pia.waitForTimeout(700)
+      await pia.getByText(/Saved at \d\d:\d\d/).waitFor()
+
+      // The people panel: a person with an alias, from the default label.
+      await pia.getByRole('link', { name: 'People and names (0)' }).click()
+      await pia.getByRole('heading', { name: 'People, names and pictures' }).waitFor()
+      await pia.getByRole('button', { name: 'Add a person', exact: true }).click()
+      assert.equal(await pia.locator('#person-label').inputValue(), 'Person 1')
+      await pia.locator('#person-name').fill('Zorana Veltkamp')
+      await pia.locator('#person-aliases').fill('Zora')
+      await pia.getByRole('button', { name: 'Add this person' }).click()
+      await pia.getByText('The list of people is saved.').waitFor()
+      await pia.getByText('Reviewers read: Person 1').waitFor()
+      await shot(pia, 'names-1-person-added')
+
+      // A suggestion taken as a new person, with the next label.
+      const suggestion = pia.getByRole('button', { name: /^Add .*Nwosu.* as a new person$/ }).first()
+      await suggestion.waitFor()
+      await suggestion.click()
+      assert.equal(await pia.locator('#person-label').inputValue(), 'Person 2')
+      assert.match(await pia.locator('#person-name').inputValue(), /Nwosu/)
+      await pia.getByRole('button', { name: 'Add this person' }).click()
+      await pia.getByText('Reviewers read: Person 2').waitFor()
+      await shot(pia, 'names-2-suggestion-accepted')
+
+      // The picture is not safe until it is marked, and the mark can be taken back.
+      const pictureRow = pia.locator('[data-image-id]').first()
+      await pictureRow.waitFor()
+      assert.equal(await pictureRow.getAttribute('data-safe'), 'false')
+      await pictureRow.getByRole('button', { name: 'Mark safe to share' }).click()
+      await pia.locator('[data-image-id][data-safe="true"]').waitFor()
+      await shot(pia, 'names-3-image-safe')
+
+      // The redacted view of the drafting screen: highlights, no names.
+      await pia.getByRole('link', { name: 'Back to the report' }).click()
+      await pia.getByRole('link', { name: 'People and names (2)' }).waitFor()
+      await pia.getByRole('button', { name: 'Redacted', exact: true }).click()
+      await openIn(pia, /Case details/)
+      await pia.locator('[data-redaction="replaced"]').first().waitFor()
+      const redactedText = await pia.locator('body').innerText()
+      assert.ok(!/Veltkamp|Zorana|Nwosu/.test(redactedText), 'a name is in the redacted view')
+      assert.ok(redactedText.includes('Person 1'), 'the label is not in the redacted view')
+      await shot(pia, 'names-4-redacted-view')
+      await pia.getByRole('button', { name: 'Original', exact: true }).click()
+      const investigator = pia.getByRole('textbox', { name: 'Investigator' })
+      await investigator.waitFor()
+      assert.match(await investigator.inputValue(), /Zorana Veltkamp interviewed/)
+
+      // The share preview, the confirmation, and what was stored.
+      await pia.getByRole('link', { name: /^Share as Draft/ }).click()
+      await pia.locator('[data-preview="redacted"] [data-redaction="replaced"]').first().waitFor()
+      assert.ok(!/Veltkamp|Nwosu/.test(await pia.locator('[data-preview]').innerText()), 'a name is in the preview')
+      await shot(pia, 'names-5-share-preview')
+      await pia.getByRole('button', { name: /^Confirm the redacted version and share as Draft/ }).click()
+      await pia.getByText(/^Shared as Draft \d+\.$/).waitFor()
+      await shot(pia, 'names-6-shared')
+      const stored = JSON.stringify(
+        await rpc(pia, 'GetDraftSection', {
+          reportId,
+          draft: 1,
+          sectionId: 'case-details',
+          view: 'redacted',
+        }),
+      )
+      assert.ok(!/Veltkamp|Zorana|Nwosu/.test(stored), 'a name is in the stored redacted section')
+      assert.ok(stored.includes('Person 1'), 'the stored redacted section has no label')
     })
   } finally {
     await browser?.close()
