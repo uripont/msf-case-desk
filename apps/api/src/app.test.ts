@@ -5,8 +5,8 @@ import {
   DEFAULT_RULES,
   Repository,
   UserId,
-  makeMemoryRepository,
 } from '@case-desk/domain'
+import { makeMemoryRepository } from '@case-desk/domain/testing/memory'
 
 import { makeApp } from './app'
 import { hashPassword } from './password'

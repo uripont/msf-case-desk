@@ -79,8 +79,16 @@ export const dataOf = (
 
 // NOTE: the hash an author confirms (D14): the hash of the stored redacted
 // hashes of the sections of a draft, joined in order.
-export const hashOfJoined = (joined: string): Promise<string> =>
-  sha256Hex(joined)
+// NOTE: the people list is part of what is confirmed: the redacted text
+// depends on it, so a change to the list after the preview is a different
+// share. The hash of the list text is `peopleHashOf`.
+export const peopleHashOf = (people: string): Promise<string> =>
+  sha256Hex(people)
+
+export const hashOfJoined = async (
+  joined: string,
+  people: string,
+): Promise<string> => sha256Hex(`${joined}|${await peopleHashOf(people)}`)
 
 export const draftHeader = (
   db: Store,
@@ -92,7 +100,10 @@ export const draftHeader = (
     if (draft === null) return undefined
     const sections = yield* db.listDraftSections(reportId, number)
     const hash = yield* Effect.promise(() =>
-      hashOfJoined(sections.map(section => section.version).join(',')),
+      hashOfJoined(
+        sections.map(section => section.version).join(','),
+        draft.people,
+      ),
     )
     return {
       number: draft.number,
@@ -179,11 +190,17 @@ export const planPublish = (
       )
     }
     const committees = yield* db.listCommittees(loaded.record.caseFile.unitId)
+    // NOTE: an account chosen by ID must be in this unit's registry (or in one
+    // of its committees); anything else is a validation problem, not a fault.
+    const registry = (yield* db.listUnitReviewers(loaded.record.caseFile.unitId)).map(
+      entry => entry.userId,
+    )
     const chosen = chooseParticipants(
       {
         template,
         unit: loaded.record.caseFile.unitId,
         authors: loaded.authors,
+        registry,
         committees: committees
           .filter(committee => committee.archivedAt === null)
           .map(committee => ({
@@ -227,11 +244,12 @@ export const planPublish = (
     const round = newFlow.rounds[newFlow.rounds.length - 1]
     if (round === undefined) return yield* Effect.fail(new NotFound())
     const revision = round.revision
-    const watchers = new Set<string>()
-    for (const author of loaded.authors) {
-      const profile = yield* db.getProfile(author)
-      if (profile?.notifyOnApproval === true) watchers.add(author)
-    }
+    // NOTE: one read for all the authors, whatever their number.
+    const watchers = new Set<string>(
+      (yield* db.listProfiles(loaded.authors))
+        .filter(profile => profile.notifyOnApproval)
+        .map(profile => profile.userId),
+    )
     const extra: ReadonlyArray<ReportEvent> = [
       { type: 'revision_published', revision, at: now },
     ]

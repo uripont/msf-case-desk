@@ -31,6 +31,7 @@ import {
   jobsFor,
   loadReport,
   loadTemplate,
+  loadTemplates,
   problem,
   requireReviewer,
   roundOf,
@@ -189,13 +190,17 @@ export const reviewerHandlers: Pick<
         openOnly: false,
         pendingOnly: false,
       })
+      const templates = yield* loadTemplates(
+        db,
+        rows.slice(0, size).map(row => ({
+          templateId: row.templateId,
+          version: row.templateVersion,
+        })),
+      )
       const items = []
       for (const row of rows.slice(0, size)) {
-        const template = yield* loadTemplate(
-          db,
-          row.templateId,
-          row.templateVersion,
-        )
+        const template = templates.get(`${row.templateId}@${row.templateVersion}`)
+        if (template === undefined) continue
         items.push({
           reportId: row.reportId,
           revision: row.revision,
@@ -652,11 +657,9 @@ export const reviewerHandlers: Pick<
         flow: applied.success,
         authors: loaded.authors,
         approvalWatchers: new Set(
-          (yield* Effect.forEach(loaded.authors, author =>
-            db.getProfile(author),
-          ))
-            .filter(profile => profile?.notifyOnApproval === true)
-            .map(profile => profile?.userId ?? ''),
+          (yield* db.listProfiles(loaded.authors))
+            .filter(profile => profile.notifyOnApproval)
+            .map(profile => profile.userId),
         ),
         revisions: loaded.revisions,
         rounds: loaded.rounds,

@@ -1,4 +1,4 @@
-import { layerMemory } from './repository'
+import { layerMemory } from './testing/repository-memory'
 import { repositoryContract } from './testing/repositoryContract'
 
 repositoryContract('in-memory', () => layerMemory())

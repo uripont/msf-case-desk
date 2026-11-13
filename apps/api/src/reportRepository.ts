@@ -32,9 +32,12 @@ import {
   type StoreTemplateVersionRecord,
   type StoreThemeRecord,
   type UnitRecord,
+  type UnitReviewerRecord,
+  type DecideRoundInput,
   IMAGE_LIMITS,
   MAX_SECTIONS_PER_SAVE,
   MAX_TEMPLATES_PER_IMPORT,
+  MAX_TEMPLATES_PER_LOOKUP,
   QUERY_BUDGET,
   RepositoryError,
   dedupeKey,
@@ -458,6 +461,43 @@ const byDue = (a: JobRecord, c: JobRecord): number =>
 // next one and on no participant being an author), the old round superseded
 // with its reminders skipped, the new round and its participants, the report's
 // state and deadline, the jobs and the audit event. 9 queries.
+// NOTE: the steps that decide a round (see `decideRound`).
+const decideSteps = (input: DecideRoundInput): ReadonlyArray<GuardedStep> =>
+  compact<GuardedStep>([
+    {
+      sql: `UPDATE review_rounds SET state = 'decided', decided_by = ?, decided_at = ?
+        WHERE id = ? AND state = 'open' AND deadline_at = ?
+        AND (? <> 'deadline' OR deadline_at <= ?)
+        AND (SELECT COUNT(*) FROM reviews WHERE round_id = ?) = ?
+        AND (SELECT COUNT(*) FROM round_participants
+          WHERE round_id = ? AND removed_at IS NULL) = ?`,
+      values: [
+        input.decidedBy,
+        input.now,
+        input.roundId,
+        input.expectedDeadlineAt,
+        input.decidedBy,
+        input.now,
+        input.roundId,
+        input.expectedReviews,
+        input.roundId,
+        input.expectedParticipants,
+      ],
+      expectChanges: 1,
+    },
+    {
+      sql: 'UPDATE reports SET state = ?, updated_at = ? WHERE id = ?',
+      values: [input.toState, input.now, input.reportId],
+    },
+    {
+      sql: `UPDATE notification_jobs SET state = 'skipped'
+        WHERE round_id = ? AND state = 'pending' AND kind IN (${SKIPPABLE_SQL})`,
+      values: [input.roundId],
+    },
+    insertJobsStep(input.reportId, input.roundId, input.jobs, input.now),
+    auditStep(input.audit),
+  ])
+
 const publishSteps = (
   reportId: string,
   draft: Expr,
@@ -713,13 +753,17 @@ const ops: Impl = {
       input.reviewerOfUnit === undefined
         ? null
         : {
-            sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at)
-              SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)`,
+            sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at,
+              display_name, phone, consent_requested)
+              SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)`,
             values: [
               input.reviewerOfUnit,
               input.id,
               input.createdBy,
               input.now,
+              input.reviewerEntry?.displayName ?? input.name,
+              input.reviewerEntry?.phone ?? null,
+              flag(input.reviewerEntry?.consentRequested ?? false),
               input.reviewerOfUnit,
             ],
             expectChanges: 1,
@@ -796,13 +840,25 @@ const ops: Impl = {
       now,
     )
   },
-  linkReviewer: async (db, unitId, userId, addedBy, now, audit) => {
+  linkReviewer: async (db, unitId, userId, addedBy, now, audit, entry) => {
     const outcome = await runBatch(db, [
       {
-        sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at)
-          SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)
+        sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at,
+          display_name, phone, consent_requested)
+          SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)
           AND NOT EXISTS (SELECT 1 FROM unit_reviewers WHERE unit_id = ? AND user_id = ?)`,
-        values: [unitId, userId, addedBy, now, unitId, unitId, userId],
+        values: [
+          unitId,
+          userId,
+          addedBy,
+          now,
+          entry.displayName,
+          entry.phone,
+          flag(entry.consentRequested),
+          unitId,
+          unitId,
+          userId,
+        ],
         expectChanges: 1,
       },
       auditStep(audit),
@@ -820,12 +876,73 @@ const ops: Impl = {
     (
       await rows(
         db,
-        `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM unit_reviewers r
-          JOIN users u ON u.id = r.user_id LEFT JOIN account_profiles p ON p.user_id = u.id
-          WHERE r.unit_id = ? ORDER BY u.name, u.id`,
+        `SELECT r.unit_id, r.user_id, u.email, COALESCE(NULLIF(r.display_name, ''), u.name) AS name,
+          r.phone, r.consent_requested, COALESCE(p.active, 1) AS active, r.added_at
+          FROM unit_reviewers r JOIN users u ON u.id = r.user_id
+          LEFT JOIN account_profiles p ON p.user_id = u.id
+          WHERE r.unit_id = ? ORDER BY name, r.user_id`,
+        unitId,
+      )
+    ).map(
+      (r): UnitReviewerRecord => ({
+        unitId: s(r['unit_id']),
+        userId: s(r['user_id']),
+        email: s(r['email']),
+        name: s(r['name']),
+        phone: sn(r['phone']),
+        consentRequested: b(r['consent_requested']),
+        active: b(r['active']),
+        addedAt: n(r['added_at']),
+      }),
+    ),
+  // NOTE: only the unit's own entry is written, never the account.
+  updateUnitReviewer: async (db, input) => {
+    const outcome = await runBatch(db, [
+      {
+        sql: `UPDATE unit_reviewers SET
+          display_name = COALESCE(?, display_name),
+          phone = CASE WHEN ? THEN ? ELSE phone END,
+          consent_requested = CASE WHEN ? THEN ? ELSE consent_requested END
+          WHERE unit_id = ? AND user_id = ?`,
+        values: [
+          input.displayName ?? null,
+          flag(input.phone !== undefined),
+          input.phone ?? null,
+          flag(input.consentRequested !== undefined),
+          flag(input.consentRequested ?? false),
+          input.unitId,
+          input.userId,
+        ],
+        expectChanges: 1,
+      },
+      auditStep(input.audit),
+    ])
+    return outcome._tag === 'Committed' ? 'updated' : 'not_found'
+  },
+  listUnitAuthors: async (db, unitId) =>
+    (
+      await rows(
+        db,
+        `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM capability_grants g
+          JOIN users u ON u.id = g.user_id LEFT JOIN account_profiles p ON p.user_id = u.id
+          WHERE g.capability = 'author' AND g.unit_id = ? ORDER BY u.name, u.id`,
         unitId,
       )
     ).map(accountOf),
+  listProfiles: async (db, userIds) => {
+    if (userIds.length === 0) return []
+    return (
+      await rows(
+        db,
+        `SELECT ${PROFILE_COLUMNS} FROM account_profiles p
+          WHERE p.user_id IN (SELECT value FROM json_each(?))`,
+        JSON.stringify(userIds),
+      )
+    ).flatMap(r => {
+      const profile = profileOf(r)
+      return profile === null ? [] : [profile]
+    })
+  },
   createInvitation: async (db, invitation, audit) => {
     await runBatch(db, [
       {
@@ -890,6 +1007,12 @@ const ops: Impl = {
         ],
       },
       {
+        // NOTE: using one link ends every other unused link of the account.
+        sql: `UPDATE invitations SET used_at = ? WHERE used_at IS NULL AND token_hash <> ?
+          AND user_id = (SELECT user_id FROM invitations WHERE token_hash = ?)`,
+        values: [now, tokenHash, tokenHash],
+      },
+      {
         sql: `UPDATE invitations SET used_at = ? WHERE token_hash = ? AND used_at IS NULL
           AND expires_at > ? RETURNING user_id, purpose`,
         values: [now, tokenHash, now],
@@ -915,14 +1038,19 @@ const ops: Impl = {
       flag(succeeded),
     )
   },
+  // NOTE: D13: a successful sign-in clears the per-email failures, so only the
+  // failures after the last success of that email count.
   signInSummary: async (db, email, ip, since) => {
     const found = await row(
       db,
-      `SELECT
-        (SELECT COUNT(*) FROM sign_in_attempts WHERE email = ? AND succeeded = 0 AND at >= ?) AS fe,
-        (SELECT MAX(at) FROM sign_in_attempts WHERE email = ? AND succeeded = 0 AND at >= ?) AS le,
+      `WITH c AS (SELECT COALESCE(MAX(at), -1) AS ok FROM sign_in_attempts
+          WHERE email = ? AND succeeded = 1)
+        SELECT
+        (SELECT COUNT(*) FROM sign_in_attempts, c WHERE email = ? AND succeeded = 0 AND at >= ? AND at > c.ok) AS fe,
+        (SELECT MAX(at) FROM sign_in_attempts, c WHERE email = ? AND succeeded = 0 AND at >= ? AND at > c.ok) AS le,
         (SELECT COUNT(*) FROM sign_in_attempts WHERE ip = ? AND succeeded = 0 AND at >= ?) AS fi,
         (SELECT MAX(at) FROM sign_in_attempts WHERE ip = ? AND succeeded = 0 AND at >= ?) AS li`,
+      email,
       email,
       since,
       email,
@@ -939,6 +1067,16 @@ const ops: Impl = {
       lastFailureByIp: nn(found?.['li']),
     }
   },
+  pruneSignInAttempts: async (db, before, limit) =>
+    (
+      await rows(
+        db,
+        `DELETE FROM sign_in_attempts WHERE id IN
+          (SELECT id FROM sign_in_attempts WHERE at < ? ORDER BY at LIMIT ?) RETURNING id`,
+        before,
+        limit,
+      )
+    ).length,
   deleteSessionsOfUser: async (db, userId) => {
     await exec(db, 'DELETE FROM sessions WHERE user_id = ?', userId)
   },
@@ -1025,6 +1163,19 @@ const ops: Impl = {
       version,
     )
     return found === null ? null : versionOf(found)
+  },
+  getTemplateVersions: async (db, keys) => {
+    if (keys.length === 0) return []
+    return (
+      await rows(
+        db,
+        `SELECT v.*, t.builtin FROM template_versions v JOIN templates t ON t.id = v.template_id
+          WHERE EXISTS (SELECT 1 FROM json_each(?) j
+            WHERE json_extract(j.value, '$.templateId') = v.template_id
+            AND json_extract(j.value, '$.version') = v.version)`,
+        JSON.stringify(keys.slice(0, MAX_TEMPLATES_PER_LOOKUP)),
+      )
+    ).map(versionOf)
   },
   listTemplates: async db =>
     (
@@ -1231,6 +1382,23 @@ const ops: Impl = {
         .map(m => s(m['user_id'])),
     }))
   },
+  getCommittee: async (db, id) => {
+    const found = await row(db, 'SELECT * FROM committees WHERE id = ?', id)
+    if (found === null) return null
+    const members = await rows(
+      db,
+      'SELECT user_id FROM committee_members WHERE committee_id = ? ORDER BY user_id',
+      id,
+    )
+    return {
+      id: s(found['id']),
+      unitId: s(found['unit_id']),
+      name: s(found['name']),
+      createdAt: n(found['created_at']),
+      archivedAt: nn(found['archived_at']),
+      memberIds: members.map(m => s(m['user_id'])),
+    }
+  },
   listCaseFiles: async (db, unitId) =>
     (
       await rows(
@@ -1256,6 +1424,44 @@ const ops: Impl = {
       id,
     )
     return b(exists?.['e']) ? { _tag: 'Refused', reason: 'duplicate' } : null
+  },
+  // NOTE: the guard is the caller's membership of a report on the case file.
+  // One audit row per report on the case file, in the same batch.
+  retitleCaseFile: async (db, input) => {
+    const outcome = await runBatch(db, [
+      {
+        sql: `UPDATE case_files SET title = ?, updated_at = ? WHERE id = ?
+          AND EXISTS (SELECT 1 FROM reports r JOIN report_members m ON m.report_id = r.id
+            WHERE r.case_file_id = case_files.id AND m.user_id = ?)`,
+        values: [input.title, input.now, input.caseFileId, input.userId],
+        expectChanges: 1,
+      },
+      {
+        sql: `INSERT INTO audit_events (at, actor_id, report_id, template_id, draft_number,
+          revision_number, action, meta)
+          SELECT ?, ?, r.id, NULL, NULL, NULL, ?, ? FROM reports r WHERE r.case_file_id = ?`,
+        values: [
+          input.audit.at,
+          input.audit.actorId,
+          input.audit.action,
+          input.audit.meta ?? '{}',
+          input.caseFileId,
+        ],
+      },
+    ])
+    if (outcome._tag === 'Conflict') return { _tag: 'Refused', reason: 'not_found' }
+    const found = await row(db, 'SELECT * FROM case_files WHERE id = ?', input.caseFileId)
+    const ids = await rows(
+      db,
+      'SELECT id FROM reports WHERE case_file_id = ? ORDER BY id',
+      input.caseFileId,
+    )
+    if (found === null) return { _tag: 'Refused', reason: 'not_found' }
+    return {
+      _tag: 'Updated',
+      caseFile: caseFileOf(found),
+      reportIds: ids.map(r => s(r['id'])),
+    }
   },
 
   // -- reports and members
@@ -1674,14 +1880,18 @@ const ops: Impl = {
     const outcome = await runBatch(db, [
       {
         sql: `INSERT INTO share_staging (share_id, report_id, user_id, section_id, ordinal,
-          content, redacted_content, redacted_hash, image_refs, staged_at)
-          SELECT ?, w.report_id, w.user_id, w.section_id, w.ordinal, w.content, ?, ?, ?, ?
+          content, redacted_content, redacted_hash, image_refs, staged_at, people_hash)
+          SELECT ?, w.report_id, w.user_id, w.section_id, w.ordinal, w.content, ?, ?, ?, ?, ?
           FROM working_copy_sections w
           WHERE w.report_id = ? AND w.user_id = ? AND w.section_id = ? AND w.save_counter = ?
+          AND (SELECT people FROM working_copies
+            WHERE report_id = w.report_id AND user_id = w.user_id) = ?
+          AND NOT EXISTS (SELECT 1 FROM share_staging x WHERE x.share_id = ?
+            AND x.section_id <> w.section_id AND x.people_hash <> ?)
           ON CONFLICT (share_id, section_id) DO UPDATE SET ordinal = excluded.ordinal,
             content = excluded.content, redacted_content = excluded.redacted_content,
             redacted_hash = excluded.redacted_hash, image_refs = excluded.image_refs,
-            staged_at = excluded.staged_at
+            staged_at = excluded.staged_at, people_hash = excluded.people_hash
             WHERE share_staging.report_id = excluded.report_id
             AND share_staging.user_id = excluded.user_id`,
         values: [
@@ -1690,10 +1900,14 @@ const ops: Impl = {
           input.redactedHash,
           input.imageRefs,
           input.now,
+          input.peopleHash,
           input.reportId,
           input.userId,
           input.sectionId,
           input.sectionVersion,
+          input.people,
+          input.shareId,
+          input.peopleHash,
         ],
         expectChanges: 1,
       },
@@ -1721,6 +1935,8 @@ const ops: Impl = {
             ?, w.user_id, ?, ?, w.people, ?
           FROM working_copies w JOIN reports r ON r.id = w.report_id
           WHERE w.report_id = ? AND w.user_id = ? AND w.base_draft = ? AND r.state <> 'archived'
+          AND w.people = ?
+          AND NOT EXISTS (SELECT 1 FROM share_staging WHERE share_id = ? AND people_hash <> ?)
           AND (SELECT MAX(number) FROM drafts WHERE report_id = w.report_id) = ?
           AND (SELECT COUNT(*) FROM share_staging
             WHERE share_id = ? AND report_id = w.report_id AND user_id = w.user_id) = ?
@@ -1734,6 +1950,9 @@ const ops: Impl = {
           input.reportId,
           input.userId,
           input.baseDraft,
+          input.people,
+          input.shareId,
+          input.peopleHash,
           input.baseDraft,
           input.shareId,
           input.expectedSections,
@@ -1835,6 +2054,8 @@ const ops: Impl = {
         (SELECT COUNT(*) FROM share_staging WHERE share_id = ? AND report_id = ? AND user_id = ?
           AND ? = (SELECT group_concat(redacted_hash, ',') FROM
             (SELECT redacted_hash FROM share_staging WHERE share_id = ? AND report_id = ? ORDER BY ordinal, section_id))) AS confirmed,
+        (SELECT COUNT(*) FROM working_copies WHERE report_id = ? AND user_id = ? AND people = ?) AS people_same,
+        (SELECT COUNT(*) FROM share_staging WHERE share_id = ? AND people_hash <> ?) AS people_mixed,
         (SELECT COALESCE(MAX(number), 0) FROM revisions WHERE report_id = ?) AS last_revision,
         (SELECT COUNT(*) FROM report_members m, json_each(?) j
           WHERE m.report_id = ? AND m.user_id = json_extract(j.value, '$.userId')) AS overlap`,
@@ -1854,6 +2075,11 @@ const ops: Impl = {
       input.shareId,
       input.reportId,
       input.reportId,
+      input.userId,
+      input.people,
+      input.shareId,
+      input.peopleHash,
+      input.reportId,
       JSON.stringify(input.publish?.participants ?? []),
       input.reportId,
     )
@@ -1872,6 +2098,9 @@ const ops: Impl = {
     const latest = n(why['latest'])
     if (n(why['wc_base']) !== input.baseDraft || latest !== input.baseDraft) {
       return { _tag: 'Refused', reason: 'stale_base', latest }
+    }
+    if (n(why['people_same']) === 0 || n(why['people_mixed']) > 0) {
+      return { _tag: 'Refused', reason: 'people_changed' }
     }
     if (n(why['staged']) !== input.expectedSections) {
       return { _tag: 'Refused', reason: 'share_incomplete' }
@@ -2225,7 +2454,7 @@ const ops: Impl = {
     (
       await rows(
         db,
-        `SELECT section_id, ordinal, redacted_hash FROM share_staging
+        `SELECT section_id, ordinal, redacted_hash, people_hash FROM share_staging
           WHERE share_id = ? AND report_id = ? AND user_id = ? ORDER BY ordinal, section_id`,
         shareId,
         reportId,
@@ -2235,33 +2464,22 @@ const ops: Impl = {
       sectionId: s(r['section_id']),
       ordinal: n(r['ordinal']),
       redactedHash: s(r['redacted_hash']),
+      peopleHash: s(r['people_hash']),
     })),
+  // NOTE: the decision is guarded on what it was made from: the round is open
+  // with the deadline the handler read (a concurrent extension makes it
+  // `changed`, and the handler reads again), the deadline has passed for a
+  // decision by the deadline, and the reviews and the people are the ones the
+  // rule was evaluated with.
   decideRound: async (db, input) => {
-    const outcome = await runBatch(
+    const outcome = await runBatch(db, decideSteps(input))
+    if (outcome._tag === 'Committed') return { _tag: 'Decided' }
+    const open = await row(
       db,
-      compact<GuardedStep>([
-        {
-          sql: `UPDATE review_rounds SET state = 'decided', decided_by = ?, decided_at = ?
-            WHERE id = ? AND state = 'open'`,
-          values: [input.decidedBy, input.now, input.roundId],
-          expectChanges: 1,
-        },
-        {
-          sql: 'UPDATE reports SET state = ?, updated_at = ? WHERE id = ?',
-          values: [input.toState, input.now, input.reportId],
-        },
-        {
-          sql: `UPDATE notification_jobs SET state = 'skipped'
-            WHERE round_id = ? AND state = 'pending' AND kind IN (${SKIPPABLE_SQL})`,
-          values: [input.roundId],
-        },
-        insertJobsStep(input.reportId, input.roundId, input.jobs, input.now),
-        auditStep(input.audit),
-      ]),
+      `SELECT EXISTS (SELECT 1 FROM review_rounds WHERE id = ? AND state = 'open') AS o`,
+      input.roundId,
     )
-    return outcome._tag === 'Committed'
-      ? { _tag: 'Decided' }
-      : { _tag: 'Refused', reason: 'not_open' }
+    return { _tag: 'Refused', reason: b(open?.['o']) ? 'changed' : 'not_open' }
   },
   extendDeadline: async (db, input) => {
     const outcome = await runBatch(
@@ -2324,16 +2542,29 @@ const ops: Impl = {
         values: [input.roundId, input.userId],
       },
       auditStep(input.audit),
+      ...(input.decide === undefined
+        ? []
+        : decideSteps({
+            ...input.decide,
+            roundId: input.roundId,
+            reportId: input.reportId,
+            now: input.now,
+          })),
     ])
     if (outcome._tag === 'Committed') return { _tag: 'Removed' }
     const open = await row(
       db,
-      `SELECT EXISTS (SELECT 1 FROM review_rounds WHERE id = ? AND state = 'open') AS o`,
+      `SELECT EXISTS (SELECT 1 FROM review_rounds WHERE id = ? AND state = 'open') AS o,
+        EXISTS (SELECT 1 FROM round_participants WHERE round_id = ? AND user_id = ?
+          AND removed_at IS NULL) AS p`,
       input.roundId,
+      input.roundId,
+      input.userId,
     )
+    if (!b(open?.['o'])) return { _tag: 'Refused', reason: 'not_open' }
     return {
       _tag: 'Refused',
-      reason: b(open?.['o']) ? 'not_a_participant' : 'not_open',
+      reason: b(open?.['p']) ? 'changed' : 'not_a_participant',
     }
   },
 
@@ -2865,12 +3096,16 @@ const ops: Impl = {
     }
     const why = await row(
       db,
-      `SELECT i.owner_kind, i.owner_id, i.size_bytes, i.chunk_count, i.uploaded_by, i.complete,
+      `SELECT i.*,
         EXISTS (SELECT 1 FROM image_chunks WHERE image_id = ? AND idx = ?) AS has_chunk,
+        COALESCE((SELECT data = ? FROM image_chunks WHERE image_id = ? AND idx = ?), 0) AS same_chunk,
         (SELECT value FROM storage_stats WHERE key = 'image_bytes') AS bytes,
         (SELECT COALESCE(SUM(size_bytes), 0) FROM images
           WHERE owner_kind = 'report' AND owner_id = ? AND id <> ?) AS used
         FROM (SELECT 1) LEFT JOIN images i ON i.id = ?`,
+      input.imageId,
+      input.index,
+      input.data,
       input.imageId,
       input.index,
       ownerId,
@@ -2878,17 +3113,26 @@ const ops: Impl = {
       input.imageId,
     )
     if (why?.['owner_kind'] !== null && why?.['owner_kind'] !== undefined) {
-      if (
-        why['owner_kind'] !== ownerKind ||
-        why['owner_id'] !== ownerId ||
-        why['size_bytes'] !== input.size ||
-        why['chunk_count'] !== input.chunkCount ||
-        why['uploaded_by'] !== input.uploadedBy ||
-        b(why['complete'])
-      ) {
-        return { _tag: 'Refused', reason: 'mismatch' }
+      const sameImage =
+        why['owner_kind'] === ownerKind &&
+        why['owner_id'] === ownerId &&
+        why['size_bytes'] === input.size &&
+        why['chunk_count'] === input.chunkCount &&
+        why['uploaded_by'] === input.uploadedBy
+      if (!sameImage) return { _tag: 'Refused', reason: 'mismatch' }
+      if (b(why['has_chunk'])) {
+        // NOTE: a retried upload of a chunk that is stored with identical
+        // content gets the same answer again.
+        if (!b(why['same_chunk'])) return { _tag: 'Refused', reason: 'duplicate' }
+        const complete = b(why['complete'])
+        return {
+          _tag: 'Stored',
+          received: n(why['chunks_received']),
+          complete,
+          image: complete ? imageOf(why, false) : null,
+        }
       }
-      if (b(why['has_chunk'])) return { _tag: 'Refused', reason: 'duplicate' }
+      if (b(why['complete'])) return { _tag: 'Refused', reason: 'mismatch' }
     }
     if (n(why?.['bytes']) + length > IMAGE_LIMITS.databaseBytes) {
       return { _tag: 'Refused', reason: 'database_full' }
@@ -2997,6 +3241,45 @@ const ops: Impl = {
     return {
       _tag: 'Refused',
       reason: b(exists?.['e']) ? 'referenced' : 'not_found',
+    }
+  },
+  // NOTE: bounded cleanup for the notification pass. An image no draft, the
+  // theme, a working copy or a staged section refers to, older than the limit,
+  // and abandoned staged shares. All steps use the same candidate list, taken
+  // before the first delete.
+  cleanup: async (db, input) => {
+    const candidates = `SELECT i.id FROM images i WHERE i.created_at < ?
+      AND NOT EXISTS (SELECT 1 FROM draft_images d WHERE d.image_id = i.id)
+      AND NOT EXISTS (SELECT 1 FROM theme t WHERE t.logo_image_id = i.id)
+      AND NOT EXISTS (SELECT 1 FROM working_copy_sections w WHERE instr(w.content, i.id) > 0)
+      AND NOT EXISTS (SELECT 1 FROM share_staging s WHERE s.staged_at >= ?
+        AND instr(s.image_refs, i.id) > 0)
+      ORDER BY i.created_at, i.id LIMIT ?`
+    const values = [input.olderThan, input.olderThan, input.limit]
+    const outcome = await runBatch(db, [
+      {
+        sql: `UPDATE storage_stats SET value = value - COALESCE((SELECT SUM(stored_bytes)
+          FROM images WHERE id IN (${candidates})), 0) WHERE key = 'image_bytes'`,
+        values,
+      },
+      {
+        sql: `DELETE FROM image_chunks WHERE image_id IN (${candidates})`,
+        values,
+      },
+      {
+        sql: `DELETE FROM images WHERE id IN (${candidates}) RETURNING id`,
+        values,
+      },
+      {
+        sql: `DELETE FROM share_staging WHERE rowid IN (SELECT rowid FROM share_staging
+          WHERE staged_at < ? ORDER BY staged_at LIMIT ?) RETURNING share_id`,
+        values: [input.olderThan, input.limit],
+      },
+    ])
+    if (outcome._tag !== 'Committed') return { images: 0, staged: 0 }
+    return {
+      images: outcome.results[2]?.rows.length ?? 0,
+      staged: outcome.results[3]?.rows.length ?? 0,
     }
   },
 }

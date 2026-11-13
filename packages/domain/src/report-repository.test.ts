@@ -10,7 +10,7 @@ import {
 import {
   type MemorySession,
   makeMemoryReportRepository,
-} from './report-repository-memory'
+} from './testing/report-repository-memory'
 import { reportRepositoryContract } from './testing/reportRepositoryContract'
 
 reportRepositoryContract('in-memory', async options => {

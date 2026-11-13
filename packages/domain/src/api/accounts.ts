@@ -69,6 +69,11 @@ export const InviteResult = Schema.Struct({
 })
 export type InviteResult = typeof InviteResult.Type
 
+// NOTE: a co-author is an existing author of the unit, chosen by ID: there is
+// never a link, and the name is one the caller can already see in the unit.
+export const CoAuthorAdded = Schema.Struct({ account: AccountRef })
+export type CoAuthorAdded = typeof CoAuthorAdded.Type
+
 export const SignInRequest = Schema.Struct({
   email: Email,
   password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
@@ -129,16 +134,21 @@ export const UnitMember = Schema.Struct({
 
 // ---- Reviewer registry and committees ----------------------------------------------
 
+// NOTE: An entry of a unit's reviewer registry: what the unit holds about a
+// person (the name and number its authors typed, and whether they asked for
+// WhatsApp consent). It is never the person's own account data: the account's
+// name and number, whether and when the person consented, and whether the
+// person has set a password are not part of it (D13). Only the person gives
+// WhatsApp consent, on their own account (`SetNotificationPreferences`).
 export const Reviewer = Schema.Struct({
   accountId: ApiId,
   unit: ApiId,
   name: DisplayName,
   email: Schema.String,
   phone: Schema.optionalKey(Phone),
-  whatsappConsent: Schema.Boolean,
-  whatsappConsentAt: Schema.optionalKey(EpochMs),
+  // NOTE: The unit asked for consent; it says nothing about the answer.
+  consentRequested: Schema.Boolean,
   active: Schema.Boolean,
-  passwordSetAt: Schema.optionalKey(EpochMs),
 })
 export type Reviewer = typeof Reviewer.Type
 

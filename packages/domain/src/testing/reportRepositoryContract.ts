@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest'
 import type { NotificationJob } from '../notifications'
 import {
   type AuditInput,
+  type DecideRoundInput,
   type ImageChunkInput,
   type PublishInput,
   type ReportRepositoryApi,
@@ -200,9 +201,11 @@ export const reportRepositoryContract = (
       sections: ReadonlyArray<{ id: string; content: string; images?: string }>
       publish?: PublishInput
       now?: number
+      people?: string
     },
   ) => {
     const userId = options.userId ?? ALICE
+    const people = options.people ?? '[]'
     const now = options.now ?? 50
     const started = await run(
       r.startWorkingCopy({
@@ -223,6 +226,7 @@ export const reportRepositoryContract = (
           ordinal: index,
           content: s.content,
         })),
+        people,
         now,
       }),
     )
@@ -240,6 +244,8 @@ export const reportRepositoryContract = (
           sectionVersion: (read as NonNullable<typeof read>).version,
           redactedContent: `redacted:${section.content}`,
           redactedHash: `hash:${section.content}`,
+          people,
+          peopleHash: `people:${people}`,
           imageRefs: section.images ?? '[]',
           now,
         }),
@@ -263,6 +269,8 @@ export const reportRepositoryContract = (
             baseDraft: options.baseDraft,
             expectedSections: options.sections.length,
             redactedCaseTitle: 'Case [redacted]',
+            people,
+            peopleHash: `people:${people}`,
             now,
             audit: audit('draft.share', userId, now),
             ...(options.publish === undefined
@@ -339,7 +347,7 @@ export const reportRepositoryContract = (
       expect(await run(r.listGrants('u-erin'))).toEqual([
         expect.objectContaining({ capability: 'author', unitId: UNIT }),
       ])
-      expect((await run(r.listUnitReviewers(UNIT))).map(a => a.id)).toContain(
+      expect((await run(r.listUnitReviewers(UNIT))).map(a => a.userId)).toContain(
         'u-erin',
       )
       expect(await run(r.findInvitation('token-1'))).toEqual(
@@ -420,17 +428,39 @@ export const reportRepositoryContract = (
 
     test('linking a reviewer reports a repeat and a missing unit', async () => {
       const { r } = await setup()
+      const typed = {
+        displayName: 'Typed Name',
+        phone: '+34600',
+        consentRequested: true,
+      }
       expect(
-        await run(r.linkReviewer(UNIT, CAROL, ALICE, 5, audit('link'))),
+        await run(
+          r.linkReviewer(UNIT, CAROL, ALICE, 5, audit('link'), typed),
+        ),
       ).toBe('linked')
+      // NOTE: an entry that exists is left as it is.
       expect(
-        await run(r.linkReviewer(UNIT, CAROL, ALICE, 5, audit('link'))),
+        await run(
+          r.linkReviewer(UNIT, CAROL, ALICE, 6, audit('link'), {
+            displayName: 'Other',
+            phone: '+999',
+            consentRequested: false,
+          }),
+        ),
       ).toBe('exists')
       expect(
-        await run(r.linkReviewer('nope', CAROL, ALICE, 5, audit('link'))),
+        await run(
+          r.linkReviewer('nope', CAROL, ALICE, 5, audit('link'), typed),
+        ),
       ).toBe('no_unit')
-      expect((await run(r.listUnitReviewers(UNIT))).map(a => a.id)).toEqual([
-        CAROL,
+      expect(await run(r.listUnitReviewers(UNIT))).toEqual([
+        expect.objectContaining({
+          userId: CAROL,
+          name: 'Typed Name',
+          phone: '+34600',
+          consentRequested: true,
+          addedAt: 5,
+        }),
       ])
     })
 
@@ -522,14 +552,33 @@ export const reportRepositoryContract = (
         r.recordSignInAttempt('b@case-desk.test', '10.0.0.1', 40, false),
       )
       await run(r.recordSignInAttempt('a@case-desk.test', '10.0.0.1', 1, false))
+      // NOTE: D13: the successful sign-in at 30 clears the failures of that
+      // email before it; the address keeps counting.
       expect(
         await run(r.signInSummary('a@case-desk.test', '10.0.0.1', 5)),
       ).toEqual({
-        failuresByEmail: 2,
-        lastFailureByEmail: 20,
+        failuresByEmail: 0,
+        lastFailureByEmail: null,
         failuresByIp: 2,
         lastFailureByIp: 40,
       })
+      await run(r.recordSignInAttempt('a@case-desk.test', '10.0.0.3', 50, false))
+      expect(
+        await run(r.signInSummary('a@case-desk.test', '10.0.0.1', 5)),
+      ).toMatchObject({ failuresByEmail: 1, lastFailureByEmail: 50 })
+    })
+
+    test('old sign-in attempts are pruned, oldest first and bounded', async () => {
+      const { r } = await setup()
+      for (const at of [1, 2, 3, 100]) {
+        await run(r.recordSignInAttempt('p@case-desk.test', '10.0.0.9', at, false))
+      }
+      expect(await run(r.pruneSignInAttempts(50, 2))).toBe(2)
+      expect(await run(r.pruneSignInAttempts(50, 10))).toBe(1)
+      expect(await run(r.pruneSignInAttempts(50, 10))).toBe(0)
+      expect(
+        await run(r.signInSummary('p@case-desk.test', '10.0.0.9', 0)),
+      ).toMatchObject({ failuresByEmail: 1, lastFailureByEmail: 100 })
     })
 
     test('the theme and the profile round-trip', async () => {
@@ -1136,6 +1185,8 @@ export const reportRepositoryContract = (
             sectionVersion: 1,
             redactedContent: 'x',
             redactedHash: 'x',
+            people: '[]',
+            peopleHash: 'people:[]',
             imageRefs: '[]',
             now: 61,
           }),
@@ -1160,6 +1211,8 @@ export const reportRepositoryContract = (
             baseDraft: 0,
             expectedSections: 2,
             redactedCaseTitle: 't',
+            people: '[]',
+            peopleHash: 'people:[]',
             now: 70,
             audit: audit('draft.share', ALICE, 70),
           }),
@@ -1712,6 +1765,9 @@ export const reportRepositoryContract = (
             decidedBy: 'rule_met',
             toState: 'concluding',
             jobs: [job('decided', ALICE, 'round_decided', 310)],
+            expectedDeadlineAt: 300,
+            expectedReviews: 1,
+            expectedParticipants: 2,
             now: 310,
             audit: audit('round.decide', null, 310),
           }),
@@ -1729,6 +1785,9 @@ export const reportRepositoryContract = (
             decidedBy: 'deadline',
             toState: 'drafting',
             jobs: [],
+            expectedDeadlineAt: 300,
+            expectedReviews: 1,
+            expectedParticipants: 2,
             now: 312,
             audit: audit('again', null, 312),
           }),
@@ -1776,6 +1835,7 @@ export const reportRepositoryContract = (
         await run(
           r.removeParticipant({
             roundId: 'round-1',
+            reportId: REPORT,
             userId: BOB,
             removedBy: ALICE,
             now: 130,
@@ -1787,6 +1847,7 @@ export const reportRepositoryContract = (
         await run(
           r.removeParticipant({
             roundId: 'round-1',
+            reportId: REPORT,
             userId: DAN,
             removedBy: ALICE,
             now: 130,
@@ -1798,6 +1859,7 @@ export const reportRepositoryContract = (
         await run(
           r.removeParticipant({
             roundId: 'round-1',
+            reportId: REPORT,
             userId: DAN,
             removedBy: ALICE,
             now: 131,
@@ -2187,7 +2249,17 @@ export const reportRepositoryContract = (
         data: toBase64(syntheticBytes(CHUNK, 2)),
       }
       expect((await put(big))._tag).toBe('Stored')
-      expect(await put(big)).toEqual({ _tag: 'Refused', reason: 'duplicate' })
+      // NOTE: a retried chunk with identical content is answered again; the
+      // same chunk with other content is a duplicate.
+      expect(await put(big)).toEqual({
+        _tag: 'Stored',
+        received: 1,
+        complete: false,
+        image: null,
+      })
+      expect(
+        await put({ ...big, data: toBase64(syntheticBytes(CHUNK, 3)) }),
+      ).toEqual({ _tag: 'Refused', reason: 'duplicate' })
       expect(
         await put({
           ...big,
@@ -2603,8 +2675,8 @@ export const reportRepositoryContract = (
       expect(
         await run(s.r.listStagedSections('share-1', REPORT, ALICE)),
       ).toEqual([
-        { sectionId: 'sec-b', ordinal: 0, redactedHash: 'hash:B' },
-        { sectionId: 'sec-a', ordinal: 1, redactedHash: 'hash:A' },
+        { sectionId: 'sec-b', ordinal: 0, redactedHash: 'hash:B', peopleHash: 'people:[]' },
+        { sectionId: 'sec-a', ordinal: 1, redactedHash: 'hash:A', peopleHash: 'people:[]' },
       ])
       expect(await run(s.r.listStagedSections('share-1', REPORT, BOB))).toEqual(
         [],
@@ -2785,5 +2857,424 @@ export const reportRepositoryContract = (
       expect(older).toHaveLength(1)
       expect(older[0]?.id).toBe(theme[1]?.id)
     })
+    // ---- stage 2 review fixes -------------------------------------------------------------
+    test("the registry entry is the unit's own: updating it never touches the account", async () => {
+      const { r } = await setup()
+      await run(
+        r.linkReviewer(UNIT, CAROL, ALICE, 5, audit('link'), {
+          displayName: 'Carol (unit)',
+          phone: null,
+          consentRequested: false,
+        }),
+      )
+      expect(
+        await run(
+          r.updateUnitReviewer({
+            unitId: UNIT,
+            userId: CAROL,
+            displayName: 'Carol Renamed',
+            phone: '+34111',
+            consentRequested: true,
+            audit: audit('reviewer.updated', ALICE, 6),
+          }),
+        ),
+      ).toBe('updated')
+      expect(
+        await run(
+          r.updateUnitReviewer({
+            unitId: UNIT,
+            userId: DAN,
+            displayName: 'x',
+            audit: audit('reviewer.updated', ALICE, 6),
+          }),
+        ),
+      ).toBe('not_found')
+      expect(await run(r.listUnitReviewers(UNIT))).toEqual([
+        expect.objectContaining({
+          userId: CAROL,
+          name: 'Carol Renamed',
+          phone: '+34111',
+          consentRequested: true,
+        }),
+      ])
+      // NOTE: the account's own name and number are untouched.
+      expect((await run(r.getAccount(CAROL)))?.name).toBe('Carol Reviewer')
+      expect((await run(r.getProfile(CAROL)))?.phone).toBeNull()
+      expect((await run(r.getProfile(CAROL)))?.whatsappConsent).toBe(false)
+      expect(
+        (await run(r.listAudit({ actionPrefix: 'reviewer.', limit: 10 }))).length,
+      ).toBe(1)
+    })
+
+    test('the authors of a unit and several profiles come in one read each', async () => {
+      const { r } = await setup()
+      for (const userId of [ALICE, BOB]) {
+        await run(
+          r.grantCapability({
+            userId,
+            capability: 'author',
+            unitId: UNIT,
+            grantedBy: null,
+            grantedAt: 3,
+          }),
+        )
+      }
+      expect((await run(r.listUnitAuthors(UNIT))).map(a => a.id)).toEqual([
+        ALICE,
+        BOB,
+      ])
+      expect(await run(r.listUnitAuthors('nope'))).toEqual([])
+      expect(await run(r.listProfiles([]))).toEqual([])
+      expect(
+        (await run(r.listProfiles([ALICE, DAN, 'ghost'])))
+          .map(p => p.userId)
+          .sort(),
+      ).toEqual([ALICE, DAN])
+    })
+
+    test('several template versions and one committee are read in one query each', async () => {
+      const { r } = await setup()
+      expect(await run(r.getTemplateVersions([]))).toEqual([])
+      expect(
+        (
+          await run(
+            r.getTemplateVersions([
+              { templateId: TEMPLATE, version: 1 },
+              { templateId: TEMPLATE, version: 9 },
+              { templateId: 'nope', version: 1 },
+            ]),
+          )
+        ).map(v => `${v.templateId}@${v.version}`),
+      ).toEqual([`${TEMPLATE}@1`])
+      await run(
+        r.createCommittee({
+          id: 'cm-1',
+          unitId: UNIT,
+          name: 'Committee One',
+          memberIds: [DAN, CAROL],
+          createdBy: ALICE,
+          now: 6,
+          audit: audit('committee.create', ALICE, 6),
+        }),
+      )
+      expect(await run(r.getCommittee('cm-1'))).toEqual(
+        expect.objectContaining({
+          id: 'cm-1',
+          unitId: UNIT,
+          memberIds: [CAROL, DAN],
+        }),
+      )
+      expect(await run(r.getCommittee('nope'))).toBeNull()
+    })
+
+    test('using one link ends every other unused link of the account', async () => {
+      const { r } = await setup()
+      const link = (id: string, tokenHash: string, userId = CAROL) =>
+        run(
+          r.createInvitation(
+            {
+              id,
+              tokenHash,
+              userId,
+              purpose: 'reset',
+              expiresAt: 1_000,
+              issuedBy: ALICE,
+              createdAt: 10,
+            },
+            audit('invitation.create', ALICE, 10),
+          ),
+        )
+      await link('i-1', 'tok-a')
+      await link('i-2', 'tok-b')
+      await link('i-3', 'tok-c')
+      await link('i-4', 'tok-dan', DAN)
+      expect(
+        await run(
+          r.consumeInvitation('tok-b', 'h', 20, audit('invitation.use', CAROL, 20)),
+        ),
+      ).toEqual({ _tag: 'Consumed', userId: CAROL, purpose: 'reset' })
+      for (const token of ['tok-a', 'tok-c']) {
+        expect(
+          await run(
+            r.consumeInvitation(token, 'h2', 21, audit('invitation.use', CAROL, 21)),
+          ),
+        ).toEqual({ _tag: 'Refused', reason: 'invalid' })
+      }
+      // NOTE: another account's link is left alone.
+      expect((await run(r.findInvitation('tok-dan')))?.usedAt).toBeNull()
+    })
+
+    test('one people list covers a whole share: a change after staging refuses the share', async () => {
+      const s = await setup()
+      const { r } = s
+      const staged = await share(s, {
+        baseDraft: 0,
+        shareId: 'share-1',
+        sections: [{ id: 'sec-a', content: '{"a":1}' }],
+        people: '[{"name":"Old"}]',
+      })
+      expect(
+        (await run(r.listStagedSections('share-1', REPORT, ALICE))).map(
+          x => x.peopleHash,
+        ),
+      ).toEqual(['people:[{"name":"Old"}]'])
+      // NOTE: the author changes the people list after the section was staged.
+      const copy = await run(r.getWorkingCopy(REPORT, ALICE))
+      await run(
+        r.saveWorkingCopy({
+          reportId: REPORT,
+          userId: ALICE,
+          expectedCounter: copy?.saveCounter ?? 0,
+          sections: [],
+          people: '[{"name":"New"}]',
+          now: 60,
+        }),
+      )
+      expect(await staged.finish()).toEqual({
+        _tag: 'Refused',
+        reason: 'people_changed',
+      })
+      expect(await run(r.listDrafts(REPORT))).toHaveLength(1)
+    })
+
+    test('staging is refused when the working copy people differ, or the share mixes lists', async () => {
+      const s = await setup()
+      const { r } = s
+      await share(s, {
+        baseDraft: 0,
+        shareId: 'share-1',
+        sections: [
+          { id: 'sec-a', content: '{"a":1}' },
+          { id: 'sec-b', content: '{"b":1}' },
+        ],
+        people: '[1]',
+      })
+      const read = await run(r.getWorkingCopySection(REPORT, ALICE, 'sec-b'))
+      const stage = (people: string, peopleHash: string) =>
+        run(
+          r.stageShareSection({
+            shareId: 'share-1',
+            reportId: REPORT,
+            userId: ALICE,
+            sectionId: 'sec-b',
+            sectionVersion: (read as NonNullable<typeof read>).version,
+            redactedContent: 'again',
+            redactedHash: 'again',
+            people,
+            peopleHash,
+            imageRefs: '[]',
+            now: 62,
+          }),
+        )
+      // NOTE: another text than the working copy has.
+      expect(await stage('[2]', 'people:[2]')).toEqual({
+        _tag: 'Refused',
+        reason: 'changed',
+      })
+      // NOTE: the right text with a hash the share did not start with.
+      expect(await stage('[1]', 'other')).toEqual({
+        _tag: 'Refused',
+        reason: 'changed',
+      })
+      expect(await stage('[1]', 'people:[1]')).toEqual({ _tag: 'Staged' })
+    })
+
+    test('a decision is guarded on the deadline it was made from', async () => {
+      const { r } = await published()
+      // NOTE: an extension arrives after the handler read the round.
+      await run(
+        r.extendDeadline({
+          roundId: 'round-1',
+          reportId: REPORT,
+          deadlineAt: 20_000,
+          deadlineZone: 'Europe/Madrid',
+          jobs: [],
+          now: 120,
+          audit: audit('round.extend', ALICE, 120),
+        }),
+      )
+      const decide = (extra: Partial<DecideRoundInput>) =>
+        run(
+          r.decideRound({
+            roundId: 'round-1',
+            reportId: REPORT,
+            decidedBy: 'deadline',
+            toState: 'drafting',
+            jobs: [],
+            expectedDeadlineAt: 10_000,
+            expectedReviews: 0,
+            expectedParticipants: 2,
+            now: 10_500,
+            audit: audit('round.decided', null, 10_500),
+            ...extra,
+          }),
+        )
+      expect(await decide({})).toEqual({ _tag: 'Refused', reason: 'changed' })
+      expect((await run(r.getReport(REPORT)))?.state).toBe('in_review')
+      expect((await run(r.getOpenRound(REPORT)))?.round.state).toBe('open')
+      // NOTE: a deadline that has not passed is not a deadline decision.
+      expect(await decide({ expectedDeadlineAt: 20_000 })).toEqual({
+        _tag: 'Refused',
+        reason: 'changed',
+      })
+      // NOTE: other people than the decision was made with.
+      expect(
+        await decide({
+          expectedDeadlineAt: 20_000,
+          now: 21_000,
+          expectedParticipants: 1,
+        }),
+      ).toEqual({ _tag: 'Refused', reason: 'changed' })
+      expect(await decide({ expectedDeadlineAt: 20_000, now: 21_000 })).toEqual({
+        _tag: 'Decided',
+      })
+      expect(await decide({ expectedDeadlineAt: 20_000, now: 21_000 })).toEqual({
+        _tag: 'Refused',
+        reason: 'not_open',
+      })
+    })
+
+    test('removing a reviewer can decide the round in the same batch', async () => {
+      const { r } = await published()
+      const remove = (expectedParticipants: number) =>
+        run(
+          r.removeParticipant({
+            roundId: 'round-1',
+            reportId: REPORT,
+            userId: DAN,
+            removedBy: ALICE,
+            now: 130,
+            audit: audit('round.reviewer_removed', ALICE, 130),
+            decide: {
+              decidedBy: 'rule_met',
+              toState: 'concluding',
+              jobs: [],
+              expectedDeadlineAt: 10_000,
+              expectedReviews: 0,
+              expectedParticipants,
+              audit: audit('round.decided', ALICE, 130),
+            },
+          }),
+        )
+      // NOTE: a stale decision rolls the removal back too.
+      expect(await remove(2)).toEqual({ _tag: 'Refused', reason: 'changed' })
+      expect(
+        (await run(r.getParticipation(REPORT, 1, DAN)))?.removedAt,
+      ).toBeNull()
+      expect((await run(r.getReport(REPORT)))?.state).toBe('in_review')
+      expect(await remove(1)).toEqual({ _tag: 'Removed' })
+      expect(await run(r.getRound(REPORT, 1))).toEqual(
+        expect.objectContaining({
+          round: expect.objectContaining({
+            state: 'decided',
+            decidedBy: 'rule_met',
+            decidedAt: 130,
+          }),
+        }),
+      )
+      expect((await run(r.getReport(REPORT)))?.state).toBe('concluding')
+      expect(
+        (await run(r.listAudit({ actionPrefix: 'round.', limit: 10 })))
+          .map(a => a.action)
+          .sort(),
+      ).toEqual(['round.decided', 'round.reviewer_removed'])
+    })
+
+    test('a case file is retitled only by a member of a report on it, with one audit row per report', async () => {
+      const { r } = await setup()
+      const retitle = (caseFileId: string, userId: string) =>
+        run(
+          r.retitleCaseFile({
+            caseFileId,
+            title: 'New title',
+            userId,
+            now: 9,
+            audit: { at: 9, actorId: userId, action: 'case_file.retitled' },
+          }),
+        )
+      expect(await retitle('cf-1', BOB)).toEqual({
+        _tag: 'Refused',
+        reason: 'not_found',
+      })
+      expect((await run(r.listCaseFiles(UNIT))).map(f => f.title)).toEqual([
+        'Case One',
+      ])
+      expect(await retitle('cf-1', ALICE)).toEqual({
+        _tag: 'Updated',
+        caseFile: expect.objectContaining({ id: 'cf-1', title: 'New title' }),
+        reportIds: [REPORT],
+      })
+      expect(await retitle('nope', ALICE)).toEqual({
+        _tag: 'Refused',
+        reason: 'not_found',
+      })
+      const rows = await run(
+        r.listAudit({ actionPrefix: 'case_file.', limit: 10 }),
+      )
+      expect(rows.map(a => a.reportId)).toEqual([REPORT])
+    })
+
+    test('unreferenced images and abandoned staging older than the limit are cleaned up, bounded', async () => {
+      const s = await setup()
+      const { r } = s
+      const put = (imageId: string, now: number) =>
+        run(
+          r.putImageChunk(
+            chunkInput({
+              imageId,
+              now,
+              data: toBase64(syntheticBytes(1000, now)),
+            }),
+          ),
+        )
+      await put('img-old-1', 10)
+      await put('img-old-2', 11)
+      await put('img-new', 5_000)
+      // NOTE: referenced by a draft, so it stays however old.
+      await put('img-kept', 12)
+      const kept = await share(s, {
+        baseDraft: 0,
+        shareId: 'share-keep',
+        sections: [
+          {
+            id: 'sec-a',
+            content: '{"a":1}',
+            images: '[{"id":"img-kept","safe":true}]',
+          },
+        ],
+        now: 5_000,
+      })
+      expect((await kept.finish())._tag).toBe('Shared')
+      await share(s, {
+        baseDraft: 1,
+        shareId: 'share-old',
+        sections: [{ id: 'sec-a', content: '{"a":2}' }],
+        now: 20,
+      })
+      const before = await run(r.imageStats(REPORT))
+      expect(await run(r.cleanup({ olderThan: 1_000, limit: 1 }))).toEqual({
+        images: 1,
+        staged: 1,
+      })
+      expect(await run(r.cleanup({ olderThan: 1_000, limit: 10 }))).toEqual({
+        images: 1,
+        staged: 0,
+      })
+      expect(await run(r.cleanup({ olderThan: 1_000, limit: 10 }))).toEqual({
+        images: 0,
+        staged: 0,
+      })
+      expect(
+        (await run(r.listReportImages(REPORT))).map(i => i.id).sort(),
+      ).toEqual(['img-kept', 'img-new'])
+      expect(await run(r.readImageChunk('img-old-1', 0))).toBeNull()
+      expect((await run(r.imageStats(REPORT))).databaseBytes).toBeLessThan(
+        before.databaseBytes,
+      )
+      expect(
+        await run(r.listStagedSections('share-old', REPORT, ALICE)),
+      ).toEqual([])
+    })
+
   })
 }

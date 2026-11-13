@@ -13,7 +13,7 @@ import type { ReportState } from './report-flow'
 import type { RepositoryError } from './repository'
 
 // NOTE: The storage contract of iteration 3 (stage 2b). One Effect service,
-// two implementations (SQL in apps/api, in memory in `report-repository-memory.ts`)
+// two implementations (SQL in apps/api, in memory in `testing/report-repository-memory.ts`)
 // and one contract suite (`testing/reportRepositoryContract.ts`) that both
 // pass. It is storage only: no authorization and no rules. Handlers read, ask
 // the pure domain, and write through the operations below.
@@ -176,6 +176,29 @@ export type StoreCommitteeRecord = Readonly<{
   createdAt: number
   archivedAt: number | null
   memberIds: ReadonlyArray<string>
+}>
+
+// NOTE: an entry of a unit's reviewer registry. The name and the number are the
+// unit's own (what its authors typed), never the account's: the account's name
+// and number are the person's, and an author of a unit neither reads nor
+// changes them (D13).
+export type UnitReviewerRecord = Readonly<{
+  unitId: string
+  userId: string
+  email: string
+  name: string
+  phone: string | null
+  // NOTE: the unit asked for WhatsApp consent. Only the person can give it,
+  // on their own account.
+  consentRequested: boolean
+  active: boolean
+  addedAt: number
+}>
+
+export type ReviewerEntryInput = Readonly<{
+  displayName: string
+  phone: string | null
+  consentRequested: boolean
 }>
 
 export type StoreCaseFileRecord = Readonly<{
@@ -506,6 +529,12 @@ export type StagedSectionInput = Readonly<{
   sectionVersion: number
   redactedContent: string
   redactedHash: string
+  // NOTE: the people list the section was redacted with (the working copy's
+  // `people` text) and its hash. The whole share uses one: staging is refused
+  // when the working copy's people changed since, or when another section of
+  // this share was staged with a different one.
+  people: string
+  peopleHash: string
   // NOTE: JSON `[{ "id": "...", "safe": true }]` of the section's images.
   imageRefs: string
   now: number
@@ -561,6 +590,11 @@ export type FinishShareInput = Readonly<{
   baseDraft: number
   expectedSections: number
   redactedCaseTitle: string
+  // NOTE: the working copy's `people` text the staged sections were redacted
+  // with and its hash: refused unless the working copy still has exactly that
+  // text and every staged section of this share was redacted with it.
+  people: string
+  peopleHash: string
   now: number
   audit: AuditInput
   // NOTE: the author confirmed the redaction preview of this content (D14).
@@ -585,12 +619,15 @@ export type FinishShareOutcome =
     }>
   | Readonly<{ _tag: 'AlreadyShared'; number: number }>
   | Readonly<{ _tag: 'Refused'; reason: 'stale_base'; latest: number }>
-  | Refused<'share_incomplete' | 'no_working_copy' | PublishRefusal>
+  | Refused<
+      'share_incomplete' | 'no_working_copy' | 'people_changed' | PublishRefusal
+    >
 
 export type StagedSectionRecord = Readonly<{
   sectionId: string
   ordinal: number
   redactedHash: string
+  peopleHash: string
 }>
 
 export type SaveWorkingCopyInput = Readonly<{
@@ -660,6 +697,9 @@ export type CreateAccountInput = Readonly<{
   profile: ProfileInput
   grant?: Readonly<{ capability: StoreCapabilityName; unitId?: string }>
   reviewerOfUnit?: string
+  // NOTE: the registry entry for `reviewerOfUnit` (the name and number typed by
+  // the unit); by default the account's name, no number, no consent request.
+  reviewerEntry?: ReviewerEntryInput
   invitation?: InvitationInput
   createdBy: string | null
   now: number
@@ -704,6 +744,28 @@ export type ImageStats = Readonly<{
   reportLimitBytes: number
 }>
 
+// NOTE: deciding a round is guarded on what the decision was made from: the
+// round is open with the deadline the handler read (an extension in between
+// makes it a refusal, and the handler reads again), and for `deadline` the
+// deadline has passed; for `rule_met` the people and the reviews are still the
+// ones the rule was met with.
+export type DecideRoundInput = Readonly<{
+  roundId: string
+  reportId: string
+  decidedBy: 'rule_met' | 'deadline'
+  toState: ReportState
+  jobs: ReadonlyArray<NotificationJob>
+  expectedDeadlineAt: number
+  expectedReviews: number
+  expectedParticipants: number
+  now: number
+  audit: AuditInput
+}>
+
+export type DecideOutcome =
+  | Readonly<{ _tag: 'Decided' }>
+  | Refused<'not_open' | 'changed'>
+
 // ---- The service --------------------------------------------------------------------------------
 
 export interface ReportRepositoryApi {
@@ -739,16 +801,38 @@ export interface ReportRepositoryApi {
     profile: ProfileInput,
     now: number,
   ) => Eff<void>
+  // NOTE: links an account into a unit's registry with the unit's own name and
+  // number for it. An entry that exists is left as it is (`exists`); the
+  // account is never read or changed.
   readonly linkReviewer: (
     unitId: string,
     userId: string,
     addedBy: string | null,
     now: number,
     audit: AuditInput,
+    entry: ReviewerEntryInput,
   ) => Eff<'linked' | 'exists' | 'no_unit'>
   readonly listUnitReviewers: (
     unitId: string,
+  ) => Eff<ReadonlyArray<UnitReviewerRecord>>
+  readonly updateUnitReviewer: (
+    input: Readonly<{
+      unitId: string
+      userId: string
+      displayName?: string
+      phone?: string | null
+      consentRequested?: boolean
+      audit: AuditInput
+    }>,
+  ) => Eff<'updated' | 'not_found'>
+  // NOTE: the accounts holding the author capability in a unit, in one query.
+  readonly listUnitAuthors: (
+    unitId: string,
   ) => Eff<ReadonlyArray<AccountRecord>>
+  // NOTE: the profiles of the given accounts, in one query.
+  readonly listProfiles: (
+    userIds: ReadonlyArray<string>,
+  ) => Eff<ReadonlyArray<AccountProfile>>
   readonly createInvitation: (
     invitation: InvitationInput,
     audit: AuditInput,
@@ -772,6 +856,11 @@ export interface ReportRepositoryApi {
     since: number,
   ) => Eff<SignInSummary>
   readonly deleteSessionsOfUser: (userId: string) => Eff<void>
+  // NOTE: removes sign-in attempts older than `before`, at most `limit` rows.
+  readonly pruneSignInAttempts: (
+    before: number,
+    limit: number,
+  ) => Eff<number>
   readonly getTheme: () => Eff<StoreThemeRecord | null>
   readonly putTheme: (theme: StoreThemeRecord, audit: AuditInput) => Eff<void>
 
@@ -784,6 +873,10 @@ export interface ReportRepositoryApi {
     templateId: string,
     version: number,
   ) => Eff<StoreTemplateVersionRecord | null>
+  // NOTE: several versions in one query (at most `MAX_TEMPLATES_PER_LOOKUP`).
+  readonly getTemplateVersions: (
+    keys: ReadonlyArray<Readonly<{ templateId: string; version: number }>>,
+  ) => Eff<ReadonlyArray<StoreTemplateVersionRecord>>
   readonly listTemplates: () => Eff<ReadonlyArray<StoreTemplateSummary>>
   readonly createTemplateDraft: (
     input: Readonly<{
@@ -849,6 +942,7 @@ export interface ReportRepositoryApi {
   readonly listCommittees: (
     unitId: string,
   ) => Eff<ReadonlyArray<StoreCommitteeRecord>>
+  readonly getCommittee: (id: string) => Eff<StoreCommitteeRecord | null>
   readonly listCaseFiles: (
     unitId: string,
   ) => Eff<ReadonlyArray<StoreCaseFileRecord>>
@@ -857,6 +951,25 @@ export interface ReportRepositoryApi {
     patch: Readonly<{ reference?: string; title?: string }>,
     now: number,
   ) => Eff<StoreCaseFileRecord | null | Refused<'duplicate'>>
+  // NOTE: changes the title of a case file, but only if `userId` is a member
+  // of at least one report on it (guarded in the batch). Every report of the
+  // case file gets the audit event, so each log shows the change.
+  readonly retitleCaseFile: (
+    input: Readonly<{
+      caseFileId: string
+      title: string
+      userId: string
+      now: number
+      audit: Omit<AuditInput, 'reportId'>
+    }>,
+  ) => Eff<
+    | Readonly<{
+        _tag: 'Updated'
+        caseFile: StoreCaseFileRecord
+        reportIds: ReadonlyArray<string>
+      }>
+    | Refused<'not_found'>
+  >
 
   // -- reports and members
   readonly createReport: (
@@ -1026,17 +1139,7 @@ export interface ReportRepositoryApi {
       pendingOnly: boolean
     }>,
   ) => Eff<ReadonlyArray<ReviewerRoundRecord>>
-  readonly decideRound: (
-    input: Readonly<{
-      roundId: string
-      reportId: string
-      decidedBy: 'rule_met' | 'deadline'
-      toState: ReportState
-      jobs: ReadonlyArray<NotificationJob>
-      now: number
-      audit: AuditInput
-    }>,
-  ) => Eff<Readonly<{ _tag: 'Decided' }> | Refused<'not_open'>>
+  readonly decideRound: (input: DecideRoundInput) => Eff<DecideOutcome>
   readonly extendDeadline: (
     input: Readonly<{
       roundId: string
@@ -1051,13 +1154,18 @@ export interface ReportRepositoryApi {
   readonly removeParticipant: (
     input: Readonly<{
       roundId: string
+      reportId: string
       userId: string
       removedBy: string
       now: number
       audit: AuditInput
+      // NOTE: when the removal makes the rule met, the same batch decides the
+      // round (`DecideRoundInput` without the round, the report and the time).
+      decide?: Omit<DecideRoundInput, 'roundId' | 'reportId' | 'now'>
     }>,
   ) => Eff<
-    Readonly<{ _tag: 'Removed' }> | Refused<'not_open' | 'not_a_participant'>
+    | Readonly<{ _tag: 'Removed' }>
+    | Refused<'not_open' | 'not_a_participant' | 'changed'>
   >
 
   // -- reviews and comments
@@ -1186,6 +1294,9 @@ export interface ReportRepositoryApi {
   readonly listAudit: (filter: AuditFilter) => Eff<ReadonlyArray<AuditRecord>>
 
   // -- images (ImageStore, D5): chunks of base64 text
+  // NOTE: a chunk that is already stored with identical content is accepted
+  // again with the same result (a retried upload); different content for the
+  // same chunk is still `duplicate`.
   readonly putImageChunk: (input: ImageChunkInput) => Eff<PutChunkOutcome>
   readonly getImage: (imageId: string) => Eff<ImageRecord | null>
   readonly readImageChunk: (
@@ -1217,6 +1328,12 @@ export interface ReportRepositoryApi {
   readonly deleteUnreferencedImage: (
     imageId: string,
   ) => Eff<Readonly<{ _tag: 'Deleted' }> | Refused<'referenced' | 'not_found'>>
+  // NOTE: the bounded cleanup the notification pass calls: deletes images that
+  // no draft references and that were created before `olderThan`, and staged
+  // shares abandoned before `olderThan`, at most `limit` of each.
+  readonly cleanup: (
+    input: Readonly<{ olderThan: number; limit: number }>,
+  ) => Eff<Readonly<{ images: number; staged: number }>>
 }
 
 export class ReportRepository extends Context.Service<
@@ -1236,6 +1353,7 @@ export class ReportRepository extends Context.Service<
 export const MAX_QUERIES_PER_REQUEST = 50
 export const MAX_TEMPLATES_PER_IMPORT = 24
 export const MAX_SECTIONS_PER_SAVE = 40
+export const MAX_TEMPLATES_PER_LOOKUP = 100
 
 export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   createUnit: 1,
@@ -1253,9 +1371,13 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   putProfile: 1,
   linkReviewer: 4,
   listUnitReviewers: 1,
+  updateUnitReviewer: 4,
+  listUnitAuthors: 1,
+  listProfiles: 1,
+  pruneSignInAttempts: 1,
   createInvitation: 2,
   findInvitation: 1,
-  consumeInvitation: 7,
+  consumeInvitation: 8,
   recordSignInAttempt: 1,
   signInSummary: 1,
   deleteSessionsOfUser: 1,
@@ -1263,6 +1385,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   putTheme: 2,
   importBuiltInTemplates: 2 * MAX_TEMPLATES_PER_IMPORT,
   getTemplateVersion: 1,
+  getTemplateVersions: 1,
   listTemplates: 1,
   createTemplateDraft: 5,
   saveTemplateDraft: 2,
@@ -1271,8 +1394,10 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   createCommittee: 5,
   updateCommittee: 5,
   listCommittees: 2,
+  getCommittee: 2,
   listCaseFiles: 1,
   updateCaseFile: 2,
+  retitleCaseFile: 5,
   createReport: 9,
   getReport: 1,
   listReportsForMember: 1,
@@ -1309,9 +1434,9 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   getParticipation: 1,
   listAssignments: 1,
   listReviewerRounds: 1,
-  decideRound: 7,
+  decideRound: 9,
   extendDeadline: 6,
-  removeParticipant: 5,
+  removeParticipant: 14,
   savePendingReview: 2,
   getPendingReview: 2,
   addPendingComment: 3,
@@ -1342,6 +1467,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   listReportImages: 1,
   imageStats: 2,
   deleteUnreferencedImage: 6,
+  cleanup: 6,
 }
 
 // ---- Shared pure checks (both implementations call these) ---------------------------------------------

@@ -9,8 +9,8 @@ import {
   DEFAULT_RULES,
   RPC_PATH,
   Repository,
-  makeMemoryRepository,
 } from '@case-desk/domain'
+import { makeMemoryRepository } from '@case-desk/domain/testing/memory'
 import { SYNTHETIC_ENTRY, SYNTHETIC_USER } from '@case-desk/domain/testing'
 
 import { makeRpcHandler } from './server'

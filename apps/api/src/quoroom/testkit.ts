@@ -11,9 +11,8 @@ import {
   Repository,
   type Template,
   UserId,
-  makeMemoryReportRepository,
-  makeMemoryRepository,
 } from '@case-desk/domain'
+import { makeMemoryReportRepository, makeMemoryRepository } from '@case-desk/domain/testing/memory'
 import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
 
 import { makeApp } from '../app'
@@ -126,6 +125,8 @@ export const PEOPLE = [
 export const SECRET = 'Ana Garcia'
 export const TEXT = 'Ana Garcia reported the matter on Monday.'
 
+// NOTE: `adam` is an administrator and `tess` a template editor: the
+// deployment capabilities, with no part in any report.
 const PEOPLE_ACCOUNTS = [
   ['alice', 'Alice Author', U1],
   ['bob', 'Bob Author', U1],
@@ -135,9 +136,13 @@ const PEOPLE_ACCOUNTS = [
   ['ivy', 'Ivy Observer', null],
   ['frank', 'Frank Outsider', null],
   ['gina', 'Gina Other Unit', U2],
+  ['adam', 'Adam Administrator', null, 'admin'],
+  ['tess', 'Tess Template Editor', null, 'template_editor'],
 ] as const
 
 export type PersonName = (typeof PEOPLE_ACCOUNTS)[number][0]
+
+type PersonRow = readonly [string, string, string | null, ('admin' | 'template_editor')?]
 
 const countingStatement = (
   statement: SqlStatement,
@@ -202,7 +207,7 @@ export const makeWorld = async (scenario: Scenario) => {
     repository.createUnit({ id: U2, name: 'Unit Two', code: 'U2', createdAt: 1 }),
   )
   const tokens = new Map<string, string>()
-  for (const [id, name, unit] of PEOPLE_ACCOUNTS) {
+  for (const [id, name, unit, capability] of PEOPLE_ACCOUNTS as ReadonlyArray<PersonRow>) {
     const created = await run(
       repository.createAccount({
         id,
@@ -216,7 +221,11 @@ export const makeWorld = async (scenario: Scenario) => {
           notifyOnApproval: false,
           active: true,
         },
-        ...(unit === null ? {} : { grant: { capability: 'author' as const, unitId: unit } }),
+        ...(unit !== null
+          ? { grant: { capability: 'author' as const, unitId: unit } }
+          : capability === undefined
+            ? {}
+            : { grant: { capability } }),
         createdBy: null,
         now: 1,
       }),
@@ -239,6 +248,25 @@ export const makeWorld = async (scenario: Scenario) => {
           expiresAt: Number.MAX_SAFE_INTEGER,
         })
       }),
+    )
+  }
+  // NOTE: the reviewers of unit one are in its registry, as the unit's own
+  // entries; frank is nobody's, and gina is a reviewer of unit two.
+  for (const [id, name, unit] of [
+    ['carol', 'Carol Reviewer', U1],
+    ['dan', 'Dan Reviewer', U1],
+    ['erin', 'Erin Chair', U1],
+    ['ivy', 'Ivy Observer', U1],
+  ] as const) {
+    await run(
+      repository.linkReviewer(
+        unit,
+        id,
+        null,
+        1,
+        { at: 1, actorId: null, action: 'reviewer.linked' },
+        { displayName: name, phone: null, consentRequested: false },
+      ),
     )
   }
   await run(
@@ -372,6 +400,7 @@ export const makeWorld = async (scenario: Scenario) => {
   ) => {
     const outline = await call(who, c => c.GetWorkingCopy({ reportId }))
     const hashes: Array<string> = []
+    let peopleHash = ''
     for (const section of outline.sections) {
       const staged = await call(who, c =>
         c.ShareSection({
@@ -382,10 +411,13 @@ export const makeWorld = async (scenario: Scenario) => {
         }),
       )
       hashes.push(staged.redactedHash)
+      peopleHash = staged.peopleHash
     }
     // NOTE: the redaction preview the author saw is the hash of the staged
-    // redacted content; the server checks it against what is staged.
-    const seen = confirm === true ? await sha256Hex(hashes.join(',')) : undefined
+    // redacted content and of the people list; the server checks it against
+    // what is staged and what the working copy has.
+    const seen =
+      confirm === true ? await sha256Hex(`${hashes.join(',')}|${peopleHash}`) : undefined
     const outcome = await call(who, c =>
       c.FinishShare({
         reportId,
@@ -482,6 +514,7 @@ export const makeWorld = async (scenario: Scenario) => {
     published,
     deadline,
     selections,
+    deps,
     queries: () => queries,
     worstRequest: () => worstRequest,
     measure: (on: boolean) => {

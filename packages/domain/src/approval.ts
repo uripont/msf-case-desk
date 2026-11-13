@@ -134,6 +134,7 @@ export type PublishProblemCode =
   | 'no_voters'
   | 'rule_unmeetable'
   | 'unknown_committee'
+  | 'unknown_person'
 
 export type PublishProblem = Readonly<{
   code: PublishProblemCode
@@ -273,6 +274,10 @@ export type ChooseContext = Readonly<{
   unit: string
   authors: ReadonlyArray<string>
   committees: ReadonlyArray<Committee>
+  // NOTE: the accounts in the reviewer registry of the report's unit. An
+  // individual account must be one of them (committee members are, by how a
+  // committee is made).
+  registry: ReadonlyArray<string>
 }>
 
 // NOTE: What the publish dialog shows for each reviewing role, so a `full`
@@ -300,7 +305,8 @@ export const roleChoices = (template: Template): ReadonlyArray<RoleChoice> =>
 
 // NOTE: Fills each reviewing role from committees of the report's unit and
 // individual accounts. A committee of another unit and an unknown committee
-// are refused with the same code. The result is the frozen participant list of
+// are refused with the same code, and so is an individual who is not in the
+// unit's reviewer registry (`unknown_person`). The result is the frozen participant list of
 // the round, in the template's role order. Selections for the same role are
 // merged and a person who comes twice into one role counts once.
 export const chooseParticipants = (
@@ -313,7 +319,15 @@ export const chooseParticipants = (
     const people = byRole.get(selection.roleId) ?? []
     for (const source of selection.sources) {
       if (source.kind === 'account') {
-        people.push(source.accountId)
+        if (!context.registry.includes(source.accountId)) {
+          problems.push({
+            code: 'unknown_person',
+            roleId: selection.roleId,
+            message: 'That person is not in the unit\'s reviewer registry.',
+          })
+        } else {
+          people.push(source.accountId)
+        }
         continue
       }
       const committee = context.committees.find(

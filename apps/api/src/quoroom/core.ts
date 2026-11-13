@@ -5,6 +5,7 @@ import {
   type Allowed,
   type DecidedBy,
   type FlowError,
+  type GrantRecord,
   type MemberRecord,
   type NotificationConfig,
   type NotificationJob,
@@ -14,6 +15,7 @@ import {
   CurrentUser,
   DEFAULT_NOTIFICATION_CONFIG,
   DeadlinePassed,
+  MAX_TEMPLATES_PER_LOOKUP,
   NotAllowedInState,
   type Problem,
   type PublishProblem,
@@ -61,6 +63,46 @@ export class QuoroomConfig extends Context.Service<
   NotificationConfig
 >()('QuoroomConfig') {}
 
+// NOTE: where the address of a caller can be trusted from (D13, D20). On
+// Cloudflare the platform sets `cf-connecting-ip`. Anywhere else that header is
+// whatever the caller sent, so it is never read: a deployment behind a proxy it
+// controls names that proxy's header (`header`), and one with nothing to trust
+// (plain workerd) has a single shared bucket (`self_hosted`).
+export type NetworkPolicy =
+  | Readonly<{ kind: 'cloudflare' }>
+  | Readonly<{ kind: 'header'; name: string }>
+  | Readonly<{ kind: 'self_hosted' }>
+
+export class QuoroomNetwork extends Context.Service<
+  QuoroomNetwork,
+  NetworkPolicy
+>()('QuoroomNetwork') {}
+
+export const SELF_HOSTED_BUCKET = 'self-hosted'
+const MAX_ADDRESS_LENGTH = 64
+
+// NOTE: the key of the per-address sign-in limit. With `self_hosted` every
+// caller shares one bucket, so that limit only holds up together with the
+// per-email one (both are always applied, and the longer wait wins).
+export const clientAddress = (
+  policy: NetworkPolicy,
+  headers: Readonly<Record<string, string | undefined>>,
+): string => {
+  const raw =
+    policy.kind === 'cloudflare'
+      ? headers['cf-connecting-ip']
+      : policy.kind === 'header'
+        ? headers[policy.name.toLowerCase()]?.split(',')[0]
+        : undefined
+  const address = raw?.trim().slice(0, MAX_ADDRESS_LENGTH) ?? ''
+  if (address !== '') return address
+  return policy.kind === 'cloudflare' ? 'unknown' : SELF_HOSTED_BUCKET
+}
+
+export const QuoroomNetworkCloudflare = Layer.succeed(QuoroomNetwork, {
+  kind: 'cloudflare',
+})
+
 export const QuoroomClockLive = Layer.succeed(QuoroomClock, {
   now: Effect.sync(() => Date.now()),
 })
@@ -75,11 +117,17 @@ export const QuoroomConfigLive = Layer.succeed(
   DEFAULT_NOTIFICATION_CONFIG,
 )
 
-export const QuoroomServicesLive = Layer.mergeAll(
-  QuoroomClockLive,
-  QuoroomIdsLive,
-  QuoroomConfigLive,
-)
+// NOTE: the services for Cloudflare. Anywhere else, `QuoroomServicesFor`
+// names where addresses can be trusted from.
+export const QuoroomServicesFor = (network: NetworkPolicy) =>
+  Layer.mergeAll(
+    QuoroomClockLive,
+    QuoroomIdsLive,
+    QuoroomConfigLive,
+    Layer.succeed(QuoroomNetwork, network),
+  )
+
+export const QuoroomServicesLive = QuoroomServicesFor({ kind: 'cloudflare' })
 
 // NOTE: a clock the tests move by hand.
 export const makeTestClock = (start: number) => {
@@ -137,6 +185,24 @@ export const store: Effect.Effect<Store, never, ReportRepository> =
     return wrapRepository(yield* ReportRepository)
   })
 
+// NOTE: what the notification pass (stage 7) calls once per run: unreferenced
+// images and abandoned staged shares older than a day, at most
+// `CLEANUP_LIMIT` of each, so one run is bounded.
+export const STALE_AFTER_MS = 24 * 3_600_000
+export const CLEANUP_LIMIT = 50
+
+export const cleanupStale = (): Effect.Effect<
+  Readonly<{ images: number; staged: number }>,
+  StorageUnavailable,
+  ReportRepository | QuoroomClock
+> =>
+  Effect.gen(function* () {
+    const db = yield* store
+    const clock = yield* QuoroomClock
+    const now = yield* clock.now
+    return yield* db.cleanup({ olderThan: now - STALE_AFTER_MS, limit: CLEANUP_LIMIT })
+  })
+
 export type Deps = ReportRepository | QuoroomClock | QuoroomIds | QuoroomConfig
 
 // ---- Templates (immutable once published, so cached per isolate) ---------------------------------
@@ -167,6 +233,40 @@ export const loadTemplate = (
     ),
   )
 }
+
+// NOTE: the templates of several reports in at most one query (the ones not in
+// the cache yet, up to the store's limit per lookup); the rest are read one at
+// a time, which the callers' own bounds keep small.
+export const loadTemplates = (
+  db: Store,
+  keys: ReadonlyArray<Readonly<{ templateId: string; version: number }>>,
+): Effect.Effect<ReadonlyMap<string, Template>, StorageUnavailable> =>
+  Effect.gen(function* () {
+    const wanted = new Map<string, { templateId: string; version: number }>()
+    for (const key of keys) wanted.set(`${key.templateId}@${key.version}`, key)
+    const missing = [...wanted].filter(([key]) => !templateCache.has(key))
+    if (missing.length > 0) {
+      const records = yield* db.getTemplateVersions(
+        missing.slice(0, MAX_TEMPLATES_PER_LOOKUP).map(([, key]) => key),
+      )
+      for (const record of records) {
+        const key = `${record.templateId}@${record.version}`
+        if (record.state === 'draft') continue
+        try {
+          templateCache.set(key, decodeTemplate(JSON.parse(record.definition)))
+        } catch {
+          return yield* Effect.fail(
+            new StorageUnavailable({ message: 'template invalid' }),
+          )
+        }
+      }
+    }
+    const out = new Map<string, Template>()
+    for (const [key, { templateId, version }] of wanted) {
+      out.set(key, yield* loadTemplate(db, templateId, version))
+    }
+    return out
+  })
 
 // ---- Loading a report ------------------------------------------------------------------------
 
@@ -303,8 +403,14 @@ export const jobsFor = (
     )
   })
 
+// NOTE: a decision that the store refuses (a deadline extended or a person
+// removed in between) is made again from a fresh read; after this many tries
+// the settled view is returned without being stored.
+const MAX_SETTLE_ATTEMPTS = 3
+
 const loadRaw = (
   reportId: string,
+  attempt = 1,
 ): Effect.Effect<Loaded | undefined, StorageUnavailable, Deps> =>
   Effect.gen(function* () {
     const db = yield* store
@@ -385,12 +491,18 @@ const loadRaw = (
         reportId,
         now,
       })
-      yield* db.decideRound({
+      const decided = yield* db.decideRound({
         roundId: last.round.id,
         reportId,
         decidedBy,
         toState: settled.state,
         jobs,
+        // NOTE: what the decision was made from; the store refuses it when
+        // any of these changed in between.
+        expectedDeadlineAt: last.round.deadlineAt,
+        expectedReviews: reviews.filter(r => r.roundId === last.round.id).length,
+        expectedParticipants: last.participants.filter(p => p.removedAt === null)
+          .length,
         now,
         audit: {
           at: now,
@@ -401,6 +513,9 @@ const loadRaw = (
           meta: JSON.stringify({ decidedBy }),
         },
       })
+      if (decided._tag === 'Refused' && attempt < MAX_SETTLE_ATTEMPTS) {
+        return yield* loadRaw(reportId, attempt + 1)
+      }
       storedRounds = decidedRounds
     }
     return {
@@ -477,6 +592,47 @@ export const allowUnit = (
       }),
     )
   })
+
+// NOTE: the capabilities of the deployment (administrator, template editor,
+// author in a unit), for any action `authorize` decides from grants alone. The
+// grants are read here and nowhere else; the answer is `NotPermitted` whether
+// or not the thing the caller names exists.
+export const allowCapability = (
+  db: Store,
+  action: Action,
+): Effect.Effect<
+  Readonly<{ user: Readonly<{ id: string }>; grants: ReadonlyArray<GrantRecord> }>,
+  NotPermitted | StorageUnavailable,
+  CurrentUser
+> =>
+  Effect.gen(function* () {
+    const user = yield* CurrentUser
+    const grants = yield* db.listGrants(user.id)
+    const result = authorize(
+      {
+        id: user.id,
+        grants: grants.map(grant => ({
+          capability: grant.capability,
+          ...(grant.unitId === null ? {} : { unit: grant.unitId }),
+        })),
+      },
+      undefined,
+      action,
+    )
+    if (result.allowed) return { user, grants }
+    return yield* Effect.fail(
+      new NotPermitted({
+        reason: result.reason === 'read_only' ? 'read_only' : 'not_permitted',
+      }),
+    )
+  })
+
+// NOTE: 32 random bytes as hex: the token of a link (D13). Only its SHA-256
+// is stored.
+export const randomToken = (): string =>
+  Array.from(crypto.getRandomValues(new Uint8Array(32)), byte =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
 
 export const isAuthorOf = (loaded: Loaded, actor: Actor): boolean =>
   loaded.authors.includes(actor.id)

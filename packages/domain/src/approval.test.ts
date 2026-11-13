@@ -445,6 +445,7 @@ describe('choosing people', () => {
     unit: 'unit-a',
     authors: ['author-1'],
     committees,
+    registry: ['a', 'b', 'c', 'd', 'o', 'z', 'author-1'],
   }
 
   test('fills each role from committees and individual accounts, in role order', () => {
@@ -509,6 +510,16 @@ describe('choosing people', () => {
       expect.objectContaining({ code: 'unknown_committee' }),
     ])
     expect(codes('cm-3')).toEqual(codes('cm-404'))
+  })
+
+  test('an individual outside the unit\'s registry is refused with a coded problem', () => {
+    const result = chooseParticipants(context, [
+      { roleId: 'members', sources: [{ kind: 'committee', committeeId: 'cm-1' }] },
+      { roleId: 'chair', sources: [{ kind: 'account', accountId: 'stranger' }] },
+    ])
+    expect(Result.isFailure(result) ? result.failure : []).toContainEqual(
+      expect.objectContaining({ code: 'unknown_person', roleId: 'chair' }),
+    )
   })
 
   test('refuses an author, a person in two roles, and an unknown role', () => {

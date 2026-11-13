@@ -78,7 +78,8 @@ export const NotificationEntry = Schema.Struct({
 export const NotificationPage = Schema.Struct({
   items: Schema.Array(NotificationEntry),
   unread: Count,
-  next: Schema.optionalKey(EpochMs),
+  // NOTE: pass as `before` for the next, older page.
+  next: Schema.optionalKey(Count),
 })
 
 // ---- WhatsApp (D17) ------------------------------------------------------------------------------

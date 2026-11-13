@@ -20,6 +20,7 @@ import {
   ProfileView,
   Reviewer,
   ReviewerAdded,
+  CoAuthorAdded,
   SignInRequest,
   Unit,
   UnitCode,
@@ -39,7 +40,6 @@ import {
   Count,
   Deadline,
   DisplayName,
-  EpochMs,
   Phone,
   PublicError,
   ReadError,
@@ -145,7 +145,13 @@ export class QuoroomRpcs extends RpcGroup.make(
   Rpc.make('GetMe', { success: MeView, error: StorageError }),
   Rpc.make('SignOut', { error: StorageError }),
   Rpc.make('SetNotificationPreferences', {
-    payload: { notifyOnApproval: Schema.Boolean },
+    payload: {
+      notifyOnApproval: Schema.Boolean,
+      // NOTE: the person's own number (`null` clears it, and with it the
+      // consent) and their own WhatsApp consent. Nobody else can set either.
+      phone: Schema.optionalKey(Schema.NullOr(Phone)),
+      whatsappConsent: Schema.optionalKey(Schema.Boolean),
+    },
     success: ProfileView,
     error: StorageError,
   }),
@@ -213,6 +219,7 @@ export class QuoroomRpcs extends RpcGroup.make(
       name: DisplayName,
       email: Email,
       phone: Schema.optionalKey(Phone),
+      // NOTE: asks the person for consent; it does not give it.
       whatsappConsent: Schema.Boolean,
     },
     success: ReviewerAdded,
@@ -223,8 +230,10 @@ export class QuoroomRpcs extends RpcGroup.make(
       unit: ApiId,
       accountId: ApiId,
       name: Schema.optionalKey(DisplayName),
-      // NOTE: `null` clears the number (and with it the consent).
+      // NOTE: the unit's own entry only. `null` clears the number (and with it
+      // the request for consent).
       phone: Schema.optionalKey(Schema.NullOr(Phone)),
+      // NOTE: asks the person for consent; it does not give it.
       whatsappConsent: Schema.optionalKey(Schema.Boolean),
     },
     success: Reviewer,
@@ -347,9 +356,11 @@ export class QuoroomRpcs extends RpcGroup.make(
     success: ReportDetail,
     error: ReadError,
   }),
+  // NOTE: by account ID, from the authors of the report's unit
+  // (`ListUnitMembers`). It never creates an account or grants anything.
   Rpc.make('AddCoAuthor', {
-    payload: { ...ReportId, email: Email, name: DisplayName },
-    success: InviteResult,
+    payload: { ...ReportId, accountId: ApiId },
+    success: CoAuthorAdded,
     error: WriteError,
   }),
   Rpc.make('ListDrafting', {
@@ -419,9 +430,11 @@ export class QuoroomRpcs extends RpcGroup.make(
       ...ReportId,
       shareId: ApiId,
       saveCounter: SaveCounter,
-      // NOTE: SHA-256 (hex) of the staged sections' redacted hashes, joined
-      // by commas in section order: the content the author saw in the
-      // redaction preview (D14). The server records the confirmation in the
+      // NOTE: SHA-256 (hex) of `<redacted hashes>|<people hash>`: the staged
+      // sections' redacted hashes joined by commas in section order, a bar and
+      // the `peopleHash` of the share. It is the content and the people list
+      // the author saw in the redaction preview (D14): a people list changed
+      // since refuses the share. The server records the confirmation in the
       // same batch as the draft and, if asked, the publish; it is required to
       // publish to a `redacted` role, and refused when the staged content is
       // not the content that was seen.
@@ -660,7 +673,7 @@ export class QuoroomRpcs extends RpcGroup.make(
 
   // -- Notifications and WhatsApp (stage 7)
   Rpc.make('ListNotifications', {
-    payload: { before: Schema.optionalKey(EpochMs), limit: Limit },
+    payload: { before: Schema.optionalKey(Count), limit: Limit },
     success: NotificationPage,
     error: StorageError,
   }),

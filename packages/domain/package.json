@@ -10,7 +10,8 @@
     "./testing/content": "./src/testing/content.ts",
     "./testing/reports": "./src/testing/reports.ts",
     "./testing/drafts": "./src/testing/drafts.ts",
-    "./testing/report-repository": "./src/testing/reportRepositoryContract.ts"
+    "./testing/report-repository": "./src/testing/reportRepositoryContract.ts",
+    "./testing/memory": "./src/testing/memory.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

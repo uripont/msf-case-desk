@@ -40,6 +40,7 @@ import {
   idOf,
   jobsFor,
   loadReport,
+  loadTemplates,
   problem,
   store,
   validation,
@@ -50,6 +51,7 @@ import {
   dataOf,
   draftHeader,
   hashOfJoined,
+  peopleHashOf,
   member,
   peopleOf,
   planPublish,
@@ -60,6 +62,7 @@ import {
   revisionHeaderOf,
   sectionRefsOf,
   summaryOf,
+  summaryOfRecord,
 } from './views'
 
 // NOTE: The author side of the report: reading, working copies, sharing,
@@ -127,10 +130,13 @@ const loadMerge = (
   userId: string,
   baseDraft: number,
   people: ReadonlyArray<Person>,
+  // NOTE: the newest draft as the store has it now, when the caller found out
+  // that `loaded` is behind (a share that lost a race).
+  newest?: number,
 ) =>
   Effect.gen(function* () {
     const reportId = loaded.record.id
-    const latest = loaded.record.latestDraft
+    const latest = newest ?? loaded.record.latestDraft
     const base = yield* db.getDraft(reportId, baseDraft)
     const theirs = yield* db.getDraft(reportId, latest)
     if (base === null || theirs === null) return yield* Effect.fail(new NotFound())
@@ -151,6 +157,9 @@ const sectionOrFail = (
   topLevelIds(template).includes(sectionId)
     ? Effect.void
     : Effect.fail(new NotFound())
+
+const MAX_REPORTS_IN_LIST = 40
+const MAX_SETTLED_IN_LIST = 2
 
 export const authorHandlers: Pick<
   AllHandlers,
@@ -237,22 +246,52 @@ export const authorHandlers: Pick<
       return summaryOf(loaded)
     }),
 
+  // NOTE: a constant number of queries however many reports the caller has:
+  // the list (one), the templates of the page (one) and at most
+  // `MAX_SETTLED_IN_LIST` overdue rounds settled through `loadReport`. Overdue
+  // ones beyond that show their stored state until opened (or settled by the
+  // scheduled pass), so a list is never the reason for a request to run out of
+  // queries.
   ListReports: ({ state, unit }) =>
     Effect.gen(function* () {
       const user = yield* CurrentUser
       const db = yield* store
-      const reports = yield* db.listReportsForMember(user.id)
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const reports = (yield* db.listReportsForMember(user.id))
+        .filter(
+          record =>
+            (state === undefined || record.state === state) &&
+            (unit === undefined || record.caseFile.unitId === unit),
+        )
+        .slice(0, MAX_REPORTS_IN_LIST)
+      const templates = yield* loadTemplates(
+        db,
+        reports.map(record => ({
+          templateId: record.templateId,
+          version: record.templateVersion,
+        })),
+      )
       const out = []
+      let settledInList = 0
       for (const record of reports) {
-        if (state !== undefined && record.state !== state) continue
-        if (unit !== undefined && record.caseFile.unitId !== unit) continue
-        // NOTE: the list is of reports the caller is a member of; reading
-        // each through `loadReport` settles deadlines and keeps one rule.
-        const loaded = yield* loadReport(record.id)
-        if (loaded === undefined) continue
-        if (!loaded.members.some(m => m.userId === user.id)) continue
-        out.push(summaryOf(loaded))
-        if (out.length >= 40) break
+        const overdue =
+          (record.state === 'in_review' || record.state === 'concluding') &&
+          record.deadlineAt !== null &&
+          record.deadlineAt <= now
+        if (overdue && settledInList < MAX_SETTLED_IN_LIST) {
+          settledInList += 1
+          const loaded = yield* loadReport(record.id)
+          if (loaded === undefined) continue
+          if (state !== undefined && loaded.record.state !== state) continue
+          out.push(summaryOf(loaded))
+          continue
+        }
+        const template = templates.get(
+          `${record.templateId}@${record.templateVersion}`,
+        )
+        if (template === undefined) continue
+        out.push(summaryOfRecord(record, template))
       }
       return out
     }),
@@ -518,6 +557,8 @@ export const authorHandlers: Pick<
         redactor.content(reportShell(loaded.template, { [sectionId]: original }))
           .sections[sectionId] ?? EMPTY_SECTION
       const redactedContent = JSON.stringify(redacted)
+      const redactedHash = yield* Effect.promise(() => sha256Hex(redactedContent))
+      const peopleHash = yield* Effect.promise(() => peopleHashOf(copy.people))
       const clock = yield* QuoroomClock
       const now = yield* clock.now
       const outcome = yield* db.stageShareSection({
@@ -527,19 +568,19 @@ export const authorHandlers: Pick<
         sectionId,
         sectionVersion: row?.version ?? 0,
         redactedContent,
-        redactedHash: yield* Effect.promise(() => sha256Hex(redactedContent)),
+        redactedHash,
+        // NOTE: one people list for the whole share: the text this section
+        // was redacted with, which the store checks against the working copy
+        // and against the other sections of the share.
+        people: copy.people,
+        peopleHash,
         imageRefs: imageRefsJson(original),
         now,
       })
       if (outcome._tag !== 'Staged') {
         return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
-      return {
-        shareId,
-        sectionId,
-        staged: 1,
-        redactedHash: yield* Effect.promise(() => sha256Hex(redactedContent)),
-      }
+      return { shareId, sectionId, staged: 1, redactedHash, peopleHash }
     }),
 
   FinishShare: ({
@@ -570,6 +611,7 @@ export const authorHandlers: Pick<
             user.id,
             copy.baseDraft,
             peopleOf(copy.people),
+            latest ?? loaded.record.latestDraft,
           )
           return {
             kind: 'stale_base' as const,
@@ -625,12 +667,20 @@ export const authorHandlers: Pick<
       // writes it together with the draft and the publish (D14).
       const staged = yield* db.listStagedSections(shareId, reportKey, user.id)
       const joined = staged.map(section => section.redactedHash).join(',')
+      const peopleHash = yield* Effect.promise(() => peopleHashOf(copy.people))
       let confirmed = false
       if (redactionHash !== undefined) {
         if (staged.length !== expected) {
           return yield* Effect.fail(new Conflict({ reason: 'share_incomplete' }))
         }
-        if (redactionHash !== (yield* Effect.promise(() => hashOfJoined(joined)))) {
+        // NOTE: the confirmed hash covers the people list the preview was made
+        // with: a list changed since (or sections staged under another one)
+        // is not the share the author saw.
+        if (
+          staged.some(section => section.peopleHash !== peopleHash) ||
+          redactionHash !==
+            (yield* Effect.promise(() => hashOfJoined(joined, copy.people)))
+        ) {
           return yield* Effect.fail(
             validation('publish', 'redaction_not_confirmed'),
           )
@@ -658,6 +708,8 @@ export const authorHandlers: Pick<
         baseDraft: copy.baseDraft,
         expectedSections: expected,
         redactedCaseTitle: redactor.text(loaded.record.caseFile.title),
+        people: copy.people,
+        peopleHash,
         now: loaded.now,
         audit: auditOf(loaded.now, user.id, 'draft.shared', reportKey),
         ...(confirmed
@@ -707,8 +759,11 @@ export const authorHandlers: Pick<
               }),
             )
           case 'not_confirmed':
+          case 'people_changed':
             return yield* Effect.fail(
-              validation('publish', 'redaction_not_confirmed'),
+              confirmed || outcome.reason === 'not_confirmed'
+                ? validation('publish', 'redaction_not_confirmed')
+                : new Conflict({ reason: 'changed_meanwhile' }),
             )
           default:
             return yield* Effect.fail(
@@ -830,7 +885,7 @@ export const authorHandlers: Pick<
             ? {}
             : { sharedBy: { id: draft.authorId, name: draft.authorName } }),
           sharedAt: draft.sharedAt,
-          redactedHash: yield* Effect.promise(() => hashOfJoined(joined)),
+          redactedHash: yield* Effect.promise(() => hashOfJoined(joined, draft.people)),
           redactionConfirmed: draft.redactionConfirmedAt !== null,
         })
       }
@@ -946,7 +1001,7 @@ export const authorHandlers: Pick<
             : {}),
         }))
       const people = new Map<string, string>()
-      for (const account of accounts) people.set(account.id, account.name)
+      for (const entry of accounts) people.set(entry.userId, entry.name)
       return {
         latestDraft: latest,
         hasUnsharedChanges:

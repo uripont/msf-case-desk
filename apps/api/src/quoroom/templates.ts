@@ -1,0 +1,505 @@
+import { Effect, Result, Schema } from 'effect'
+import type { RpcGroup } from 'effect/rpc'
+
+import {
+  type Problem,
+  type QuoroomRpcs,
+  type StoreTemplateSummary,
+  type StoreTemplateVersionRecord,
+  type Template,
+  Conflict,
+  CurrentUser,
+  DEFAULT_THEME,
+  DRAFTING_PERMISSIONS,
+  NotFound,
+  NotPermitted,
+  StorageUnavailable,
+  TEMPLATE_SCHEMA_VERSION,
+  Validation,
+  Template as TemplateSchema,
+  Theme as ThemeSchema,
+  diffTemplates,
+  templateProblems,
+  themeProblems,
+  validateTemplate,
+} from '@case-desk/domain'
+
+import {
+  QuoroomClock,
+  allowCapability,
+  idOf,
+  problem,
+  store,
+  validation,
+} from './core'
+import { member } from './support'
+
+// NOTE: Templates and the theme (stage 9). A template version is immutable
+// once published: a draft is saved in place, publishing freezes it and logs
+// what changed since the previous version, and nothing ever rewrites a
+// published one. A draft only has to fit the schema; whether it can be
+// published is what `validateTemplate` says.
+
+type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
+
+const decodeTemplate = Schema.decodeUnknownSync(TemplateSchema)
+const decodeTheme = Schema.decodeUnknownSync(ThemeSchema)
+
+const MAX_TEMPLATES = 60
+
+const readTemplate = (stored: StoreTemplateVersionRecord): Template => {
+  try {
+    return decodeTemplate(JSON.parse(stored.definition))
+  } catch {
+    throw new StorageUnavailable({ message: 'template invalid' })
+  }
+}
+
+const recordOf = (stored: StoreTemplateVersionRecord) =>
+  Effect.try({
+    try: () => ({
+      templateId: stored.templateId,
+      version: stored.version,
+      state: stored.state,
+      template: readTemplate(stored),
+      createdBy: stored.createdBy ?? 'system',
+      createdAt: stored.createdAt,
+      ...(stored.publishedAt === null ? {} : { publishedAt: stored.publishedAt }),
+    }),
+    catch: () => new StorageUnavailable({ message: 'template invalid' }),
+  })
+
+const problemsOf = (
+  list: ReadonlyArray<{
+    code: string
+    path: ReadonlyArray<string | number>
+    message: string
+  }>,
+  source: Problem['source'],
+): ReadonlyArray<Problem> =>
+  list
+    .slice(0, 200)
+    .map(entry => problem(source, entry.code.slice(0, 64), entry.path.slice(0, 32), entry.message.slice(0, 500)))
+
+const summariesOf = (
+  versions: ReadonlyArray<StoreTemplateSummary>,
+): ReadonlyArray<{
+  id: string
+  name: string
+  shortName: string
+  builtIn: boolean
+  latestVersion: number
+  publishedVersion?: number
+  hasDraft: boolean
+  retired: boolean
+}> => {
+  const byId = new Map<string, Array<StoreTemplateSummary>>()
+  for (const version of versions) {
+    byId.set(version.templateId, [...(byId.get(version.templateId) ?? []), version])
+  }
+  return [...byId.entries()].map(([id, list]) => {
+    const latest = list.reduce((a, b) => (b.version > a.version ? b : a))
+    const published = list
+      .filter(entry => entry.state === 'published')
+      .reduce<StoreTemplateSummary | undefined>(
+        (a, b) => (a === undefined || b.version > a.version ? b : a),
+        undefined,
+      )
+    return {
+      id,
+      name: latest.name,
+      shortName: latest.shortName,
+      builtIn: latest.builtin,
+      latestVersion: latest.version,
+      ...(published === undefined ? {} : { publishedVersion: published.version }),
+      hasDraft: list.some(entry => entry.state === 'draft'),
+      retired:
+        published === undefined && list.some(entry => entry.state === 'retired'),
+    }
+  })
+}
+
+const slug = (text: string): string => {
+  const plain = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24)
+    .replace(/-+$/g, '')
+  return /^[a-z]/.test(plain) ? plain : `t-${plain}`.replace(/-+$/g, '') || 'template'
+}
+
+const blankTemplate = (id: string, name: string): Template => ({
+  schemaVersion: TEMPLATE_SCHEMA_VERSION,
+  id,
+  version: 1,
+  name,
+  shortName: slug(name),
+  caseReferenceLabel: 'Case reference',
+  numbering: [{ style: 'arabic', suffix: '.' }],
+  roles: [
+    {
+      id: 'authors',
+      name: 'Authors',
+      kind: 'drafting',
+      view: 'full',
+      permissions: DRAFTING_PERMISSIONS,
+    },
+    {
+      id: 'reviewers',
+      name: 'Reviewers',
+      kind: 'reviewing',
+      view: 'redacted',
+      permissions: ['comment', 'vote'],
+      approval: { kind: 'all' },
+    },
+  ],
+  sections: [
+    {
+      id: 'summary',
+      title: 'Summary',
+      requirement: 'required',
+      frontMatter: false,
+      numbered: true,
+      items: [
+        { id: 'summary-text', label: 'Summary', requirement: 'required', type: 'rich_text' },
+      ],
+      sections: [],
+    },
+  ],
+  pageNumbering: 'continuous',
+  furniture: {},
+})
+
+export const templateHandlers: Pick<
+  AllHandlers,
+  | 'ListTemplates'
+  | 'ListPublishedTemplates'
+  | 'GetTemplateVersion'
+  | 'CreateTemplateDraft'
+  | 'SaveTemplateDraft'
+  | 'PublishTemplateVersion'
+  | 'RetireTemplate'
+  | 'GetTheme'
+  | 'UpdateTheme'
+> = {
+  ListTemplates: () =>
+    Effect.gen(function* () {
+      const db = yield* store
+      yield* allowCapability(db, { type: 'edit_template' })
+      return summariesOf(yield* db.listTemplates()).slice(0, MAX_TEMPLATES)
+    }),
+
+  // NOTE: what an author chooses from when starting a report: the newest
+  // published version of each template that is not retired.
+  ListPublishedTemplates: () =>
+    Effect.gen(function* () {
+      const user = yield* CurrentUser
+      const db = yield* store
+      const grants = yield* db.listGrants(user.id)
+      if (!grants.some(grant => grant.capability === 'author')) {
+        return yield* Effect.fail(new NotPermitted({ reason: 'not_permitted' }))
+      }
+      const out = []
+      const published = summariesOf(yield* db.listTemplates())
+        .slice(0, MAX_TEMPLATES)
+        .filter(summary => summary.publishedVersion !== undefined)
+      // NOTE: all the published versions in one read.
+      const stored = new Map(
+        (yield* db.getTemplateVersions(
+          published.map(summary => ({
+            templateId: summary.id,
+            version: summary.publishedVersion as number,
+          })),
+        )).map(record => [`${record.templateId}@${record.version}`, record]),
+      )
+      for (const summary of published) {
+        if (summary.publishedVersion === undefined) continue
+        const stored_ = stored.get(`${summary.id}@${summary.publishedVersion}`)
+        if (stored_ === undefined) continue
+        const template = yield* Effect.try({
+          try: () => readTemplate(stored_),
+          catch: () => new StorageUnavailable({ message: 'template invalid' }),
+        })
+        out.push({
+          id: summary.id,
+          version: summary.publishedVersion,
+          name: template.name,
+          shortName: template.shortName,
+          caseReferenceLabel: template.caseReferenceLabel,
+          ...(template.description === undefined
+            ? {}
+            : { description: template.description }),
+        })
+      }
+      return out
+    }),
+
+  // NOTE: a template editor reads any version. Anyone else must name a report
+  // that uses this version (and, for a reviewer, the revision sent to them);
+  // `authorize` decides, and anything else is `NotFound`.
+  GetTemplateVersion: ({ templateId, version, reportId, revision }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      if (reportId === undefined) {
+        yield* allowCapability(db, { type: 'preview_template' })
+      } else {
+        const { loaded } = yield* member(reportId, {
+          type: 'read_template_version',
+          ...(revision === undefined ? {} : { revision }),
+        })
+        if (
+          loaded.record.templateId !== templateId ||
+          loaded.record.templateVersion !== version
+        ) {
+          return yield* Effect.fail(new NotFound())
+        }
+      }
+      const stored = yield* db.getTemplateVersion(templateId, version)
+      if (stored === null) return yield* Effect.fail(new NotFound())
+      return yield* recordOf(stored)
+    }),
+
+  // NOTE: blank, a copy under a new name, or (a copy with no name) the next
+  // draft of the same template. A template has at most one draft.
+  CreateTemplateDraft: ({ copyOf, name }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const { user } = yield* allowCapability(db, {
+        type: copyOf === undefined ? 'create_template' : 'copy_template',
+      })
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      let templateId: string
+      let version = 1
+      let template: Template
+      if (copyOf === undefined) {
+        templateId = yield* idOf('tpl')
+        template = blankTemplate(templateId, name ?? 'New template')
+      } else {
+        const source = yield* db.getTemplateVersion(copyOf.templateId, copyOf.version)
+        if (source === null) return yield* Effect.fail(new NotFound())
+        const original = yield* Effect.try({
+          try: () => readTemplate(source),
+          catch: () => new StorageUnavailable({ message: 'template invalid' }),
+        })
+        if (name === undefined) {
+          templateId = copyOf.templateId
+          version =
+            Math.max(
+              ...(yield* db.listTemplates())
+                .filter(entry => entry.templateId === templateId)
+                .map(entry => entry.version),
+            ) + 1
+          template = { ...original, version }
+        } else {
+          templateId = yield* idOf('tpl')
+          template = { ...original, id: templateId, version, name, shortName: slug(name) }
+        }
+      }
+      const created = yield* db.createTemplateDraft({
+        templateId,
+        version,
+        name: template.name,
+        shortName: template.shortName,
+        definition: JSON.stringify(template),
+        createdBy: user.id,
+        now,
+        audit: {
+          at: now,
+          actorId: user.id,
+          action: 'template.draft_created',
+          templateId,
+          meta: JSON.stringify({ version }),
+        },
+      })
+      if (created._tag === 'Refused') {
+        return yield* Effect.fail(
+          new Conflict({
+            reason: created.reason === 'draft_exists' ? 'already_exists' : 'changed_meanwhile',
+          }),
+        )
+      }
+      const stored = yield* db.getTemplateVersion(templateId, version)
+      if (stored === null) return yield* Effect.fail(new NotFound())
+      return yield* recordOf(stored)
+    }),
+
+  SaveTemplateDraft: ({ templateId, version, template }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      yield* allowCapability(db, { type: 'edit_template' })
+      if (template.id !== templateId || template.version !== version) {
+        return yield* Effect.fail(validation('input', 'template_mismatch'))
+      }
+      const saved = yield* db.saveTemplateDraft({
+        templateId,
+        version,
+        name: template.name,
+        shortName: template.shortName,
+        definition: JSON.stringify(template),
+      })
+      if (saved._tag === 'Refused') {
+        const exists = yield* db.getTemplateVersion(templateId, version)
+        return yield* Effect.fail(
+          exists === null ? new NotFound() : new Conflict({ reason: 'changed_meanwhile' }),
+        )
+      }
+      const stored = yield* db.getTemplateVersion(templateId, version)
+      if (stored === null) return yield* Effect.fail(new NotFound())
+      return {
+        record: yield* recordOf(stored),
+        problems: problemsOf(templateProblems(template), 'template'),
+      }
+    }),
+
+  // NOTE: refused while the draft has problems. The version becomes immutable
+  // and the audit event holds the difference from the previous version.
+  PublishTemplateVersion: ({ templateId, version }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const { user } = yield* allowCapability(db, { type: 'publish_template' })
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const stored = yield* db.getTemplateVersion(templateId, version)
+      if (stored === null) return yield* Effect.fail(new NotFound())
+      if (stored.state !== 'draft') {
+        return yield* Effect.fail(new Conflict({ reason: 'changed_meanwhile' }))
+      }
+      const checked = validateTemplate(JSON.parse(stored.definition))
+      if (Result.isFailure(checked)) {
+        return yield* Effect.fail(
+          validationOf(problemsOf(checked.failure, 'template')),
+        )
+      }
+      const previousVersion = (yield* db.listTemplates())
+        .filter(
+          entry =>
+            entry.templateId === templateId &&
+            entry.version < version &&
+            entry.state !== 'draft',
+        )
+        .reduce<number | undefined>(
+          (best, entry) => (best === undefined || entry.version > best ? entry.version : best),
+          undefined,
+        )
+      const previous =
+        previousVersion === undefined
+          ? undefined
+          : yield* db.getTemplateVersion(templateId, previousVersion)
+      const changes = diffTemplates(
+        previous === null || previous === undefined ? undefined : readTemplate(previous),
+        checked.success,
+      )
+      const count = (kind: string): number =>
+        changes.filter(change => change.change === kind).length
+      const published = yield* db.publishTemplateVersion({
+        templateId,
+        version,
+        changes: JSON.stringify(changes),
+        publishedBy: user.id,
+        now,
+        audit: {
+          at: now,
+          actorId: user.id,
+          action: 'template.published',
+          templateId,
+          meta: JSON.stringify({
+            version,
+            added: count('added'),
+            removed: count('removed'),
+            changed: count('changed'),
+            summary: changes
+              .slice(0, 8)
+              .map(change => `${change.change} ${change.target} ${change.id ?? change.label}`)
+              .join('; ')
+              .slice(0, 200),
+          }),
+        },
+      })
+      if (published._tag === 'Refused') {
+        return yield* Effect.fail(new Conflict({ reason: 'changed_meanwhile' }))
+      }
+      const after = yield* db.getTemplateVersion(templateId, version)
+      if (after === null) return yield* Effect.fail(new NotFound())
+      return { record: yield* recordOf(after), changes }
+    }),
+
+  RetireTemplate: ({ templateId }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const { user } = yield* allowCapability(db, { type: 'retire_template' })
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const retired = yield* db.retireTemplate(templateId, now, {
+        at: now,
+        actorId: user.id,
+        action: 'template.retired',
+        templateId,
+      })
+      if (retired._tag === 'Refused') {
+        return yield* Effect.fail(validation('input', 'not_published'))
+      }
+      const summary = summariesOf(yield* db.listTemplates()).find(
+        entry => entry.id === templateId,
+      )
+      if (summary === undefined) return yield* Effect.fail(new NotFound())
+      return summary
+    }),
+
+  GetTheme: () =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const stored = yield* db.getTheme()
+      if (stored === null) return { theme: DEFAULT_THEME }
+      const theme = (() => {
+        try {
+          return decodeTheme(JSON.parse(stored.settings))
+        } catch {
+          return DEFAULT_THEME
+        }
+      })()
+      return {
+        theme,
+        updatedAt: stored.updatedAt,
+        ...(stored.updatedBy === null ? {} : { updatedBy: stored.updatedBy }),
+      }
+    }),
+
+  // NOTE: refused with the problems found when the colours would be
+  // unreadable (contrast) or a token is unknown; the logo must be a complete
+  // image uploaded for the theme.
+  UpdateTheme: ({ theme }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const { user } = yield* allowCapability(db, { type: 'set_theme' })
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const found = problemsOf(themeProblems(theme), 'theme')
+      if (found.length > 0) return yield* Effect.fail(validationOf(found))
+      if (theme.logo !== undefined) {
+        const image = yield* db.getImage(theme.logo)
+        if (image === null || image.owner.kind !== 'theme' || !image.complete) {
+          return yield* Effect.fail(validation('theme', 'unknown_logo', ['logo']))
+        }
+      }
+      yield* db.putTheme(
+        {
+          settings: JSON.stringify(theme),
+          logoImageId: theme.logo ?? null,
+          updatedAt: now,
+          updatedBy: user.id,
+        },
+        {
+          at: now,
+          actorId: user.id,
+          action: 'theme.updated',
+          meta: JSON.stringify({ organisationName: theme.organisationName.slice(0, 100) }),
+        },
+      )
+      return { theme, updatedAt: now, updatedBy: user.id }
+    }),
+}
+
+const validationOf = (problems: ReadonlyArray<Problem>): Validation =>
+  new Validation({ problems })

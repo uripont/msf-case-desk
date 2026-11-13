@@ -103,7 +103,7 @@ export const PROCEDURES = {
   CreateReport: p('reports', 'unit_author', ['create_report']),
   ListReports: p('reports', 'report_author', ['view_report'], 'Only reports where the caller is in the drafting role.'),
   GetReport: p('reports', 'report_author', ['view_report']),
-  AddCoAuthor: p('reports', 'report_author', ['add_co_author'], 'checkNewAuthor: not a reviewer in an open round.'),
+  AddCoAuthor: p('reports', 'report_author', ['add_co_author'], 'By account ID, from the unit\'s authors; checkNewAuthor: not a reviewer in an open round.'),
   ListDrafting: p('reports', 'report_author', ['read_people'], 'Author-only fact, polled every 30 seconds.'),
   // -- working copies
   StartWorkingCopy: p('working_copies', 'report_author', ['start_working_copy']),

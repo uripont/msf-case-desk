@@ -71,9 +71,6 @@ export const hashOfSections = (
   sections: ReadonlyArray<{ version: number | string }>,
 ): Promise<string> => sha256Hex(sections.map(s => String(s.version)).join(','))
 
-export const hashOfJoined = (joined: string): Promise<string> =>
-  sha256Hex(joined)
-
 export const sectionRefsOf = (
   rows: ReadonlyArray<SectionContentRow>,
 ): ReadonlyArray<typeof SectionRefSchema.Type> =>

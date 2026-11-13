@@ -249,7 +249,16 @@ export const makeImageHandler = (
       if (request.method === 'GET' && parts.length === 2) {
         const index = Number(parts[1])
         if (!Number.isInteger(index)) return fail('bad_request')
-        return yield* read(user.value.id, decodeURIComponent(parts[0] ?? ''), index, url)
+        // NOTE: a malformed percent-encoding is a bad request, not a defect.
+        const id = (() => {
+          try {
+            return decodeURIComponent(parts[0] ?? '')
+          } catch {
+            return undefined
+          }
+        })()
+        if (id === undefined) return fail('bad_request')
+        return yield* read(user.value.id, id, index, url)
       }
       return fail('not_found')
     })

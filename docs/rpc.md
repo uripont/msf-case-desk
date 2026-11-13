@@ -11,6 +11,8 @@ The contract lives in `packages/domain/src/api/`. `CaseDeskRpcs` (iteration 2, `
 - **Sharing on a stale base** does not fail: `FinishShare` answers `ShareOutcome` with `kind: 'stale_base'` and the `Comparison` (conflicts of `compareDrafts`, each side holding only the item). The author resolves with `ResolveMerge` (choices by conflict key) and shares again. "Share and publish" is `FinishShare` with `publish` set.
 - **Reviewers never choose the view.** No reviewer request has a `view`. `GetRevisionSection` answers one `content` in the view the server chose from the role (stored redacted content for `redacted`, the original for `full`). Reviewer responses carry no working copy, draft, people list, alias, save counter or redacted twin; a structural test enforces this on the schemas. A reviewer's comment has one `body`, already the right version; only the authors' view has `redactedBody`.
 - **Comments** anchor to a section or to a selection (`from`, `to` and the `quoted` text, in the view its author read). Visibility is `authors` (default) or `committee`, chosen on a pending comment and fixed when the review is sent. A comment of a `full` reviewer shared with the committee reaches a `redacted` reader as a `SectionNoteCommentView`: anchor `{ kind: 'section_note', sectionId, quoted? }` with the quoted text redacted, never positions in a text the reader does not have (D14); `ListReviewerComments` answers a union of that and `AnchoredCommentView`. Comments shared with the committee name their author (display name; the server passes it through the revision's redaction for a redacted reader); no other reviewer response names anyone.
+- **Per-address sign-in limits by runtime (D13, D20).** `cf-connecting-ip` is trusted only on Cloudflare. On workerd the deployment names a trusted proxy header (`TRUSTED_PROXY_HEADER`); without one every caller shares a single `self-hosted` bucket, so the per-address limit holds only together with the per-email limit. Old `sign_in_attempts` are pruned (at most 50 per sign-in). A successful sign-in clears the failures of that email.
+- **Cleanup for the notification pass.** `cleanupStale` (core.ts) deletes images no draft references and staged shares abandoned for more than 24 hours, at most 50 of each per call. Retried identical chunk uploads are accepted. A malformed percent-encoding in an image path answers 400.
 - **Invitations and additions disclose nothing (D13).** `InviteToUnit` and `AddReviewer` answer one shape for a new account and for an email that already has one: the ID and what the caller supplied, and an activation `link` only for a new account. No name, phone, email or state of an existing account is returned.
 - **Problems carry codes and positions.** The people list's problems (`duplicate-id`, `invalid-label`, `duplicate-label`, `label-matches-alias`) have fixed messages and a path of position and field, never a label, name or alias.
 - **Publishing and closing.** `PublishRevision` and `FinishShare` with `publish` refuse a draft that is not the latest shared one (`Conflict` `not_latest`, from the flow error `not_latest`). While the report is `concluding`, sharing calls `checkClosingDraft(template, state, base, draft)` with the latest revision as base and refuses a draft whose sections other than the conclusion differ from it (compared canonically); the handler answers `Validation` (source `save`, code `other_sections_changed`, the section IDs as paths). A review (`SendReview`) is refused (`NotAllowedInState`, code `round_not_open`) unless its `revision` is the open round's.
@@ -31,12 +33,12 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `SignIn` | public | - | Throttled before hashing (D13). |
-| `InspectLink` | public | - |  |
-| `ConsumeLink` | public | - |  |
+| `SignIn` | public | - | Served at `/api/q/public`, no session. Throttled before hashing (D13): 5 failures per email or 20 per address in 15 minutes, then a wait of 60 s doubling to at most 15 minutes from the last failure; a refused attempt is not counted. The Worker sets the `case_desk_session` cookie; the body is the account, never the token. |
+| `InspectLink` | public | - | Unknown, used and expired links all answer `LinkInvalid`. |
+| `ConsumeLink` | public | - | One use: sets the password, ends every session of the account, marks the link used (one batch), then signs in with a new cookie. |
 | `GetMe` | signed_in | - |  |
 | `SignOut` | signed_in | - |  |
-| `SetNotificationPreferences` | signed_in | - | D19. Authors only matter. |
+| `SetNotificationPreferences` | signed_in | - | D19. Also the only place a phone number and WhatsApp consent of an account are set: by the person, on their own account. |
 
 ### accounts (4)
 
@@ -61,9 +63,9 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListReviewers` | unit_author | `manage_committees` |  |
+| `ListReviewers` | unit_author | `manage_committees` | The unit's own registry entries: name and phone as the unit typed them, `consentRequested`, `active`. Never `passwordSetAt`, consent state or any other account data. |
 | `AddReviewer` | unit_author | `manage_committees` | Echoes what the caller supplied; nothing stored for an existing account (D13). |
-| `UpdateReviewer` | unit_author | `manage_committees` |  |
+| `UpdateReviewer` | unit_author | `manage_committees` | Edits only the unit's entry (name, phone, `whatsappConsent` meaning "consent requested"); never the account's own name, phone or consent. |
 | `ListCommittees` | unit_author | `manage_committees` |  |
 | `CreateCommittee` | unit_author | `manage_committees` |  |
 | `UpdateCommittee` | unit_author | `manage_committees` |  |
@@ -92,11 +94,11 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
 | `ListCaseFiles` | unit_author | `create_report` |  |
-| `UpdateCaseFile` | report_author | `view_report` | Authors of a report of the case file. |
+| `UpdateCaseFile` | report_author | `view_report` | Only members of a report on the case file (guarded in one batch); every report of the case file gets an audit row. Anyone else: `NotFound`. |
 | `CreateReport` | unit_author | `create_report` |  |
-| `ListReports` | report_author | `view_report` | Only reports where the caller is in the drafting role. |
+| `ListReports` | report_author | `view_report` | Only reports where the caller is a member. A constant number of queries: at most 40 reports, one read of their templates, and at most 2 overdue rounds settled per call (the others show their stored state until opened or settled by the scheduled pass). |
 | `GetReport` | report_author | `view_report` |  |
-| `AddCoAuthor` | report_author | `add_co_author` | checkNewAuthor: not a reviewer in an open round. |
+| `AddCoAuthor` | report_author | `add_co_author` | By `accountId`, from the existing authors of the report's unit. Creates no account and grants nothing; an unknown, non-author or inactive ID gets one `Validation` refusal (`not_a_unit_author`). checkNewAuthor: not a reviewer in an open round. |
 | `ListDrafting` | report_author | `read_people` | Author-only fact, polled every 30 seconds. |
 
 ### working_copies (6)
@@ -114,8 +116,8 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ShareSection` | report_author | `share_draft` |  |
-| `FinishShare` | report_author | `share_draft`, `publish_revision` | publish_revision only when `publish` is set. |
+| `ShareSection` | report_author | `share_draft` | Every section of one share is redacted with one people list, fixed by the first staged section (`peopleHash`). If the people list changes before `FinishShare`, the finish is refused (`Conflict` `changed_meanwhile`, or `Validation` `redaction_not_confirmed` when a confirmation hash was sent). |
+| `FinishShare` | report_author | `share_draft`, `publish_revision` | publish_revision only when `publish` is set. `redactionHash` (the SHA-256 of `<staged redacted hashes of the sections joined with ','>|<SHA-256 of the people list>`, the pieces returned by `ShareSection.redactedHash` and `ShareSection.peopleHash`) confirms the redaction preview; the server rechecks it and writes the confirmation in the same batch as the publish, which is guarded on it. |
 | `PreviewMerge` | report_author | `share_draft` |  |
 | `ResolveMerge` | report_author | `save_section` |  |
 
@@ -144,7 +146,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | `PublishRevision` | report_author | `publish_revision` |  |
 | `GetRound` | report_author | `read_grid` |  |
 | `ExtendDeadline` | report_author | `extend_deadline` |  |
-| `RemoveReviewer` | report_author | `remove_reviewer` |  |
+| `RemoveReviewer` | report_author | `remove_reviewer` | When the removal makes the rule met, the round is decided in the same batch. |
 | `StartConclusion` | report_author | `start_conclusion` |  |
 | `ArchiveReport` | report_author | `publish_revision` | The `archive` event of report-flow.ts. |
 
@@ -152,7 +154,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListInbox` | reviewer | - | Rounds the caller participates in. |
+| `ListInbox` | reviewer | - | Rounds the caller participates in, one page per call: payload `{offset?, limit?}`, answer `InboxPage` with `next` (the offset of the following page). |
 | `ListPendingReviews` | reviewer | `write_comment` |  |
 | `GetRevisionOutline` | reviewer | `read_revision` | Records the revision as opened. |
 | `GetRevisionSection` | reviewer | `read_revision` | The server picks redacted or full. |
@@ -185,7 +187,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListNotifications` | signed_in | - |  |
+| `ListNotifications` | signed_in | - | Newest first. `before` and `next` are notification cursors (a number): pass `next` as `before` for the older page. |
 | `GetUnreadCount` | signed_in | - |  |
 | `MarkNotificationsRead` | signed_in | - |  |
 | `GetWhatsAppLink` | report_author | `publish_revision` | Needs the reviewer's number and consent. |

@@ -2,10 +2,13 @@ import { Effect, Layer, Option, Schema } from 'effect'
 
 import { DEFAULT_RULES, RPC_PATH, type Repository } from '@case-desk/domain'
 
+import { withSink } from './quoroom/cookies'
 import {
+  QUOROOM_PUBLIC_PATH,
   QUOROOM_RPC_PATH,
   type QuoroomDeps,
   makeQuoroomImageHandler,
+  makeQuoroomPublicHandler,
   makeQuoroomRpcHandler,
 } from './quoroom/server'
 import { makeRpcHandler } from './server'
@@ -46,6 +49,10 @@ export const makeApp = (
   const rpc = makeRpcHandler(repository)
   const quoroomRpc =
     quoroom === undefined ? undefined : makeQuoroomRpcHandler(repository, quoroom)
+  const quoroomPublic =
+    quoroom === undefined
+      ? undefined
+      : makeQuoroomPublicHandler(repository, quoroom)
   const images =
     quoroom === undefined
       ? undefined
@@ -129,13 +136,41 @@ export const makeApp = (
     if (pathname === RPC_PATH) {
       return rpc.handler(request)
     }
-    if (quoroomRpc !== undefined && pathname === QUOROOM_RPC_PATH) {
-      return quoroomRpc.handler(request)
+    // NOTE: the session cookie of the iteration 3 RPC (sign-in, links,
+    // sign-out) is set by the handlers through a per-request slot, and the
+    // pages that carry a link token send no referrer.
+    const served = (
+      handler: (request: Request) => Promise<Response>,
+      path: string,
+    ): Promise<Response> => {
+      let target = request
+      if (pathname !== path) {
+        const url = new URL(request.url)
+        url.pathname = path
+        target = new Request(url, request)
+      }
+      return withSink(target, handler).then(response => {
+        const headers = new Headers(response.headers)
+        headers.set('referrer-policy', 'no-referrer')
+        headers.set('cache-control', 'no-store')
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        })
+      })
     }
-    if (quoroomRpc !== undefined && pathname === `${QUOROOM_RPC_PATH}/`) {
-      const url = new URL(request.url)
-      url.pathname = QUOROOM_RPC_PATH
-      return quoroomRpc.handler(new Request(url, request))
+    if (
+      quoroomRpc !== undefined &&
+      (pathname === QUOROOM_RPC_PATH || pathname === `${QUOROOM_RPC_PATH}/`)
+    ) {
+      return served(quoroomRpc.handler, QUOROOM_RPC_PATH)
+    }
+    if (
+      quoroomPublic !== undefined &&
+      (pathname === QUOROOM_PUBLIC_PATH || pathname === `${QUOROOM_PUBLIC_PATH}/`)
+    ) {
+      return served(quoroomPublic.handler, QUOROOM_PUBLIC_PATH)
     }
     if (
       images !== undefined &&
@@ -154,7 +189,11 @@ export const makeApp = (
   return {
     handle,
     dispose: async () => {
-      await Promise.all([rpc.dispose(), quoroomRpc?.dispose()])
+      await Promise.all([
+        rpc.dispose(),
+        quoroomRpc?.dispose(),
+        quoroomPublic?.dispose(),
+      ])
     },
   }
 }

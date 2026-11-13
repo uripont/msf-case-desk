@@ -1,7 +1,7 @@
 import { Effect, Layer } from 'effect'
 
-import type { NotificationJob } from './notifications'
-import type { ReportState } from './report-flow'
+import type { NotificationJob } from '../notifications'
+import type { ReportState } from '../report-flow'
 import {
   type AccountProfile,
   type AccountRecord,
@@ -23,6 +23,7 @@ import {
   type PublishInput,
   type PublishOutcome,
   type PutChunkOutcome,
+  type DecideRoundInput,
   type ReplyRecord,
   type ReportRecord,
   ReportRepository,
@@ -37,8 +38,8 @@ import {
   IMAGE_LIMITS,
   dedupeKey,
   imageChunkProblem,
-} from './report-repository'
-import { normaliseEmail } from './user'
+} from '../report-repository'
+import { normaliseEmail } from '../user'
 
 // NOTE: the in-memory twin of the SQL repository (stage 2b). It follows the
 // same rules as the guarded batches, one by one, so the contract suite gives
@@ -74,6 +75,8 @@ type StagingRow = {
   redactedContent: string
   redactedHash: string
   imageRefs: string
+  peopleHash: string
+  stagedAt: number
 }
 type WcSectionRow = {
   reportId: string
@@ -174,7 +177,14 @@ export const makeMemoryReportRepository = (
     let theme: StoreThemeRecord | null = null
     const templates = new Map<string, TemplateRow>()
     const versions: Array<StoreTemplateVersionRecord> = []
-    const unitReviewers: Array<{ unitId: string; userId: string }> = []
+    const unitReviewers: Array<{
+      unitId: string
+      userId: string
+      displayName: string
+      phone: string | null
+      consentRequested: boolean
+      addedAt: number
+    }> = []
     const committees: Array<{
       id: string
       unitId: string
@@ -405,6 +415,47 @@ export const makeMemoryReportRepository = (
       profile: profiles.get(user.id) ?? null,
     })
 
+    // ---- deciding a round, shared by decideRound and removeParticipant ------------------
+    const activeParticipants = (roundId: string): number =>
+      participants.filter(p => p.roundId === roundId && p.removedAt === null)
+        .length
+    // NOTE: the same guards as the SQL batch: the round is open with the
+    // deadline the decision was made from, the deadline has passed for a
+    // decision by the deadline, and the reviews and the people are the same.
+    const decisionStillHolds = (
+      input: DecideRoundInput,
+      activeCount: number,
+    ): boolean => {
+      const round = rounds.find(r => r.id === input.roundId)
+      return (
+        round !== undefined &&
+        round.state === 'open' &&
+        round.deadlineAt === input.expectedDeadlineAt &&
+        (input.decidedBy !== 'deadline' || round.deadlineAt <= input.now) &&
+        reviews.filter(v => v.roundId === input.roundId).length ===
+          input.expectedReviews &&
+        activeCount === input.expectedParticipants
+      )
+    }
+    const applyDecision = (input: DecideRoundInput): void => {
+      const index = rounds.findIndex(r => r.id === input.roundId)
+      rounds[index] = {
+        ...(rounds[index] as RoundRecord),
+        state: 'decided',
+        decidedBy: input.decidedBy,
+        decidedAt: input.now,
+      }
+      const at = reports.findIndex(r => r.id === input.reportId)
+      reports[at] = {
+        ...(reports[at] as ReportRow),
+        state: input.toState,
+        updatedAt: input.now,
+      }
+      skipJobsOf(input.roundId)
+      addJobs(input.reportId, input.roundId, input.jobs, input.now)
+      addAudit(input.audit)
+    }
+
     // ---- publishing, shared by publishRevision and finishShare --------------------------
 
     const publishRefusal = (
@@ -631,6 +682,7 @@ export const makeMemoryReportRepository = (
               sectionId: s.sectionId,
               ordinal: s.ordinal,
               redactedHash: s.redactedHash,
+              peopleHash: s.peopleHash,
             })),
         ),
       listReviewerRounds: (userId, options) =>
@@ -744,6 +796,10 @@ export const makeMemoryReportRepository = (
             unitReviewers.push({
               unitId: input.reviewerOfUnit,
               userId: input.id,
+              displayName: input.reviewerEntry?.displayName ?? input.name,
+              phone: input.reviewerEntry?.phone ?? null,
+              consentRequested: input.reviewerEntry?.consentRequested ?? false,
+              addedAt: input.now,
             })
           }
           if (input.grant !== undefined) {
@@ -772,7 +828,7 @@ export const makeMemoryReportRepository = (
           })
           void now
         }),
-      linkReviewer: (unitId, userId, _addedBy, _now, auditInput) =>
+      linkReviewer: (unitId, userId, _addedBy, now, auditInput, entry) =>
         Effect.sync(() => {
           if (!units.some(u => u.id === unitId)) return 'no_unit' as const
           if (
@@ -780,7 +836,14 @@ export const makeMemoryReportRepository = (
           ) {
             return 'exists' as const
           }
-          unitReviewers.push({ unitId, userId })
+          unitReviewers.push({
+            unitId,
+            userId,
+            displayName: entry.displayName,
+            phone: entry.phone,
+            consentRequested: entry.consentRequested,
+            addedAt: now,
+          })
           addAudit(auditInput)
           return 'linked' as const
         }),
@@ -788,7 +851,52 @@ export const makeMemoryReportRepository = (
         Effect.sync(() =>
           unitReviewers
             .filter(r => r.unitId === unitId)
-            .flatMap(r => users.filter(u => u.id === r.userId))
+            .flatMap(r => {
+              const user = users.find(u => u.id === r.userId)
+              return user === undefined
+                ? []
+                : [
+                    {
+                      unitId: r.unitId,
+                      userId: r.userId,
+                      email: user.email,
+                      name: r.displayName === '' ? user.name : r.displayName,
+                      phone: r.phone,
+                      consentRequested: r.consentRequested,
+                      active: profiles.get(user.id)?.active ?? true,
+                      addedAt: r.addedAt,
+                    },
+                  ]
+            })
+            .sort(
+              byKey(
+                u => u.name,
+                u => u.userId,
+              ),
+            ),
+        ),
+      updateUnitReviewer: input =>
+        Effect.sync(() => {
+          const index = unitReviewers.findIndex(
+            r => r.unitId === input.unitId && r.userId === input.userId,
+          )
+          if (index < 0) return 'not_found' as const
+          const current = unitReviewers[index] as (typeof unitReviewers)[number]
+          unitReviewers[index] = {
+            ...current,
+            displayName: input.displayName ?? current.displayName,
+            phone: input.phone === undefined ? current.phone : input.phone,
+            consentRequested:
+              input.consentRequested ?? current.consentRequested,
+          }
+          addAudit(input.audit)
+          return 'updated' as const
+        }),
+      listUnitAuthors: unitId =>
+        Effect.sync(() =>
+          grants
+            .filter(g => g.capability === 'author' && g.unitId === unitId)
+            .flatMap(g => users.filter(u => u.id === g.userId))
             .sort(
               byKey(
                 u => u.name,
@@ -796,6 +904,13 @@ export const makeMemoryReportRepository = (
               ),
             )
             .map(accountRecord),
+        ),
+      listProfiles: userIds =>
+        Effect.sync(() =>
+          userIds.flatMap(id => {
+            const profile = profiles.get(id)
+            return profile === undefined ? [] : [profile]
+          }),
         ),
       createInvitation: (invitation, auditInput) =>
         Effect.sync(() => {
@@ -816,6 +931,15 @@ export const makeMemoryReportRepository = (
           )
           if (index < 0) return { _tag: 'Refused', reason: 'invalid' } as const
           const invitation = invitations[index] as InvitationRecord
+          invitations.forEach((other, at) => {
+            if (
+              at !== index &&
+              other.userId === invitation.userId &&
+              other.usedAt === null
+            ) {
+              invitations[at] = { ...other, usedAt: now }
+            }
+          })
           users = users.map(u =>
             u.id === invitation.userId ? { ...u, passwordHash } : u,
           )
@@ -847,7 +971,13 @@ export const makeMemoryReportRepository = (
       signInSummary: (email, ip, since) =>
         Effect.sync(() => {
           const failed = attempts.filter(a => !a.succeeded && a.at >= since)
-          const mail = failed.filter(a => a.email === email)
+          const lastOk = Math.max(
+            -1,
+            ...attempts
+              .filter(a => a.succeeded && a.email === email)
+              .map(a => a.at),
+          )
+          const mail = failed.filter(a => a.email === email && a.at > lastOk)
           const net = failed.filter(a => a.ip === ip)
           const last = (list: typeof failed): number | null =>
             list.length === 0 ? null : Math.max(...list.map(a => a.at))
@@ -857,6 +987,20 @@ export const makeMemoryReportRepository = (
             failuresByIp: net.length,
             lastFailureByIp: last(net),
           }
+        }),
+      pruneSignInAttempts: (before, limit) =>
+        Effect.sync(() => {
+          const doomed = attempts
+            .map((a, index) => ({ a, index }))
+            .filter(({ a }) => a.at < before)
+            .sort((x, y) => x.a.at - y.a.at || x.index - y.index)
+            .slice(0, limit)
+            .map(({ index }) => index)
+          const gone = new Set(doomed)
+          const kept = attempts.filter((_, index) => !gone.has(index))
+          attempts.length = 0
+          attempts.push(...kept)
+          return doomed.length
         }),
       deleteSessionsOfUser: userId =>
         Effect.sync(() => {
@@ -909,6 +1053,12 @@ export const makeMemoryReportRepository = (
             versions.find(
               v => v.templateId === templateId && v.version === version,
             ) ?? null,
+        ),
+      getTemplateVersions: keys =>
+        Effect.sync(() =>
+          versions.filter(v =>
+            keys.some(k => k.templateId === v.templateId && k.version === v.version),
+          ),
         ),
       listTemplates: () =>
         Effect.sync(() =>
@@ -1081,12 +1231,45 @@ export const makeMemoryReportRepository = (
                 .sort(),
             })),
         ),
+      getCommittee: id =>
+        Effect.sync(() => {
+          const c = committees.find(x => x.id === id)
+          return c === undefined
+            ? null
+            : {
+                ...c,
+                memberIds: committeeMembers
+                  .filter(m => m.committeeId === c.id)
+                  .map(m => m.userId)
+                  .sort(),
+              }
+        }),
       listCaseFiles: unitId =>
         Effect.sync(() =>
           caseFiles
             .filter(f => f.unitId === unitId)
             .sort(byKey(f => f.reference)),
         ),
+      retitleCaseFile: input =>
+        Effect.sync(() => {
+          const index = caseFiles.findIndex(f => f.id === input.caseFileId)
+          const onFile = reports.filter(r => r.caseFileId === input.caseFileId)
+          const isMember = onFile.some(r =>
+            members.some(m => m.reportId === r.id && m.userId === input.userId),
+          )
+          if (index < 0 || !isMember) {
+            return { _tag: 'Refused', reason: 'not_found' } as const
+          }
+          const updated = {
+            ...(caseFiles[index] as StoreCaseFileRecord),
+            title: input.title,
+            updatedAt: input.now,
+          }
+          caseFiles[index] = updated
+          const reportIds = onFile.map(r => r.id).sort()
+          reportIds.forEach(reportId => addAudit({ ...input.audit, reportId }))
+          return { _tag: 'Updated', caseFile: updated, reportIds } as const
+        }),
       updateCaseFile: (id, patch, now) =>
         Effect.sync(() => {
           const index = caseFiles.findIndex(f => f.id === id)
@@ -1502,6 +1685,22 @@ export const makeMemoryReportRepository = (
           if (source === undefined) {
             return { _tag: 'Refused', reason: 'changed' } as const
           }
+          const wcNow = workingCopies.find(
+            w => w.reportId === input.reportId && w.userId === input.userId,
+          )
+          if (wcNow?.people !== input.people) {
+            return { _tag: 'Refused', reason: 'changed' } as const
+          }
+          if (
+            staging.some(
+              s =>
+                s.shareId === input.shareId &&
+                s.sectionId !== input.sectionId &&
+                s.peopleHash !== input.peopleHash,
+            )
+          ) {
+            return { _tag: 'Refused', reason: 'changed' } as const
+          }
           const taken = staging.find(
             s =>
               s.shareId === input.shareId &&
@@ -1525,6 +1724,8 @@ export const makeMemoryReportRepository = (
             redactedContent: input.redactedContent,
             redactedHash: input.redactedHash,
             imageRefs: input.imageRefs,
+            peopleHash: input.peopleHash,
+            stagedAt: input.now,
           })
           return { _tag: 'Staged' } as const
         }),
@@ -1556,6 +1757,14 @@ export const makeMemoryReportRepository = (
               s.reportId === input.reportId &&
               s.userId === input.userId,
           )
+          if (
+            wc.people !== input.people ||
+            staging.some(
+              s => s.shareId === input.shareId && s.peopleHash !== input.peopleHash,
+            )
+          ) {
+            return { _tag: 'Refused', reason: 'people_changed' }
+          }
           if (mine.length !== input.expectedSections) {
             return { _tag: 'Refused', reason: 'share_incomplete' }
           }
@@ -1936,21 +2145,10 @@ export const makeMemoryReportRepository = (
             r => r.id === input.roundId && r.state === 'open',
           )
           if (index < 0) return { _tag: 'Refused', reason: 'not_open' } as const
-          rounds[index] = {
-            ...(rounds[index] as RoundRecord),
-            state: 'decided',
-            decidedBy: input.decidedBy,
-            decidedAt: input.now,
+          if (!decisionStillHolds(input, activeParticipants(input.roundId))) {
+            return { _tag: 'Refused', reason: 'changed' } as const
           }
-          const at = reports.findIndex(r => r.id === input.reportId)
-          reports[at] = {
-            ...(reports[at] as ReportRow),
-            state: input.toState,
-            updatedAt: input.now,
-          }
-          skipJobsOf(input.roundId)
-          addJobs(input.reportId, input.roundId, input.jobs, input.now)
-          addAudit(input.audit)
+          applyDecision(input)
           return { _tag: 'Decided' } as const
         }),
       extendDeadline: input =>
@@ -1994,6 +2192,21 @@ export const makeMemoryReportRepository = (
           if (index < 0) {
             return { _tag: 'Refused', reason: 'not_a_participant' } as const
           }
+          const decision =
+            input.decide === undefined
+              ? undefined
+              : {
+                  ...input.decide,
+                  roundId: input.roundId,
+                  reportId: input.reportId,
+                  now: input.now,
+                }
+          if (
+            decision !== undefined &&
+            !decisionStillHolds(decision, activeParticipants(input.roundId) - 1)
+          ) {
+            return { _tag: 'Refused', reason: 'changed' } as const
+          }
           participants[index] = {
             ...(participants[index] as ParticipantRow),
             removedAt: input.now,
@@ -2001,6 +2214,7 @@ export const makeMemoryReportRepository = (
           }
           skipJobsOf(input.roundId, input.userId)
           addAudit(input.audit)
+          if (decision !== undefined) applyDecision(decision)
           return { _tag: 'Removed' } as const
         }),
 
@@ -2415,13 +2629,27 @@ export const makeMemoryReportRepository = (
             (!sameOwner(existing.owner, input.owner) ||
               existing.size !== input.size ||
               existing.chunkCount !== input.chunkCount ||
-              existing.uploadedBy !== input.uploadedBy ||
-              existing.complete)
+              existing.uploadedBy !== input.uploadedBy)
           ) {
             return { _tag: 'Refused', reason: 'mismatch' }
           }
-          if (chunks.has(`${input.imageId}#${input.index}`)) {
-            return { _tag: 'Refused', reason: 'duplicate' }
+          const stored = chunks.get(`${input.imageId}#${input.index}`)
+          if (stored !== undefined) {
+            // NOTE: a retried upload with identical content is answered again.
+            if (stored !== input.data || existing === undefined) {
+              return { _tag: 'Refused', reason: 'duplicate' }
+            }
+            return {
+              _tag: 'Stored',
+              received: [...chunks.keys()].filter(key =>
+                key.startsWith(`${input.imageId}#`),
+              ).length,
+              complete: existing.complete,
+              image: existing.complete ? imageRecord(existing) : null,
+            }
+          }
+          if (existing?.complete === true) {
+            return { _tag: 'Refused', reason: 'mismatch' }
           }
           if (
             storedImageBytes + input.data.length >
@@ -2572,6 +2800,40 @@ export const makeMemoryReportRepository = (
             .forEach(key => chunks.delete(key))
           images.splice(index, 1)
           return { _tag: 'Deleted' } as const
+        }),
+      cleanup: input =>
+        Effect.sync(() => {
+          const doomed = images
+            .filter(
+              i =>
+                i.createdAt < input.olderThan &&
+                !draftImages.some(d => d.imageId === i.id) &&
+                theme?.logoImageId !== i.id &&
+                !wcSections.some(w => w.content.includes(i.id)) &&
+                !staging.some(
+                  s => s.stagedAt >= input.olderThan && s.imageRefs.includes(i.id),
+                ),
+            )
+            .sort(
+              byKey(
+                i => i.createdAt,
+                i => i.id,
+              ),
+            )
+            .slice(0, input.limit)
+          doomed.forEach(row => {
+            storedImageBytes -= row.storedBytes
+            ;[...chunks.keys()]
+              .filter(key => key.startsWith(`${row.id}#`))
+              .forEach(key => chunks.delete(key))
+            images.splice(images.indexOf(row), 1)
+          })
+          const old = staging
+            .filter(s => s.stagedAt < input.olderThan)
+            .sort((x, y) => x.stagedAt - y.stagedAt)
+            .slice(0, input.limit)
+          staging = staging.filter(s => !old.includes(s))
+          return { images: doomed.length, staged: old.length }
         }),
     }
 

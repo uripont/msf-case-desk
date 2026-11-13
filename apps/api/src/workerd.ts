@@ -9,7 +9,7 @@ import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
 import { makeApp } from './app'
 import { layerSql } from './d1Repository'
-import { QuoroomServicesLive } from './quoroom/core'
+import { type NetworkPolicy, QuoroomServicesFor } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
 import {
   type SqlBatchResult,
@@ -25,6 +25,10 @@ type Row = Record<string, SqlValue>
 export type Env = {
   readonly ASSETS: Fetcher
   readonly DATABASE: DurableObjectNamespace<LocalDatabase>
+  // NOTE: the header a proxy in front of this server sets to the caller's
+  // address, if the operator controls one. Without it the per-address sign-in
+  // limit is one shared bucket (see `clientAddress`).
+  readonly TRUSTED_PROXY_HEADER?: string
 }
 
 const runScript = (sql: SqlStorage, script: string): void => {
@@ -131,9 +135,14 @@ export default {
       return serveAssets(request, env)
     }
     const database = localDatabase(env)
+    const proxyHeader = (env.TRUSTED_PROXY_HEADER ?? '').trim()
+    const network: NetworkPolicy =
+      proxyHeader === ''
+        ? { kind: 'self_hosted' }
+        : { kind: 'header', name: proxyHeader }
     const app = makeApp(
       layerSql(database),
-      Layer.mergeAll(layerSqlReport(database), QuoroomServicesLive),
+      Layer.mergeAll(layerSqlReport(database), QuoroomServicesFor(network)),
     )
     try {
       return await app.handle(request)

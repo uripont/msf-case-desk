@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { SCENARIOS, PEOPLE, SECRET, TEXT, type World, makeWorld, richContent, withFigure } from './testkit'
 import { sha256Hex } from './content'
+import { cleanupStale } from './core'
 
 // NOTE: Stage 2c: the Quoroom RPC through the real handler stack (the app, the
 // RPC server, the middleware that reads the session cookie), on the in-memory
@@ -200,6 +201,90 @@ describe.each(SCENARIOS)('$name', scenario => {
       expect(authors[0]?.redactedBody).not.toContain(SECRET)
     })
   }
+
+  test('the people list is fixed for the whole share: a change in between refuses the finish, and the confirmed hash covers it', async () => {
+    const w = await world()
+    const reportId = await w.createReport()
+    const started = await w.call('alice', c => c.StartWorkingCopy({ reportId }))
+    const withPeople = await w.call('alice', c =>
+      c.SavePeople({ reportId, saveCounter: started.saveCounter, people: PEOPLE }),
+    )
+    const saved = await w.call('alice', c =>
+      c.SaveSection({ reportId, sectionId, saveCounter: withPeople.saveCounter, content: richContent(itemId, TEXT) }),
+    )
+    const staged = await w.call('alice', c =>
+      c.ShareSection({ reportId, shareId: 'share-p', sectionId, saveCounter: saved.saveCounter }),
+    )
+    expect(staged.peopleHash).not.toBe('')
+    // NOTE: the author empties the people list while the share is staged.
+    const changed = await w.call('alice', c =>
+      c.SavePeople({ reportId, saveCounter: saved.saveCounter, people: [] }),
+    )
+    const refused = await w.refused('alice', c =>
+      c.FinishShare({ reportId, shareId: 'share-p', saveCounter: changed.saveCounter }),
+    )
+    expect(['Conflict', 'Validation']).toContain(tagOf(refused))
+    // NOTE: the hash seen before the change no longer confirms anything.
+    const seen = await sha256Hex(`${staged.redactedHash}|${staged.peopleHash}`)
+    const confirmed = await w.refused('alice', c =>
+      c.FinishShare({ reportId, shareId: 'share-p', saveCounter: changed.saveCounter, redactionHash: seen }),
+    )
+    expect(['Conflict', 'Validation']).toContain(tagOf(confirmed))
+    // NOTE: sharing again as a whole works, with the people as they are now.
+    const again = await w.stageAndFinish('alice', reportId, 'share-q', changed.saveCounter, true)
+    expect(again.outcome.kind).toBe('shared')
+  })
+
+  test('an account outside the unit registry in a publish selection is a validation error, not a storage failure', async () => {
+    const w = await world()
+    const reportId = await w.createReport()
+    const { outcome } = await w.share('alice', reportId, { shareId: 'share-u', people: PEOPLE, confirm: true })
+    if (outcome.kind !== 'shared') throw new Error('not shared')
+    const refused = await w.refused('alice', c =>
+      c.PublishRevision({
+        reportId,
+        draft: outcome.draft.number,
+        terms: {
+          deadline: w.deadline(),
+          selections: [{ roleId: scenario.redactedRole, sources: [{ kind: 'account', accountId: 'frank' }] }],
+          closing: false,
+        },
+      }),
+    )
+    expect(tagOf(refused)).toBe('Validation')
+    expect(JSON.stringify(refused)).toContain('unknown_person')
+  })
+
+  test('the cleanup for the notification pass removes an unreferenced image after a day, and nothing a draft uses', async () => {
+    const w = await world()
+    const reportId = await w.createReport()
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 20 }, () => 5)])
+    const query = (id: string) =>
+      `uploadId=${id}&owner=${reportId}&index=0&chunks=1&mime=image%2Fpng&width=1&height=1&size=${png.length}`
+    expect((await w.raw('alice', `/api/images?${query('img-stray')}`, { method: 'POST', body: png })).status).toBe(200)
+    const run = () =>
+      Effect.runPromise(
+        cleanupStale().pipe(Effect.provide(w.deps)) as Effect.Effect<{ images: number; staged: number }>,
+      )
+    expect(await run()).toEqual({ images: 0, staged: 0 })
+    w.clock.advance(25 * 3_600_000)
+    expect((await run()).images).toBe(1)
+    expect((await w.raw('alice', '/api/images/img-stray/0?context=working_copy')).status).toBe(404)
+  })
+
+  test('a malformed percent-encoding in an image path is a bad request, and a retried chunk upload is idempotent', async () => {
+    const w = await world()
+    const reportId = await w.createReport()
+    const bad = await w.raw('alice', '/api/images/%E0%A4%A/0?context=working_copy')
+    expect(bad.status).toBe(400)
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 20 }, () => 3)])
+    const query = `uploadId=img-1&owner=${reportId}&index=0&chunks=1&mime=image%2Fpng&width=1&height=1&size=${png.length}`
+    const first = await w.raw('alice', `/api/images?${query}`, { method: 'POST', body: png })
+    const retry = await w.raw('alice', `/api/images?${query}`, { method: 'POST', body: png })
+    expect(first.status).toBe(200)
+    expect(retry.status).toBe(200)
+    expect(await retry.json()).toMatchObject({ uploadId: 'img-1', complete: true })
+  })
 
   test('an image not marked safe is never served to a redacted role', async () => {
     const w = await world()
@@ -406,9 +491,8 @@ describe.each(SCENARIOS)('$name', scenario => {
       ),
       w.refused('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' })),
     ])
-    for (const error of late) {
-      expect(['DeadlinePassed', 'NotAllowedInState']).toContain(tagOf(error))
-    }
+    expect(late[0]).toMatchObject({ _tag: 'DeadlinePassed' })
+    expect(late[1]).toMatchObject({ _tag: 'NotAllowedInState', state: 'decided' })
     const round = await w.call('alice', c => c.GetRound({ reportId, revision: 1 }))
     expect(round).toMatchObject({ status: 'decided', decidedBy: 'deadline' })
     expect((await w.call('alice', c => c.GetReport({ reportId }))).summary.state).toBe('decided')
@@ -487,13 +571,15 @@ describe.each(SCENARIOS)('$name', scenario => {
       const stage = async (shareId: string, counter: number) => {
         const outline = await w.call('alice', c => c.GetWorkingCopy({ reportId }))
         const hashes: Array<string> = []
+        let peopleHash = ''
         for (const section of outline.sections) {
           const staged = await w.call('alice', c =>
             c.ShareSection({ reportId, shareId, sectionId: section.sectionId, saveCounter: counter }),
           )
           hashes.push(staged.redactedHash)
+          peopleHash = staged.peopleHash
         }
-        return sha256Hex(hashes.join(','))
+        return sha256Hex(`${hashes.join(',')}|${peopleHash}`)
       }
       await stage('share-2', saved.saveCounter)
       const refused = await w.refused('alice', c =>
@@ -536,6 +622,45 @@ describe.each(SCENARIOS)('$name', scenario => {
   }
 
   if (scenario.backend === 'sqlite') {
+    test('list procedures run a constant number of queries, however many reports there are', async () => {
+      const w = await world()
+      const { reportId } = await w.published()
+      for (let i = 0; i < 4; i += 1) await w.createReport('alice')
+      const cost = async <A>(run: () => Promise<A>) => {
+        const before = w.queries()
+        await run()
+        return w.queries() - before
+      }
+      const lists: Record<string, () => Promise<unknown>> = {
+        ListReports: () => w.call('alice', c => c.ListReports({})),
+        ListCaseFiles: () => w.call('alice', c => c.ListCaseFiles({ unit: 'unit-1' })),
+        ListNotifications: () => w.call('carol', c => c.ListNotifications({ limit: 20 })),
+        ListInbox: () => w.call('carol', c => c.ListInbox({})),
+        ListPendingReviews: () => w.call('carol', c => c.ListPendingReviews()),
+        ListPublishedTemplates: () => w.call('alice', c => c.ListPublishedTemplates()),
+        ListTemplates: () => w.call('tess', c => c.ListTemplates()),
+        ListReviewers: () => w.call('alice', c => c.ListReviewers({ unit: 'unit-1' })),
+        ListUnitMembers: () => w.call('alice', c => c.ListUnitMembers({ unit: 'unit-1' })),
+        ListCommittees: () => w.call('alice', c => c.ListCommittees({ unit: 'unit-1' })),
+        ListUnits: () => w.call('adam', c => c.ListUnits()),
+        ListAccounts: () => w.call('adam', c => c.ListAccounts()),
+        GetGrid: () => w.call('alice', c => c.GetGrid({ reportId })),
+        ListAuditEvents: () =>
+          w.call('alice', c => c.ListAuditEvents({ subject: { kind: 'report', reportId }, limit: 20 })),
+      }
+      const few: Record<string, number> = {}
+      for (const [name, run] of Object.entries(lists)) few[name] = await cost(run)
+      for (let i = 0; i < 56; i += 1) await w.createReport('alice')
+      expect(await w.call('alice', c => c.ListReports({}))).toHaveLength(40)
+      for (const [name, run] of Object.entries(lists)) {
+        const many = await cost(run)
+        expect(many, name).toBe(few[name])
+        expect(many, name).toBeLessThanOrEqual(50)
+      }
+      // NOTE: adding a co-author is a fixed number of queries too.
+      expect(await cost(() => w.call('alice', c => c.AddCoAuthor({ reportId, accountId: 'bob' })))).toBeLessThanOrEqual(50)
+    })
+
     test('every request stays within the 50 queries of a Workers Free invocation', async () => {
       const w = await world()
       const { reportId } = await w.published()

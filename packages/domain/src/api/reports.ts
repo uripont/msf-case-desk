@@ -225,8 +225,11 @@ export const ShareSectionResult = Schema.Struct({
   staged: Count,
   // NOTE: Hash of the redacted content just staged. The author's redaction
   // preview of the whole share is confirmed with the hash of these, joined
-  // in section order (see `FinishShare.redactionHash`).
+  // in section order, and of the people list (see `FinishShare.redactionHash`).
   redactedHash: Schema.String,
+  // NOTE: SHA-256 (hex) of the people list the section was redacted with. One
+  // list covers the whole share: every section of it carries the same value.
+  peopleHash: Schema.String,
 })
 
 export const DraftHeader = Schema.Struct({
@@ -236,7 +239,8 @@ export const DraftHeader = Schema.Struct({
   // NOTE: Draft 0 has no author.
   sharedBy: Schema.optionalKey(AccountRef),
   sharedAt: EpochMs,
-  // NOTE: Hash of the stored redacted content. The author confirms it (D14).
+  // NOTE: Hash of the stored redacted content and of the draft's people list.
+  // The author confirms it (D14).
   redactedHash: Schema.String,
   redactionConfirmed: Schema.Boolean,
 })
