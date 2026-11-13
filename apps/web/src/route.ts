@@ -24,6 +24,7 @@ export const AppRoute = defineRouteUnion({
   Report: { reportId: Schema.String },
   Share: { reportId: Schema.String },
   Names: { reportId: Schema.String },
+  Publish: { reportId: Schema.String },
   Drafts: { reportId: Schema.String },
   Draft: { reportId: Schema.String, draft: Schema.Int },
   Revision: { reportId: Schema.String, revision: Schema.Int },
@@ -65,6 +66,12 @@ const namesRouter = pipe(
   Route.slash(Route.literal('names')),
   Route.mapTo(AppRoute.Names),
 )
+const publishRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('publish')),
+  Route.mapTo(AppRoute.Publish),
+)
 const draftsRouter = pipe(
   Route.literal('r'),
   Route.slash(Route.string('reportId')),
@@ -101,6 +108,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     draftsRouter,
     shareRouter,
     namesRouter,
+    publishRouter,
     reportRouter,
   ),
   AppRoute.NotFound,
@@ -119,6 +127,7 @@ export const pathOf = (route: AppRoute): string =>
     Report: ({ reportId }) => reportRouter({ reportId }),
     Share: ({ reportId }) => shareRouter({ reportId }),
     Names: ({ reportId }) => namesRouter({ reportId }),
+    Publish: ({ reportId }) => publishRouter({ reportId }),
     Drafts: ({ reportId }) => draftsRouter({ reportId }),
     Draft: ({ reportId, draft }) => draftRouter({ reportId, draft }),
     Revision: ({ reportId, revision }) =>
@@ -142,6 +151,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Report: () => true,
     Share: () => true,
     Names: () => true,
+    Publish: () => true,
     Drafts: () => true,
     Draft: () => true,
     Revision: () => true,
@@ -163,6 +173,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Report: () => false,
     Share: () => false,
     Names: () => false,
+    Publish: () => false,
     Drafts: () => false,
     Draft: () => false,
     Revision: () => false,

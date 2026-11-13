@@ -79,6 +79,7 @@ import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as History from './quoroom/history'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
+import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
 import * as Share from './quoroom/share'
@@ -178,6 +179,7 @@ export const Model = Schema.Struct({
   share: Share.Model,
   names: Names.Model,
   history: History.Model,
+  publish: Publish.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
   ruleSets: Schema.Array(RuleSet),
@@ -242,6 +244,7 @@ export const Message = defineMessageUnion({
   GotShareMessage: { message: Share.Message },
   GotNamesMessage: { message: Names.Message },
   GotHistoryMessage: { message: History.Message },
+  GotPublishMessage: { message: Publish.Message },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
   UpdatedLoginEmail: { value: Schema.String },
@@ -355,6 +358,7 @@ export const initialModel = Model.make({
   share: Share.initialModel,
   names: Names.initialModel,
   history: History.initialModel,
+  publish: Publish.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
   ruleSets: [],
@@ -736,6 +740,7 @@ const signedOut = (model: Model): Model =>
     share: Share.cleared,
     names: Names.cleared,
     history: History.cleared,
+    publish: Publish.cleared,
     maybeLeaving: () => Option.none(),
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
@@ -873,6 +878,24 @@ const foldHistory = Update.foldChild({
   toParentMessage: message => Message.GotHistoryMessage({ message }),
 })
 
+const foldPublish = Update.foldChild({
+  update: Publish.update,
+  read: (model: Model) => Option.some(model.publish),
+  write: (model, nextPublish) =>
+    modifyFields(model, { publish: () => nextPublish }),
+  toParentMessage: message => Message.GotPublishMessage({ message }),
+})
+
+const enterPublish = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (child: Publish.Model) =>
+      Publish.enter(origin, reportId, child.generation + 1),
+    read: (model: Model) => Option.some(model.publish),
+    write: (model, nextPublish) =>
+      modifyFields(model, { publish: () => nextPublish }),
+    toParentMessage: message => Message.GotPublishMessage({ message }),
+  })
+
 const enterReports = Update.foldChildStep({
   update: Reports.enter,
   read: (model: Model) => Option.some(model.reports),
@@ -945,6 +968,7 @@ const enterRoute = (
     Report: ({ reportId }) => enterReport(model.origin, reportId)(model),
     Share: ({ reportId }) => enterShare(model.origin, reportId)(model),
     Names: ({ reportId }) => enterNames(model.origin, reportId)(model),
+    Publish: ({ reportId }) => enterPublish(model.origin, reportId)(model),
     Drafts: ({ reportId }) =>
       enterHistory(model.origin, reportId, Option.none())(model),
     Draft: ({ reportId, draft }) =>
@@ -1302,6 +1326,7 @@ export const update = (model: Model, message: Message) =>
     GotShareMessage: ({ message }) => foldShare(model, message),
     GotNamesMessage: ({ message }) => foldNames(model, message),
     GotHistoryMessage: ({ message }) => foldHistory(model, message),
+    GotPublishMessage: ({ message }) => foldPublish(model, message),
     SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({
@@ -1486,10 +1511,20 @@ const historySubscriptions = Subscription.lift(History.subscriptions)<
     AppRoute.guards.Drafts(model.route) || AppRoute.guards.Draft(model.route),
 })
 
+const publishSubscriptions = Subscription.lift(Publish.subscriptions)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.publish),
+  toParentMessage: message => Message.GotPublishMessage({ message }),
+  when: model => AppRoute.guards.Publish(model.route),
+})
+
 export const subscriptions = Subscription.aggregate(
   appSubscriptions,
   reportSubscriptions,
   historySubscriptions,
+  publishSubscriptions,
 )
 
 // VIEW TRANSITION

@@ -31,6 +31,7 @@ import {
 import { actionButton } from './entryViews'
 import { Failure, failureOf, failureText } from './failure'
 import { imageContextToken } from './images/spec'
+import { statusText as revisionStatusText } from './rounds'
 import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { CommentSelection, readCommentSelection } from './selection'
 import { alertText, loadingText, panel, statusText } from './ui'
@@ -902,7 +903,7 @@ const listView = (
                 String(revision.number),
                 [h.Class('py-3 text-lg text-msf-ink')],
                 [
-                  `${revision.label}, from ${draftLabel(revision.draft)}, published ${momentText(revision.publishedAt)}`,
+                  `${revision.label}, from ${draftLabel(revision.draft)}, published ${momentText(revision.publishedAt)}. ${revisionStatusText(revision)}`,
                 ],
               ),
             ),

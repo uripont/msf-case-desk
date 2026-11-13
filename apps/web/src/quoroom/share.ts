@@ -1,5 +1,14 @@
 import { clsx } from 'clsx'
-import { Array, Crypto, Effect, Option, Record, Schema } from 'effect'
+import {
+  Array,
+  Clock,
+  Crypto,
+  Effect,
+  Option,
+  Record,
+  Result,
+  Schema,
+} from 'effect'
 import { Command, Submodel, Update } from 'foldkit'
 import { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
@@ -12,6 +21,8 @@ import {
   type ItemEntry,
   PeopleList,
   type Person,
+  PublishChoices,
+  PublishTerms,
   ReportDetail,
   type Section,
   SectionContent,
@@ -47,9 +58,10 @@ import { EditorState } from './editor/state'
 import { actionButton } from './entryViews'
 import { Failure, failureOf, failureText, isReloadConflict } from './failure'
 import { redactionHashOf, sha256Hex } from './hash'
+import * as PublishForm from './publishForm'
 import { PreviewView, previewAll, viewNote, viewToggle } from './redactedView'
 import { PageScope, isCurrentPage, pageScopeOf } from './scope'
-import { alertText, loadingText, panel, statusText } from './ui'
+import { alertText, checkboxField, loadingText, panel, statusText } from './ui'
 import { LoadState } from './unit'
 
 // NOTE: Sharing the author's working copy as the next draft (stage 4g), at
@@ -101,7 +113,7 @@ export const Phase = defineTaggedUnion({
   },
   Comparing: {},
   Resolving: {},
-  Shared: { draft: Schema.Int },
+  Shared: { draft: Schema.Int, maybeRevision: Schema.Option(Schema.Int) },
 })
 export type Phase = typeof Phase.Type
 
@@ -127,6 +139,11 @@ export const Model = Schema.Struct({
   maybeCopy: Schema.Option(CopyOutline),
   maybeComparison: Schema.Option(Comparison),
   choices: Schema.Record(Schema.String, Choice),
+  maybePublishChoices: Schema.Option(PublishChoices),
+  publishForm: PublishForm.Model,
+  wantsPublish: Schema.Boolean,
+  nowMs: Schema.Int,
+  publishProblems: Schema.Array(Schema.String),
   phase: Phase,
   editor: EditorState,
   maybeNotice: Schema.Option(Schema.String),
@@ -149,6 +166,11 @@ export const initialModel = Model.make({
   maybeCopy: Option.none(),
   maybeComparison: Option.none(),
   choices: {},
+  maybePublishChoices: Option.none(),
+  publishForm: PublishForm.initialModel,
+  wantsPublish: false,
+  nowMs: 0,
+  publishProblems: [],
   phase: Phase.Ready(),
   editor: EditorState.NotLoaded(),
   maybeNotice: Option.none(),
@@ -161,6 +183,9 @@ export const LoadedShare = Schema.Struct({
   contents: Schema.Record(Schema.String, SectionContent),
   copy: CopyOutline,
   maybeComparison: Schema.Option(Comparison),
+  maybePublishChoices: Schema.Option(PublishChoices),
+  nowMs: Schema.Int,
+  timeZone: Schema.String,
 })
 export type LoadedShare = typeof LoadedShare.Type
 
@@ -171,6 +196,8 @@ export const Message = defineMessageUnion({
   ClickedReloadShare: {},
   ClickedShare: {},
   ChoseView: { view: PreviewView },
+  ToggledPublish: {},
+  GotPublishFormMessage: { message: PublishForm.Message },
   GeneratedShareId: { scope: PageScope, shareId: Schema.String },
   SucceededStageSection: {
     scope: PageScope,
@@ -265,6 +292,13 @@ export const LoadShare = Command.define('LoadShare', {
         const maybeComparison = outline.behind
           ? Option.some(yield* client.PreviewMerge({ reportId }))
           : Option.none()
+        const maybePublishChoices = yield* client
+          .GetPublishChoices({ reportId })
+          .pipe(
+            Effect.map(choices => Option.some(choices)),
+            Effect.catch(() => Effect.succeed(Option.none())),
+          )
+        const nowMs = yield* Clock.currentTimeMillis
         return {
           detail,
           template: version.template,
@@ -274,6 +308,9 @@ export const LoadShare = Command.define('LoadShare', {
           ),
           copy: copyOf(outline),
           maybeComparison,
+          maybePublishChoices,
+          nowMs,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }
       }),
     ).pipe(
@@ -387,9 +424,18 @@ export const FinishShare = Command.define('FinishShare', {
     stagedHashes: Schema.Array(Schema.String),
     peopleHash: Schema.String,
     caseHash: Schema.String,
+    maybePublish: Schema.Option(PublishTerms),
   },
   messages: [Message.SucceededFinishShare, Message.FailedFinishShare],
-  execute: ({ scope, shareId, saveCounter, stagedHashes, peopleHash, caseHash }) =>
+  execute: ({
+    scope,
+    shareId,
+    saveCounter,
+    stagedHashes,
+    peopleHash,
+    caseHash,
+    maybePublish,
+  }) =>
     withQuoroom(client =>
       Effect.gen(function* () {
         // NOTE: The confirmation of the preview (D14): the hash of what was
@@ -403,6 +449,10 @@ export const FinishShare = Command.define('FinishShare', {
           shareId,
           saveCounter,
           redactionHash,
+          ...Option.match(maybePublish, {
+            onNone: () => ({}),
+            onSome: publish => ({ publish }),
+          }),
         })
       }),
     ).pipe(
@@ -551,6 +601,36 @@ const previewCaseJsonOf = (model: Model): string =>
 export const peopleProblemCount = (model: Model): number =>
   peopleListProblems(model.people).length
 
+export const publishContextOf = (
+  model: Model,
+): Option.Option<PublishForm.FormContext> =>
+  Option.map(
+    Option.all({
+      detail: model.maybeDetail,
+      template: model.maybeTemplate,
+      choices: model.maybePublishChoices,
+    }),
+    ({ detail, template, choices }) => ({
+      template,
+      unit: detail.summary.caseFile.unit,
+      authors: Array.map(detail.authors, author => author.id),
+      choices,
+      nowMs: model.nowMs,
+    }),
+  )
+
+// NOTE: The terms of "share and publish", once the form holds a deadline and
+// choices that can be published; none when the author only shares.
+const publishTermsOf = (model: Model): Option.Option<PublishTerms> =>
+  model.wantsPublish
+    ? Option.flatMap(publishContextOf(model), context =>
+        Result.match(PublishForm.termsOf(model.publishForm, context), {
+          onSuccess: terms => Option.some(terms),
+          onFailure: () => Option.none(),
+        }),
+      )
+    : Option.none()
+
 const stageCommand = (
   model: Model,
   shareId: string,
@@ -573,6 +653,7 @@ const stageCommand = (
                 stagedHashes: model.stagedHashes,
                 peopleHash: model.peopleHash,
                 caseHash: model.caseHash,
+                maybePublish: publishTermsOf(model),
               }),
             ],
           }
@@ -633,6 +714,10 @@ const updateCurrent = (model: Model, message: Message) =>
         caseHash: () => '',
         maybeCopy: () => Option.some(loaded.copy),
         maybeComparison: () => loaded.maybeComparison,
+        maybePublishChoices: () => loaded.maybePublishChoices,
+        nowMs: () => loaded.nowMs,
+        publishForm: () =>
+          PublishForm.defaultsFor(loaded.nowMs, loaded.timeZone),
         phase: () =>
           Option.isSome(loaded.maybeComparison)
             ? Phase.Comparing()
@@ -658,12 +743,52 @@ const updateCurrent = (model: Model, message: Message) =>
     ChoseView: ({ view }) => ({
       model: modifyFields(model, { view: () => view }),
     }),
-    ClickedShare: () =>
-      Phase.guards.Ready(model.phase) &&
-      canShare(model) &&
-      peopleProblemCount(model) === 0
-        ? { model, commands: [NewShareId({ scope: pageScopeOf(model) })] }
-        : { model },
+    ToggledPublish: () => ({
+      model: modifyFields(model, {
+        wantsPublish: wants => !wants,
+        publishProblems: () => [],
+      }),
+    }),
+    GotPublishFormMessage: ({ message: formMessage }) => {
+      const formUpdate = PublishForm.update(model.publishForm, formMessage)
+      return {
+        model: modifyFields(model, {
+          publishForm: () => formUpdate.model,
+          publishProblems: () => [],
+        }),
+      }
+    },
+    ClickedShare: () => {
+      if (
+        !(
+          Phase.guards.Ready(model.phase) &&
+          canShare(model) &&
+          peopleProblemCount(model) === 0
+        )
+      ) {
+        return { model }
+      }
+      const refusal = model.wantsPublish
+        ? Option.match(publishContextOf(model), {
+            onNone: () => Option.some(['Publishing is not available.']),
+            onSome: context => {
+              const terms = PublishForm.termsOf(model.publishForm, context)
+              return Result.isFailure(terms)
+                ? Option.some(terms.failure)
+                : Option.none()
+            },
+          })
+        : Option.none()
+      return Option.match(refusal, {
+        onNone: () => ({
+          model: modifyFields(model, { publishProblems: () => [] }),
+          commands: [NewShareId({ scope: pageScopeOf(model) })],
+        }),
+        onSome: problems => ({
+          model: modifyFields(model, { publishProblems: () => problems }),
+        }),
+      })
+    },
     GeneratedShareId: ({ shareId }) =>
       shareId === ''
         ? {
@@ -682,7 +807,13 @@ const updateCurrent = (model: Model, message: Message) =>
             shareId,
             0,
           ),
-    SucceededStageSection: ({ shareId, index, redactedHash, peopleHash, caseHash }) =>
+    SucceededStageSection: ({
+      shareId,
+      index,
+      redactedHash,
+      peopleHash,
+      caseHash,
+    }) =>
       isSharing(model, shareId)
         ? stageCommand(
             modifyFields(model, {
@@ -712,7 +843,13 @@ const updateCurrent = (model: Model, message: Message) =>
         : outcome.kind === 'shared'
           ? {
               model: modifyFields(model, {
-                phase: () => Phase.Shared({ draft: outcome.draft.number }),
+                phase: () =>
+                  Phase.Shared({
+                    draft: outcome.draft.number,
+                    maybeRevision: Option.fromNullishOr(
+                      outcome.revision?.number,
+                    ),
+                  }),
                 maybeComparison: () => Option.none(),
               }),
             }
@@ -728,22 +865,31 @@ const updateCurrent = (model: Model, message: Message) =>
               }),
             },
     FailedFinishShare: ({ shareId, failure, needsReload }) =>
-      isSharing(model, shareId)
+      isSharing(model, shareId) &&
+      model.wantsPublish &&
+      Failure.guards.Refused(failure)
         ? {
             model: modifyFields(model, {
-              phase: () =>
-                Phase.Failed({
-                  shareId,
-                  next: Option.match(model.maybeCopy, {
-                    onNone: () => 0,
-                    onSome: copy => copy.sectionIds.length,
-                  }),
-                  failure,
-                  needsReload,
-                }),
+              phase: () => Phase.Ready(),
+              publishProblems: () => [failureText(failure)],
             }),
           }
-        : { model },
+        : isSharing(model, shareId)
+          ? {
+              model: modifyFields(model, {
+                phase: () =>
+                  Phase.Failed({
+                    shareId,
+                    next: Option.match(model.maybeCopy, {
+                      onNone: () => 0,
+                      onSome: copy => copy.sectionIds.length,
+                    }),
+                    failure,
+                    needsReload,
+                  }),
+              }),
+            }
+          : { model },
     ClickedResume: () =>
       Phase.guards.Failed(model.phase)
         ? model.phase.shareId === ''
@@ -1629,6 +1775,53 @@ const shell = (
     ],
   )
 
+// NOTE: "Share and publish": one step that shares the working copy as the
+// next draft and publishes it. It goes through the preview and the
+// confirmation of this screen like any share; the terms are the ones of the
+// publishing screen (`publishForm.ts`).
+const publishSection = (
+  h: HtmlBuilder<Message>,
+  model: Model,
+  context: PublishForm.FormContext,
+): Html =>
+  h.section(
+    [
+      h.AriaLabel('Publish for review'),
+      h.Class('flex min-w-0 flex-col gap-4 border-t-2 border-msf-ink pt-5'),
+    ],
+    [
+      h.h2(
+        [h.Class('text-2xl font-black tracking-tight')],
+        ['Publish for review as well'],
+      ),
+      checkboxField(
+        h,
+        'share-and-publish',
+        'Publish this draft for review as soon as it is shared',
+        model.wantsPublish,
+        Message.ToggledPublish(),
+        Option.some(
+          'Reviewers of a redacted role only receive the redacted version you confirm here.',
+        ),
+      ),
+      model.wantsPublish
+        ? PublishForm.view(h, model.publishForm, context, message =>
+            Message.GotPublishFormMessage({ message }),
+          )
+        : h.empty,
+    ],
+  )
+
+const publishPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
+  Option.match(publishContextOf(model), {
+    onNone: () => h.empty,
+    onSome: context =>
+      Array.match(context.choices.roles, {
+        onEmpty: () => h.empty,
+        onNonEmpty: () => publishSection(h, model, context),
+      }),
+  })
+
 // NOTE: The preview before the share (D14): the author reads the text the
 // reviewers of a redacted role will get, every replacement highlighted, and
 // confirms exactly that. The browser compares what the server staged with what
@@ -1690,6 +1883,8 @@ const readyView = (
             'The list of people has a problem (a repeated label, or a label that holds a name). Fix it before sharing.',
           )
         : h.empty,
+      publishPanel(h, model),
+      ...Array.map(model.publishProblems, problem => alertText(h, problem)),
       h.button(
         [
           h.Type('button'),
@@ -1702,7 +1897,11 @@ const readyView = (
           ),
           h.OnClick(Message.ClickedShare()),
         ],
-        [`Confirm the redacted version and share as ${next}`],
+        [
+          model.wantsPublish
+            ? `Confirm the redacted version, share as ${next} and publish`
+            : `Confirm the redacted version and share as ${next}`,
+        ],
       ),
       h.p(
         [h.Class('max-w-prose text-base text-msf-grey')],
@@ -1729,7 +1928,7 @@ const loadedView = (
   }
   const next = draftLabel(copy.latestDraft + 1)
   return Phase.match(model.phase, {
-    Shared: ({ draft }) =>
+    Shared: ({ draft, maybeRevision }) =>
       shell(
         h,
         model,
@@ -1742,6 +1941,37 @@ const loadedView = (
             ],
             [`Shared as ${draftLabel(draft)}.`],
           ),
+          Option.match(maybeRevision, {
+            onNone: () => h.empty,
+            onSome: revision =>
+              h.div(
+                [h.Class('flex flex-col gap-2')],
+                [
+                  h.p(
+                    [
+                      h.Role('status'),
+                      h.DataAttribute('published', String(revision)),
+                      h.Class('text-2xl font-black text-msf-black'),
+                    ],
+                    [`Published as Revision ${revision}.`],
+                  ),
+                  h.a(
+                    [
+                      h.Href(
+                        pathOf(AppRoute.Publish({ reportId: model.reportId })),
+                      ),
+                      h.Class(
+                        clsx(
+                          'self-start text-lg text-msf-ink underline',
+                          focusRing,
+                        ),
+                      ),
+                    ],
+                    ['Review round, deadline and WhatsApp requests'],
+                  ),
+                ],
+              ),
+          }),
           h.p(
             [h.Class('text-lg text-msf-ink')],
             [

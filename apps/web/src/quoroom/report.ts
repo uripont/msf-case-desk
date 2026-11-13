@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import {
   Array,
+  Clock,
   Crypto,
   Duration,
   Effect,
@@ -28,6 +29,7 @@ import {
   type Permission,
   ReportDetail,
   type ReportState,
+  RevisionHeader,
   Section,
   SectionContent,
   type SectionContents,
@@ -104,6 +106,7 @@ import {
   viewNote,
   viewToggle,
 } from './redactedView'
+import { currentRoundOf, revisionsList, roundLine } from './rounds'
 import { PageScope, isCurrentPage } from './scope'
 import {
   failureAlert,
@@ -244,6 +247,8 @@ export const Model = Schema.Struct({
   editorGeneration: Schema.Int,
   myId: Schema.String,
   drafting: Schema.Array(DraftingInfo),
+  revisions: Schema.Array(RevisionHeader),
+  nowMs: Schema.Int,
 })
 export type Model = typeof Model.Type
 
@@ -286,6 +291,8 @@ export const initialModel = Model.make({
   editorGeneration: 0,
   myId: '',
   drafting: [],
+  revisions: [],
+  nowMs: 0,
 })
 
 export const LoadedReport = Schema.Struct({
@@ -301,6 +308,8 @@ export const LoadedReport = Schema.Struct({
   copy: CopyInfo,
   myId: Schema.String,
   drafting: Schema.Array(DraftingInfo),
+  revisions: Schema.Array(RevisionHeader),
+  nowMs: Schema.Int,
 })
 export type LoadedReport = typeof LoadedReport.Type
 
@@ -431,6 +440,7 @@ export const Message = defineMessageUnion({
     drafting: Schema.Array(DraftingInfo),
   },
   TickedDraftingRefresh: {},
+  TickedRoundClock: { nowMs: Schema.Int },
   SelectedRichTextRange: {
     sectionKey: Schema.String,
     itemId: Schema.String,
@@ -517,6 +527,12 @@ export const LoadReport = Command.define('LoadReport', {
         const drafting = yield* client
           .ListDrafting({ reportId })
           .pipe(Effect.catch(() => Effect.succeed([])))
+        const history = yield* client
+          .GetHistory({ reportId })
+          .pipe(
+            Effect.catch(() => Effect.succeed({ drafts: [], revisions: [] })),
+          )
+        const nowMs = yield* Clock.currentTimeMillis
         const units = yield* client.ListUnits()
         const unitMembers = yield* client
           .ListUnitMembers({ unit: detail.summary.caseFile.unit })
@@ -547,6 +563,8 @@ export const LoadReport = Command.define('LoadReport', {
           myId: copy.ownerId,
           drafting,
           unitMembers,
+          revisions: history.revisions,
+          nowMs,
         }
       }),
     ).pipe(
@@ -1300,6 +1318,8 @@ const updateCurrent = (model: Model, message: Message) =>
             maybeCopy: () => Option.some(loaded.copy),
             myId: () => loaded.myId,
             drafting: () => loaded.drafting,
+            revisions: () => loaded.revisions,
+            nowMs: () => loaded.nowMs,
           }),
         }),
         requestEditor,
@@ -1849,6 +1869,9 @@ const updateCurrent = (model: Model, message: Message) =>
       }),
     }),
     CompletedFocusSectionHeading: () => ({ model }),
+    TickedRoundClock: ({ nowMs }) => ({
+      model: modifyFields(model, { nowMs: () => nowMs }),
+    }),
     TickedDraftingRefresh: () => ({
       model,
       commands: [RefreshDrafting({ scope: scopeOf(model) })],
@@ -1869,6 +1892,7 @@ export const update = (
 // SUBSCRIPTION
 
 export const SAVE_RETRY_SECONDS = 5
+const ROUND_CLOCK_SECONDS = 30
 export const DRAFTING_REFRESH_SECONDS = 30
 
 // NOTE: What an editor element puts in its `owner` property: who the text
@@ -1994,6 +2018,20 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
       dependenciesToStream: ({ isLoaded }) =>
         Stream.tick(Duration.seconds(DRAFTING_REFRESH_SECONDS)).pipe(
           Stream.map(() => Message.TickedDraftingRefresh()),
+          Stream.when(Effect.sync(() => isLoaded)),
+        ),
+    },
+  ),
+  roundClock: entry(
+    { isLoaded: Schema.Boolean },
+    {
+      modelToDependencies: model => ({
+        isLoaded: LoadState.guards.Loaded(model.load),
+      }),
+      dependenciesToStream: ({ isLoaded }) =>
+        Stream.tick(Duration.seconds(ROUND_CLOCK_SECONDS)).pipe(
+          Stream.mapEffect(() => Clock.currentTimeMillis),
+          Stream.map(nowMs => Message.TickedRoundClock({ nowMs })),
           Stream.when(Effect.sync(() => isLoaded)),
         ),
     },
@@ -2980,6 +3018,69 @@ const sharePrompt = (
             ),
   })
 
+// NOTE: The review rounds of the report (D11, D18): the open round with its
+// deadline and countdown, every revision with its status, and the way to
+// publish the next one. The countdown is read from a clock the screen ticks.
+const reviewPanel = (
+  model: Model,
+  detail: typeof ReportDetail.Type,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const canPublish =
+    Array.contains(detail.permissions, 'publish') &&
+    detail.summary.state !== 'archived'
+  return Array.isReadonlyArrayEmpty(model.revisions) && !canPublish
+    ? h.empty
+    : panel(
+        h,
+        'Review',
+        [
+          Option.match(currentRoundOf(model.revisions), {
+            onNone: () =>
+              h.p(
+                [h.Class('text-lg text-msf-ink')],
+                [
+                  Array.isReadonlyArrayEmpty(model.revisions)
+                    ? 'Nothing has been published for review yet.'
+                    : 'No round is open.',
+                ],
+              ),
+            onSome: revision =>
+              h.p(
+                [
+                  h.Role('status'),
+                  h.DataAttribute('current-round', String(revision.number)),
+                  h.Class('text-lg font-medium text-msf-ink'),
+                ],
+                [
+                  `${revision.label} is open. ${roundLine(revision, model.nowMs)}`,
+                ],
+              ),
+          }),
+          revisionsList(h, model.revisions, model.nowMs),
+          canPublish
+            ? h.a(
+                [
+                  h.Href(
+                    pathOf(AppRoute.Publish({ reportId: model.reportId })),
+                  ),
+                  h.Class(
+                    clsx(
+                      'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      focusRing,
+                    ),
+                  ),
+                ],
+                ['Publish for review'],
+              )
+            : h.empty,
+        ],
+        Option.some(
+          'Only the latest revision counts. A new revision replaces the open round.',
+        ),
+      )
+}
+
 const workingCopyPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
   Option.match(model.maybeCopy, {
     onNone: () => h.empty,
@@ -3243,6 +3344,7 @@ const loadedView = (
           sectionView(model, detail, template, outline, selectedKey, h),
         ],
       ),
+      reviewPanel(model, detail, h),
       workingCopyPanel(model, h),
       draftingPanel(model, h),
       authorsPanel(model, detail, h),

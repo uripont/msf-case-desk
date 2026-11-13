@@ -1769,6 +1769,117 @@ const main = async (): Promise<void> => {
       assert.ok(!/Veltkamp|Zorana|Nwosu/.test(stored), 'a name is in the stored redacted section')
       assert.ok(stored.includes('Person 1'), 'the stored redacted section has no label')
     })
+
+    // NOTE: Stage 6a, at 375 px: an author publishes Revision 1 to a committee
+    // with a deadline after confirming the preview, sees the round and the
+    // WhatsApp buttons (a link holding the deadline and no report content), then
+    // publishes Revision 2 and Revision 1 shows as superseded.
+    await step('publishing on a phone: a committee and a deadline, the round, wa.me links with no report content, a second revision supersedes the first', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+
+      // A reviewer with a number and consent, in a committee.
+      await pia.goto(`${pilotUrl}/unit`)
+      await pia.getByRole('heading', { name: 'My unit' }).waitFor()
+      await pia.getByLabel('Reviewer name').fill('Pat Panel')
+      await pia.getByLabel('Reviewer e-mail').fill('pat.panel@case-desk.test')
+      await pia.getByLabel('Reviewer phone number').fill('+34 611 000 111')
+      await pia.getByLabel('Ask for WhatsApp consent').check()
+      await pia.getByRole('button', { name: 'Register reviewer' }).click()
+      await pia.getByRole('textbox', { name: 'Link' }).waitFor()
+      const patLink = await copiedLink(pia)
+      await pia.getByLabel('Committee name').fill('Publishing Committee')
+      await pia.getByRole('button', { name: 'Create committee' }).click()
+      await pia.getByRole('heading', { name: 'Publishing Committee' }).waitFor()
+      const member = pia.getByLabel('Pat Panel in Publishing Committee')
+      await member.click()
+      for (let attempt = 0; attempt < 40 && !(await member.isChecked()); attempt += 1) {
+        await pia.waitForTimeout(250)
+      }
+      assert.ok(await member.isChecked(), 'the member was not added')
+
+      const pat = await person(launched)
+      await activate(pat, patLink, 'pat')
+      await pat.getByRole('link', { name: 'My account' }).click()
+      await pat.getByRole('heading', { name: 'Your account' }).waitFor()
+      await pat.getByLabel('Phone number').fill('+34 611 000 111')
+      await pat
+        .getByLabel('I agree to receive messages from Quoroom on WhatsApp at this number')
+        .check()
+      await pat.getByRole('button', { name: 'Save preferences' }).click()
+      await pat.getByText('Saved.').waitFor()
+
+      // A report with a sentence in it, shared and published in one go.
+      await pia.goto(`${pilotUrl}/reports`)
+      await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pia
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Intake and initial assessment (version 1)' })
+      await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0006')
+      await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic publishing case file')
+      await pia.getByRole('button', { name: 'Create report' }).click()
+      await pia.getByRole('link', { name: 'Open report PIL-0006' }).click()
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const reportId = reportIdOf(pia)
+      const save = async (text: string): Promise<void> => {
+        let counter: number
+        try {
+          counter = (await rpc(pia, 'StartWorkingCopy', { reportId })).saveCounter
+        } catch {
+          counter = (await rpc(pia, 'GetWorkingCopy', { reportId })).saveCounter
+        }
+        await rpc(pia, 'SaveSection', {
+          reportId,
+          sectionId: 'case-details',
+          saveCounter: counter,
+          content: { values: { investigator: { type: 'text', text } }, sections: {} },
+        })
+      }
+      const SECRET = 'The unmistakable sentence of Revision One.'
+      await save(SECRET)
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.getByRole('link', { name: /^Share as Draft/ }).click()
+      await pia.locator('[data-preview="redacted"]').first().waitFor()
+      await pia.getByLabel('Publish this draft for review as soon as it is shared').check()
+      await pia.getByLabel('Publishing Committee').check()
+      assert.ok((await pia.locator('#publish-date').inputValue()) !== '', 'no default date')
+      assert.ok((await pia.locator('#publish-zone').inputValue()) !== '', 'no default zone')
+      await shot(pia, 'publish-1-share-and-publish')
+      await pia
+        .getByRole('button', { name: /^Confirm the redacted version, share as Draft \d+ and publish/ })
+        .click()
+      await pia.locator('[data-published="1"]').waitFor()
+      await pia.getByRole('link', { name: 'Review round, deadline and WhatsApp requests' }).click()
+      await pia.locator('[data-current-round="1"]').waitFor()
+      await pia.getByText(/Due .*left\./).first().waitFor()
+      await noSideScroll(pia)
+      const button = pia.getByRole('link', { name: 'Send on WhatsApp to Pat Panel' })
+      await button.waitFor()
+      const href = (await button.getAttribute('href')) ?? ''
+      assert.ok(href.startsWith('https://wa.me/34611000111?text='), `href ${href}`)
+      const decoded = decodeURIComponent(href)
+      assert.ok(!decoded.includes('unmistakable'), 'report content is in the WhatsApp link')
+      assert.ok(!decoded.includes('Synthetic publishing case file'), 'the case title is in the link')
+      assert.ok(/Due|due/.test(decoded) || /\d{1,2}/.test(decoded), 'no deadline in the link')
+      await shot(pia, 'publish-2-round-and-whatsapp')
+
+      // Revision 2: a change, a new draft, published from the publish screen.
+      await save('A second, different sentence for Revision Two.')
+      await pia.goto(`${pilotUrl}/r/${reportId}/share`)
+      await pia.locator('[data-preview="redacted"]').first().waitFor()
+      await pia.getByRole('button', { name: /^Confirm the redacted version and share as Draft/ }).click()
+      await pia.getByText(/^Shared as Draft \d+\.$/).waitFor()
+      await pia.goto(`${pilotUrl}/r/${reportId}/publish`)
+      await pia.getByRole('heading', { name: 'Publish Revision 2' }).waitFor()
+      await pia.getByLabel('Publishing Committee').check()
+      await pia.getByRole('button', { name: 'Publish Revision 2' }).click()
+      await pia.locator('[data-published="2"]').waitFor()
+      await pia.locator('[data-current-round="2"]').waitFor()
+      await pia.locator('[data-revision="1"][data-status="superseded"]').waitFor()
+      await pia.getByText('Superseded by Revision 2').waitFor()
+      await noSideScroll(pia)
+      await shot(pia, 'publish-3-superseded')
+    })
   } finally {
     await browser?.close()
     stop(server)

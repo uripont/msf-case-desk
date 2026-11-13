@@ -1217,7 +1217,7 @@ const pictureRow = (
         [h.Class('text-base text-msf-grey')],
         [
           picture.safe
-            ? 'Marked safe to share. Reviewers of a redacted role can see it.'
+            ? 'Marked safe to share. Reviewers of a redacted role can see it. Withdrawing it takes effect at once, in every published revision.'
             : 'Not marked safe to share. Left out for reviewers of a redacted role.',
         ],
       ),
@@ -1245,7 +1245,7 @@ const pictureRow = (
             ],
             [
               picture.safe
-                ? 'Safe to share: stop sharing it'
+                ? 'Withdraw now: stop sharing it'
                 : 'Mark safe to share',
             ],
           )

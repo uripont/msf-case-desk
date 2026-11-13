@@ -105,6 +105,8 @@ export const loadedReport = (
   maybeImageUsage: Option.none(),
   myId: FIRST_AUTHOR.id,
   drafting: [],
+  revisions: [],
+  nowMs: 0,
   unitMembers: [
     {
       accountId: FIRST_AUTHOR.id,
