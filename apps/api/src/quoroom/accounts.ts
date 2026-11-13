@@ -19,6 +19,7 @@ import {
   normaliseEmail,
 } from '@case-desk/domain'
 
+import { LINK_TTL_MS, UNUSABLE_PASSWORD_HASH } from '../links'
 import { clearedSessionCookie, hashToken, tokenFromCookies } from '../session'
 import { setCookie } from './cookies'
 import {
@@ -41,11 +42,7 @@ import {
 
 type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
 
-export const LINK_TTL_MS = 72 * 3_600_000
-
-// NOTE: a stored hash that no password can match (`verifyPassword` refuses an
-// iteration count of 0): the account has no password until its link is used.
-export const UNUSABLE_PASSWORD_HASH = 'pbkdf2-sha256$0$!$!'
+export { LINK_TTL_MS, UNUSABLE_PASSWORD_HASH }
 
 const MAX_ACCOUNTS_LISTED = 2000
 

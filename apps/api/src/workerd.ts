@@ -8,6 +8,7 @@ import { Layer } from 'effect'
 import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
 import { makeApp } from './app'
+import { withReferrerPolicy } from './headers'
 import { layerSql } from './d1Repository'
 import { type NetworkPolicy, QuoroomServicesFor } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
@@ -132,7 +133,7 @@ const serveAssets = async (request: Request, env: Env): Promise<Response> => {
 export default {
   fetch: async (request, env, context) => {
     if (!new URL(request.url).pathname.startsWith('/api/')) {
-      return serveAssets(request, env)
+      return withReferrerPolicy(await serveAssets(request, env))
     }
     const database = localDatabase(env)
     const proxyHeader = (env.TRUSTED_PROXY_HEADER ?? '').trim()

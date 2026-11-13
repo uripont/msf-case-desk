@@ -1,10 +1,15 @@
-// Adds or updates a Case Desk account in .local/users.sql, which the
-// deployment imports into the shared database. The file holds password
-// hashes, never passwords, and is git-ignored.
+// Adds a Case Desk account to .local/users.sql, which the deployment imports
+// into the shared database. The file holds password hashes, never passwords,
+// and is git-ignored.
 //
 //   pnpm users:add --email name@example.org --name "Full Name" [--password ...]
 //
-// Without --password a random one is generated and printed once.
+// Without --password a random one is generated and printed once. The import
+// runs again on every deploy and start, so it only inserts the account when
+// its email is absent: it never changes the password or name of an existing
+// account (a person who set a password through a link keeps it). Quoroom
+// accounts are made in the app, and the first administrator with
+// `pnpm grant-admin`.
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -58,7 +63,7 @@ const file = values.file ?? USERS_SQL
 mkdirSync(dirname(file), { recursive: true })
 appendFileSync(
   file,
-  `INSERT INTO users (id, email, name, password_hash) VALUES (${quote(id)}, ${quote(email)}, ${quote(name)}, ${quote(hash)}) ON CONFLICT (email) DO UPDATE SET name = excluded.name, password_hash = excluded.password_hash;\n`,
+  `INSERT INTO users (id, email, name, password_hash) VALUES (${quote(id)}, ${quote(email)}, ${quote(name)}, ${quote(hash)}) ON CONFLICT (email) DO NOTHING;\n`,
 )
 
 console.log(`Saved ${email} in ${file}.`)
@@ -66,3 +71,4 @@ if (generated) {
   console.log(`Password (shown once): ${password}`)
 }
 console.log('Deploy (pnpm infra:deploy) or restart the local run to load it.')
+console.log('An account that already exists keeps its password and name.')

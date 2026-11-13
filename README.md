@@ -61,7 +61,8 @@ pnpm infra:dev    # web app, API and a local database, with live reload
 | --- | --- |
 | `pnpm infra:dev` | Runs the web app, the API and a local D1 database |
 | `pnpm dev` | Runs the web app alone (no API, so only the sign-in page works) |
-| `pnpm users:add` | Adds or updates an account in `.local/users.sql` |
+| `pnpm users:add` | Adds an account to `.local/users.sql` (never changes an existing one) |
+| `pnpm grant-admin` | First administrator of an environment: one-time activation link, `--reset` for a reset link |
 | `pnpm test` | Runs the domain, API and web tests |
 | `pnpm typecheck` | Typechecks every package and the infrastructure file |
 | `pnpm lint` | Runs oxlint, including the Foldkit and Effect rules |

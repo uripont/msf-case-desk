@@ -9,6 +9,7 @@
     "lint": "oxlint src",
     "format": "oxfmt",
     "users:add": "node scripts/add-user.ts",
+    "grant-admin": "node scripts/grant-admin.ts",
     "demo:seed": "UPDATE_DEMO_SEED=1 vitest run src/demoSeed.test.ts"
   },
   "dependencies": {

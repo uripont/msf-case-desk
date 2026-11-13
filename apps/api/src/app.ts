@@ -2,6 +2,7 @@ import { Effect, Layer, Option, Schema } from 'effect'
 
 import { DEFAULT_RULES, RPC_PATH, type Repository } from '@case-desk/domain'
 
+import { withReferrerPolicy } from './headers'
 import { withSink } from './quoroom/cookies'
 import {
   QUOROOM_PUBLIC_PATH,
@@ -117,7 +118,7 @@ export const makeApp = (
         ),
     })
 
-  const handle = (request: Request): Promise<Response> => {
+  const route = (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url)
     if (pathname === '/api/health') {
       return Promise.resolve(
@@ -185,6 +186,9 @@ export const makeApp = (
     }
     return Promise.resolve(json({ error: 'NotFound' }, 404))
   }
+
+  const handle = (request: Request): Promise<Response> =>
+    route(request).then(withReferrerPolicy)
 
   return {
     handle,

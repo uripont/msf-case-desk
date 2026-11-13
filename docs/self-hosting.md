@@ -27,7 +27,7 @@ There is no sign-up page. Create each account from the command line:
 pnpm users:add --email you@example.org --name "Your Name"
 ```
 
-It prints a generated password once (or pass `--password` with at least 10 characters). The account is saved as a password hash in `.local/users.sql`, which is git-ignored. Run it again with the same e-mail to change the name or password. Both paths below import this file.
+It prints a generated password once (or pass `--password` with at least 10 characters). The account is saved as a password hash in `.local/users.sql`, which is git-ignored. The file is imported again on every deploy and start, so it only adds an account whose e-mail is not there yet: running it again for an existing e-mail changes nothing, and it never replaces a password. Both paths below import this file. Quoroom accounts are made in the app. The first administrator of an environment comes from `pnpm grant-admin --env <demo|pilot|workerd|test-N> --email … --name …`, which prints a one-time activation link (72 hours) and never a password; it appends idempotent SQL to `.local/grants-<env>.sql`, which the stack imports (the `workerd` build embeds `grants-workerd.sql`). `--reset` issues a reset link for an account that has a password.
 
 ## A. Run locally on workerd
 

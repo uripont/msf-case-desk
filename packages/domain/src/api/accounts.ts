@@ -46,6 +46,10 @@ export type MeView = typeof MeView.Type
 
 // ---- Links (D13) --------------------------------------------------------------
 
+// NOTE: Where the app shows a link. The token follows in the fragment, so it
+// is never part of a request URL: `/link#<token>`.
+export const LINK_PATH = '/link'
+
 export const LinkPurpose = Schema.Literals(['activate', 'reset'])
 
 // NOTE: Returned once, to the person who issued it. The browser puts the

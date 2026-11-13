@@ -1,5 +1,6 @@
 // Bundles src/workerd.ts for plain workerd. The migrations, the account file
-// from `pnpm users:add` and the demo cases are embedded, in that order.
+// from `pnpm users:add`, the grants from `pnpm grant-admin --env workerd` and
+// the demo cases are embedded, in that order. Every import is idempotent.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -14,7 +15,11 @@ const migrations = readdirSync(migrationsDir)
   .sort()
   .map(name => ({ name, sql: readFileSync(join(migrationsDir, name), 'utf8') }))
 
-const imports = [join(root, '.local/users.sql'), join(api, 'seed/demo-cases.sql')]
+const imports = [
+  join(root, '.local/users.sql'),
+  join(root, '.local/grants-workerd.sql'),
+  join(api, 'seed/demo-cases.sql'),
+]
   .filter(existsSync)
   .map(file => readFileSync(file, 'utf8'))
 

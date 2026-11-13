@@ -23,6 +23,7 @@
     "snapshots:prepare": "sh scripts/prepare-snapshots.sh iter1 iter2",
     "migrations:check": "node scripts/check-migrations.mjs",
     "users:add": "pnpm --filter @case-desk/api users:add",
+    "grant-admin": "pnpm --filter @case-desk/api grant-admin",
     "compat:check": "sh scripts/compat-check.sh",
     "demo:refresh": "pnpm --filter @case-desk/api demo:seed",
     "workerd": "sh scripts/workerd.sh",

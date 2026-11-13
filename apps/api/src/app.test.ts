@@ -51,6 +51,20 @@ const cookieFrom = (response: Response): string =>
   (response.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
 
 describe('API routes', () => {
+  test('every API response carries Referrer-Policy: no-referrer', async () => {
+    const app = await makeTestApp()
+    const paths = ['/api/health', '/api/session', '/api/nothing-here']
+    const responses = await Promise.all(
+      paths.map(path => app.handle(get(path))),
+    )
+    expect(responses.map(r => r.headers.get('referrer-policy'))).toEqual([
+      'no-referrer',
+      'no-referrer',
+      'no-referrer',
+    ])
+    expect(responses[2]?.status).toBe(404)
+  })
+
   test('the health check answers with the rules version', async () => {
     const app = await makeTestApp()
     const response = await app.handle(get('/api/health'))

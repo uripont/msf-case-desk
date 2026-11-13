@@ -1,6 +1,7 @@
 import { Layer } from 'effect'
 
 import { makeApp } from './app'
+import { withReferrerPolicy } from './headers'
 import { layerSql } from './d1Repository'
 import { QuoroomServicesLive } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
@@ -36,5 +37,5 @@ export default {
   fetch: (request, env, context) =>
     new URL(request.url).pathname.startsWith(API_PREFIX)
       ? handleApi(request, env, context)
-      : env.ASSETS.fetch(request),
+      : env.ASSETS.fetch(request).then(withReferrerPolicy),
 } satisfies ExportedHandler<Env>
