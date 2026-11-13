@@ -68,7 +68,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | `UpdateReviewer` | unit_author | `manage_committees` | Edits only the unit's entry (name, phone, `whatsappConsent` meaning "consent requested"); never the account's own name, phone or consent. |
 | `ListCommittees` | unit_author | `manage_committees` |  |
 | `CreateCommittee` | unit_author | `manage_committees` |  |
-| `UpdateCommittee` | unit_author | `manage_committees` |  |
+| `UpdateCommittee` | unit_author | `manage_committees` | Member changes as `addMemberIds` and `removeMemberIds` on the stored list. |
 
 ### templates (7)
 
@@ -164,7 +164,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | `DeletePendingComment` | reviewer | `write_comment` |  |
 | `GetPendingReview` | reviewer | `write_comment` |  |
 | `SavePendingReview` | reviewer | `write_comment` |  |
-| `SendReview` | reviewer | `submit_review` |  |
+| `SendReview` | reviewer | `submit_review` | `commentIds` are the pending comments the reviewer saw; any other set is `Conflict` `pending_changed`. |
 
 ### comments (5)
 
@@ -181,7 +181,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
 | `GetGrid` | report_author | `read_grid` |  |
-| `ListAuditEvents` | report_author | `read_audit` | Subject `template`: template editor; `theme`: administrator. |
+| `ListAuditEvents` | report_author | `read_audit` | Subject `template`: template editor; `theme`: administrator. `kind` filters a report's log on the server before the page is cut. |
 
 ### notifications (5)
 
@@ -191,6 +191,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | `GetUnreadCount` | signed_in | - |  |
 | `MarkNotificationsRead` | signed_in | - |  |
 | `GetWhatsAppLink` | report_author | `publish_revision` | Needs the reviewer's number and consent. |
+| `ListWhatsAppLinks` | report_author | `publish_revision` | Who can get a link; no numbers. |
 | `RecordWhatsAppOpened` | report_author | `publish_revision` |  |
 
 ### downloads (2)

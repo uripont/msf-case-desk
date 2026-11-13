@@ -33,7 +33,6 @@ import {
   idOf,
   jobsFor,
   loadReport,
-  loadTemplate,
   loadTemplates,
   problem,
   requireReviewer,
@@ -41,7 +40,7 @@ import {
   store,
   validation,
 } from './core'
-import { auditOf, member, peopleOf } from './support'
+import { auditOf, member } from './support'
 import { roundSummaryOf, roundViewOf, sectionRefsOf, summaryOf } from './views'
 
 // NOTE: The reviewer side. Reviewer procedures are for participants only: an
@@ -123,7 +122,32 @@ export const peopleOfRevision = (
     if (published === undefined) return yield* Effect.fail(new NotFound())
     const draft = yield* db.getDraft(loaded.record.id, published.draftNumber)
     if (draft === null) return yield* Effect.fail(new NotFound())
-    return peopleOf(draft.people) as ReadonlyArray<Person>
+    return yield* readPeople(draft.people)
+  })
+
+// NOTE: a stored people list that cannot be read is `NotFound` too, never an
+// empty list.
+const readPeople = (text: string) =>
+  Effect.gen(function* () {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return yield* Effect.fail(new NotFound())
+    }
+    if (!Array.isArray(parsed)) return yield* Effect.fail(new NotFound())
+    return parsed as ReadonlyArray<Person>
+  })
+
+export const peopleOfDraft = (
+  db: Pick<Store, 'getDraft'>,
+  reportId: string,
+  draft: number,
+) =>
+  Effect.gen(function* () {
+    const found = yield* db.getDraft(reportId, draft)
+    if (found === null) return yield* Effect.fail(new NotFound())
+    return yield* readPeople(found.people)
   })
 
 // NOTE: the case reference as the role may read it: the original for a `full`
@@ -642,6 +666,11 @@ export const reviewerHandlers: Pick<
         revision: comment.targetNumber,
       })
       yield* requireReviewer(loaded, user)
+      const entry = roundOf(loaded, comment.targetNumber)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      if (entry.round.state !== 'open' || entry.round.deadlineAt <= loaded.now) {
+        return yield* Effect.fail(roundClosed(loaded, comment.targetNumber))
+      }
       if (comment.reviewId !== null) {
         return yield* Effect.fail(new Conflict({ reason: 'already_sent' }))
       }
@@ -694,6 +723,11 @@ export const reviewerHandlers: Pick<
         revision: comment.targetNumber,
       })
       yield* requireReviewer(loaded, user)
+      const entry = roundOf(loaded, comment.targetNumber)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      if (entry.round.state !== 'open' || entry.round.deadlineAt <= loaded.now) {
+        return yield* Effect.fail(roundClosed(loaded, comment.targetNumber))
+      }
       const deleted = yield* db.deletePendingComment(commentId, user.id)
       if (!deleted) {
         return yield* Effect.fail(new Conflict({ reason: 'already_sent' }))
@@ -750,7 +784,7 @@ export const reviewerHandlers: Pick<
       )
     }),
 
-  SendReview: ({ reportId, revision, decision }) =>
+  SendReview: ({ reportId, revision, decision, commentIds }) =>
     Effect.gen(function* () {
       const { user, loaded, db } = yield* member(reportId, {
         type: 'submit_review',
@@ -777,6 +811,15 @@ export const reviewerHandlers: Pick<
         )
       }
       const pending = yield* reviewerStanding(db, entry.round.id, user.id)
+      // NOTE: exactly the comments the reviewer saw are sent, nothing else.
+      const seen = new Set(commentIds)
+      if (
+        seen.size !== commentIds.length ||
+        seen.size !== pending.comments.length ||
+        pending.comments.some(comment => !seen.has(comment.id))
+      ) {
+        return yield* Effect.fail(new Conflict({ reason: 'pending_changed' }))
+      }
       const reviewId = yield* idOf('review')
       const sentComments = pending.comments.length
       const jobs = yield* jobsFor(db, config, {

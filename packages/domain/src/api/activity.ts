@@ -22,6 +22,17 @@ export const AuditMeta = Schema.Record(
   Schema.Union([Schema.String.check(Schema.isMaxLength(200)), Schema.Finite, Schema.Boolean]),
 )
 
+export const AUDIT_KINDS = [
+  'report',
+  'draft',
+  'redaction',
+  'revision',
+  'review',
+  'round',
+] as const
+export const AuditKind = Schema.Literals(AUDIT_KINDS)
+export type AuditKind = typeof AuditKind.Type
+
 export const AuditEvent = Schema.Struct({
   id: ApiId,
   at: EpochMs,
@@ -59,6 +70,7 @@ export const NOTIFICATION_KINDS = [
   'review_received',
   'approval_received',
   'round_decided',
+  'removed_from_round',
 ] as const
 
 export const NotificationKindSchema = Schema.Literals(NOTIFICATION_KINDS)
@@ -93,6 +105,14 @@ export const WhatsAppLink = Schema.Struct({
   // time zone and the link.
   text: Schema.String.check(Schema.isMaxLength(500)),
   url: Schema.String.check(Schema.isMaxLength(1500)),
+})
+
+// NOTE: One row per active participant of the round: whether a link can be
+// made for them (a number and consent). No number: the number is fetched, with
+// `GetWhatsAppLink`, only when the author taps for that person.
+export const WhatsAppReadiness = Schema.Struct({
+  accountId: ApiId,
+  ready: Schema.Boolean,
 })
 
 // ---- Downloads (D4) -----------------------------------------------------------------------------

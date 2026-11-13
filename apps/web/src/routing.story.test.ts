@@ -58,6 +58,8 @@ describe('routes', () => {
     expect(routeOf('/r/rep-1/rev/3')).toEqual(
       AppRoute.Revision({ reportId: 'rep-1', revision: 3 }),
     )
+    expect(routeOf('/r/rep-1/grid')).toEqual(AppRoute.Grid({ reportId: 'rep-1' }))
+    expect(routeOf('/r/rep-1/audit')).toEqual(AppRoute.Audit({ reportId: 'rep-1' }))
   })
 
   test('an address with no screen is not found, and keeps its path', () => {
@@ -78,6 +80,8 @@ describe('routes', () => {
       AppRoute.Link(),
       AppRoute.Report({ reportId: 'rep-1' }),
       AppRoute.Revision({ reportId: 'rep-1', revision: 2 }),
+      AppRoute.Grid({ reportId: 'rep-1' }),
+      AppRoute.Audit({ reportId: 'rep-1' }),
     ]
     routes.forEach(route => {
       expect(routeOf(pathOf(route))).toEqual(route)

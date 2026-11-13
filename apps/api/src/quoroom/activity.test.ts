@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@case-desk/domain'
 
-import { SCENARIOS, SECRET, type World, makeWorld } from './testkit'
+import { PEOPLE, SCENARIOS, SECRET, type World, makeWorld } from './testkit'
 
 // NOTE: The rest of stage 2c through the real RPC stack: templates and the
 // theme, the capabilities that have no part in a report, the grid and the
@@ -158,9 +158,9 @@ describe.each(SCENARIOS)('$name', scenario => {
     const w = await world()
     const { reportId } = await w.published()
     w.clock.advance(60_000)
-    await w.call('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+    await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     w.clock.advance(60_000)
-    await w.call('dan', c => c.SendReview({ reportId, revision: 1, decision: 'request_changes' }))
+    await w.call('dan', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'request_changes' }))
 
     const view = await w.call('alice', c => c.GetGrid({ reportId }))
     expect(view.grid.authors).toContain('alice')
@@ -219,7 +219,7 @@ describe.each(SCENARIOS)('$name', scenario => {
 
     // NOTE: a review that comes with a decision tells the authors in the
     // same batch as the review.
-    await w.call('carol', c => c.SendReview({ reportId, revision: 1, decision: 'request_changes' }))
+    await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'request_changes' }))
     const after = await run(w.repository.listJobKeys(reportId))
     expect(after.some(key => key.includes('review_received'))).toBe(true)
 
@@ -322,6 +322,66 @@ describe.each(SCENARIOS)('$name', scenario => {
     expect(cell?.whatsappOpened?.at).toBe(w.clock.now())
   })
 
+  test('the WhatsApp list says who can be sent a link, with no number, and a repeated tap is recorded once', async () => {
+    const w = await world()
+    const { reportId } = await w.published()
+    await run(
+      w.repository.putProfile(
+        'carol',
+        { phone: '+34600000001', whatsappConsent: true, whatsappConsentAt: 1, notifyOnApproval: false, active: true },
+        1,
+      ),
+    )
+    const list = await w.call('alice', c => c.ListWhatsAppLinks({ reportId, revision: 1 }))
+    expect(list.find(entry => entry.accountId === 'carol')).toEqual({ accountId: 'carol', ready: true })
+    expect(list.find(entry => entry.accountId === 'dan')).toEqual({ accountId: 'dan', ready: false })
+    expect(JSON.stringify(list)).not.toContain('34600000001')
+    expect(tagOf(await w.refused('carol', c => c.ListWhatsAppLinks({ reportId, revision: 1 })))).toBe('NotFound')
+
+    const first = w.clock.now()
+    await w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }))
+    w.clock.advance(60_000)
+    await w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }))
+    const taps = (await run(w.repository.listEvents(reportId, 100))).filter(
+      event => event.kind === 'whatsapp_opened',
+    )
+    expect(taps).toHaveLength(1)
+    const grid = await w.call('alice', c => c.GetGrid({ reportId }))
+    expect(grid.grid.revisions[0]?.cells.find(entry => entry.accountId === 'carol')?.whatsappOpened?.at).toBe(first)
+  })
+
+  test('the audit kind filter is applied before the page is cut, and only the actors of the page are read', async () => {
+    const w = await world()
+    const { reportId } = await w.published()
+    const second = await w.share('alice', reportId, { shareId: 'share-2', people: PEOPLE, confirm: true })
+    if (second.outcome.kind !== 'shared') throw new Error('not shared')
+    await w.publish('alice', reportId, second.outcome.draft.number)
+    const everything = await w.call('alice', c =>
+      c.ListAuditEvents({ subject: { kind: 'report', reportId }, limit: 100 }),
+    )
+    const revisions = everything.events.filter(event => event.action.startsWith('revision.'))
+    expect(revisions).toHaveLength(2)
+    expect(everything.events.length).toBeGreaterThan(revisions.length)
+    // NOTE: a page of one holds one revision event, and the next page the other.
+    const one = await w.call('alice', c =>
+      c.ListAuditEvents({ subject: { kind: 'report', reportId }, kind: 'revision', limit: 1 }),
+    )
+    expect(one.events.map(event => event.action)).toEqual(['revision.published'])
+    expect(one.next).toBeDefined()
+    const rest = await w.call('alice', c =>
+      c.ListAuditEvents({
+        subject: { kind: 'report', reportId },
+        kind: 'revision',
+        limit: 1,
+        ...(one.next === undefined ? {} : { before: one.next }),
+      }),
+    )
+    expect(rest.events.map(event => event.action)).toEqual(['revision.published'])
+    expect(rest.events[0]?.revision).not.toBe(one.events[0]?.revision)
+    expect(rest.next).toBeUndefined()
+    expect(one.events[0]?.actor?.name).toBe('Alice Author')
+  })
+
   test('downloads metadata and approval record data come from the stored report', async () => {
     const w = await world()
     const { reportId } = await w.published()
@@ -330,10 +390,10 @@ describe.each(SCENARIOS)('$name', scenario => {
     expect(downloads.versions.filter(version => version.kind === 'revision').map(version => version.view).sort()).toEqual(['original', 'redacted'])
     expect(downloads.approvalRecord).toBe(false)
 
-    await w.call('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
-    await w.call('dan', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+    await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
+    await w.call('dan', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     if (scenario.fullRole !== undefined) {
-      await w.call('erin', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+      await w.call('erin', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     }
     const data = await w.call('alice', c => c.GetApprovalRecordData({ reportId }))
     expect(data.caseFile.unit).toBe('Unit One')
@@ -390,7 +450,7 @@ describe.each(SCENARIOS)('$name', scenario => {
     if (scenario.observerRole !== undefined) return
     const w = await world()
     const { reportId } = await w.published()
-    await w.call('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+    await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     expect((await run(w.repository.getRound(reportId, 1)))?.round.state).toBe('open')
     await w.call('alice', c => c.RemoveReviewer({ reportId, revision: 1, accountId: 'dan' }))
     // NOTE: stored at once, before any later read settles it.

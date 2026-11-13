@@ -24,6 +24,9 @@ import {
   applyEvent,
   automaticChanges,
   canonicalJson,
+  checkClosingConclusion,
+  deadlineTooFar,
+  checkClosingDraft,
   chooseParticipants,
   draftLabel,
   revisionTitle,
@@ -176,6 +179,73 @@ const statesAllowing = (types: ReadonlyArray<string>): ReadonlyArray<ReportState
     ),
   )
 
+// NOTE: The rule on a draft while the report is `concluding` (D18): only the
+// conclusion may differ from the revision being closed, and, when the draft is
+// to be published as the closing revision, the conclusion must be written. The
+// rows are those of the draft or working copy in question. It never writes.
+export const closingGuard = (
+  db: Store,
+  loaded: Loaded,
+  rows: ReadonlyArray<SectionContentRow>,
+  requireConclusion: boolean,
+) =>
+  Effect.gen(function* () {
+    if (loaded.record.state !== 'concluding') return
+    const revision = loaded.revisions[loaded.revisions.length - 1]
+    if (revision === undefined) {
+      return yield* Effect.fail(validation('flow', 'no_revision_to_close'))
+    }
+    const baseRows = yield* db.getDraftContents(
+      loaded.record.id,
+      revision.draftNumber,
+      'original',
+    )
+    const content = dataOf(loaded.template, rows, []).content
+    const closing = checkClosingDraft(
+      loaded.template,
+      loaded.record.state,
+      dataOf(loaded.template, baseRows, []).content,
+      content,
+    )
+    if (Result.isFailure(closing)) {
+      return yield* Effect.fail(
+        new Validation({
+          problems: closing.failure.sectionIds.map(id =>
+            problem('flow', closing.failure.code, [id]),
+          ),
+        }),
+      )
+    }
+    if (requireConclusion) {
+      const written = checkClosingConclusion(
+        loaded.template,
+        loaded.record.state,
+        content,
+      )
+      if (Result.isFailure(written)) {
+        return yield* Effect.fail(
+          new Validation({
+            problems: [
+              problem('flow', written.failure.code, [written.failure.sectionId]),
+            ],
+          }),
+        )
+      }
+    }
+  })
+
+export const deadlineTooFarFailure = () =>
+  new Validation({
+    problems: [
+      problem(
+        'input',
+        'deadline_too_far',
+        ['deadline'],
+        'The deadline can be at most one year ahead.',
+      ),
+    ],
+  })
+
 export type PublishPlan = Readonly<{
   input: Omit<PublishInput, 'draft' | 'audit'>
   flow: ReportFlow
@@ -198,6 +268,12 @@ export const planPublish = (
   draftNumber: number,
   alsoShares: boolean,
   redactionConfirmed: boolean,
+  // NOTE: the content that would be published, read only when the report is
+  // `concluding`: the rows of the draft, or of the working copy being shared.
+  rowsOf: Effect.Effect<
+    ReadonlyArray<SectionContentRow>,
+    import('@case-desk/domain').StorageUnavailable
+  >,
 ) =>
   Effect.gen(function* () {
     const config = yield* QuoroomConfig
@@ -211,6 +287,9 @@ export const planPublish = (
         ),
       )
     }
+    if (concluding) {
+      yield* closingGuard(db, loaded, yield* rowsOf, true)
+    }
     if (!timeZoneOk(terms.deadline.timeZone)) {
       return yield* Effect.fail(validation('input', 'unknown_time_zone'))
     }
@@ -218,6 +297,9 @@ export const planPublish = (
       return yield* Effect.fail(
         new DeadlinePassed({ deadline: terms.deadline.at }),
       )
+    }
+    if (deadlineTooFar(terms.deadline.at, now)) {
+      return yield* Effect.fail(deadlineTooFarFailure())
     }
     const committees = yield* db.listCommittees(loaded.record.caseFile.unitId)
     // NOTE: an account chosen by ID must be in this unit's registry (or in one

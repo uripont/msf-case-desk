@@ -25,6 +25,11 @@ const ErrorShape = Schema.Union([
     problems: Schema.Array(Schema.Struct({ message: Schema.String })),
   }),
   Schema.Struct({ _tag: Schema.Literal('LinkInvalid') }),
+  Schema.Struct({
+    _tag: Schema.Literal('NotAllowedInState'),
+    code: Schema.String,
+  }),
+  Schema.Struct({ _tag: Schema.Literal('DeadlinePassed') }),
   Schema.Struct({ _tag: Schema.Literal('InvalidCredentials') }),
   Schema.Struct({
     _tag: Schema.Literal('Throttled'),
@@ -47,8 +52,49 @@ const conflictText = (reason: string): string =>
       'changed_meanwhile',
       () => 'Someone changed this meanwhile. Reload and try again.',
     ),
+    Match.when(
+      'pending_changed',
+      () =>
+        'Your waiting comments changed while you were sending. Check the list and send again.',
+    ),
     Match.orElse(
       () => 'That could not be saved as it is. Reload and try again.',
+    ),
+  )
+
+// NOTE: Fixed words for the refusals of the report's state machine (D18),
+// never anything the person typed.
+const stateText = (code: string): string =>
+  Match.value(code).pipe(
+    Match.when(
+      'deadline_not_extended',
+      () => 'The new deadline must be later than the current one.',
+    ),
+    Match.when(
+      'deadline_not_in_future',
+      () => 'The deadline must be in the future.',
+    ),
+    Match.when('round_not_open', () => 'That round is no longer open.'),
+    Match.when(
+      'removal_makes_rule_unmeetable',
+      () =>
+        'Removing that person would leave an approval rule that cannot be met.',
+    ),
+    Match.when(
+      'reviewer_has_decision',
+      () =>
+        'That reviewer has already decided on this revision, so they stay in the round.',
+    ),
+    Match.when(
+      'conclusion_not_in_template',
+      () => 'This report has no conclusion to write.',
+    ),
+    Match.when(
+      'cannot_archive',
+      () => 'The report can only be archived once the approval rule was met.',
+    ),
+    Match.orElse(
+      () => 'The report is not in a state that allows that now. Reload the page.',
     ),
   )
 
@@ -89,6 +135,10 @@ export const failureOf = (error: unknown): Failure =>
               message:
                 problems[0]?.message ?? 'Check what you typed and try again.',
             }),
+          NotAllowedInState: ({ code }) =>
+            Failure.Refused({ message: stateText(code) }),
+          DeadlinePassed: () =>
+            Failure.Refused({ message: 'The deadline has passed.' }),
           LinkInvalid: () => Failure.LinkInvalid(),
           InvalidCredentials: () => Failure.InvalidCredentials(),
           Throttled: ({ retryAfterSeconds }) =>

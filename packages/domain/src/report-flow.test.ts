@@ -17,6 +17,7 @@ import {
   type ReportState,
   type Template,
   applyEvent,
+  checkClosingConclusion,
   checkClosingDraft,
   checkSave,
   emptyContent,
@@ -578,6 +579,29 @@ describe('reviews and reviewers', () => {
     expect(flow.rounds[0]?.participants).toEqual(people('r1', 'r2'))
   })
 
+  test('a reviewer with a standing decision cannot be removed; a silent one or one who only commented can', () => {
+    const removal = { type: 'remove_reviewer', accountId: 'r1' } as const
+    for (const decision of ['approve', 'request_changes'] as const) {
+      const decided = run(t, reviewing, 3, {
+        type: 'submit_review',
+        revision: 1,
+        reviewerId: 'r1',
+        decision,
+      })
+      expect(code(applyEvent(ctx(t, 4), decided, removal))).toBe(
+        'reviewer_has_decision',
+      )
+    }
+    const commented = run(t, reviewing, 3, {
+      type: 'submit_review',
+      revision: 1,
+      reviewerId: 'r1',
+      decision: 'comment',
+    })
+    expect(code(applyEvent(ctx(t, 4), commented, removal))).toBe('ok')
+    expect(code(applyEvent(ctx(t, 4), reviewing, removal))).toBe('ok')
+  })
+
   test('a removed reviewer can no longer review', () => {
     const flow = run(t, reviewing, 3, {
       type: 'remove_reviewer',
@@ -864,6 +888,61 @@ describe('regression: sharing while concluding', () => {
       ),
       { numRuns: 100 },
     )
+  })
+})
+
+describe('regression: publishing a closing revision needs a written conclusion', () => {
+  const t = INTAKE_TEMPLATE
+  const conclusionId = t.conclusion!.id
+  const draft = (sections: ReportContent['sections']): ReportContent => ({
+    ...emptyContent(t),
+    sections,
+  })
+  const richText = (...texts: ReadonlyArray<string>) => ({
+    values: {
+      x: {
+        type: 'rich_text' as const,
+        doc: {
+          type: 'doc' as const,
+          content: texts.map(text => ({
+            type: 'paragraph' as const,
+            content: text === '' ? [] : [{ type: 'text' as const, text }],
+          })),
+        },
+      },
+    },
+    sections: {},
+  })
+  const code = (content: ReportContent, state: ReportState = 'concluding') => {
+    const result = checkClosingConclusion(t, state, content)
+    return Result.isFailure(result) ? result.failure.code : 'ok'
+  }
+
+  test('an absent, empty or blank conclusion is refused while concluding', () => {
+    expect(code(draft({}))).toBe('conclusion_empty')
+    expect(code(draft({ [conclusionId]: { values: {}, sections: {} } }))).toBe(
+      'conclusion_empty',
+    )
+    expect(code(draft({ [conclusionId]: richText('', '  ') }))).toBe(
+      'conclusion_empty',
+    )
+    expect(
+      code(
+        draft({
+          [conclusionId]: {
+            values: {},
+            sections: {},
+            notApplicable: { reason: 'none' },
+          },
+        }),
+      ),
+    ).toBe('conclusion_empty')
+  })
+
+  test('a written conclusion passes, and other states accept anything', () => {
+    expect(code(draft({ [conclusionId]: richText('Closed.') }))).toBe('ok')
+    expect(code(draft({}), 'in_review')).toBe('ok')
+    expect(code(draft({}), 'decided')).toBe('ok')
   })
 })
 

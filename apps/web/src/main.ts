@@ -76,7 +76,9 @@ import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
+import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
+import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
 import * as Link from './quoroom/link'
@@ -185,6 +187,8 @@ export const Model = Schema.Struct({
   inbox: Inbox.Model,
   review: Review.Model,
   comments: Comments.Model,
+  grid: Grid.Model,
+  audit: Audit.Model,
   publish: Publish.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
@@ -253,6 +257,8 @@ export const Message = defineMessageUnion({
   GotInboxMessage: { message: Inbox.Message },
   GotReviewMessage: { message: Review.Message },
   GotCommentsMessage: { message: Comments.Message },
+  GotGridMessage: { message: Grid.Message },
+  GotAuditMessage: { message: Audit.Message },
   GotPublishMessage: { message: Publish.Message },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
@@ -370,6 +376,8 @@ export const initialModel = Model.make({
   inbox: Inbox.initialModel,
   review: Review.initialModel,
   comments: Comments.initialModel,
+  grid: Grid.initialModel,
+  audit: Audit.initialModel,
   publish: Publish.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
@@ -755,6 +763,8 @@ const signedOut = (model: Model): Model =>
     inbox: Inbox.cleared,
     review: Review.cleared,
     comments: Comments.cleared,
+    grid: Grid.cleared,
+    audit: Audit.cleared,
     publish: Publish.cleared,
     maybeLeaving: () => Option.none(),
     deskLoad: () => DeskLoad.Loading(),
@@ -944,6 +954,38 @@ const enterComments = (origin: string, reportId: string) =>
     toParentMessage: message => Message.GotCommentsMessage({ message }),
   })
 
+const foldGrid = Update.foldChild({
+  update: Grid.update,
+  read: (model: Model) => Option.some(model.grid),
+  write: (model, nextGrid) => modifyFields(model, { grid: () => nextGrid }),
+  toParentMessage: message => Message.GotGridMessage({ message }),
+})
+
+const enterGrid = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (child: Grid.Model) =>
+      Grid.enter(origin, reportId, child.generation + 1),
+    read: (model: Model) => Option.some(model.grid),
+    write: (model, nextGrid) => modifyFields(model, { grid: () => nextGrid }),
+    toParentMessage: message => Message.GotGridMessage({ message }),
+  })
+
+const foldAudit = Update.foldChild({
+  update: Audit.update,
+  read: (model: Model) => Option.some(model.audit),
+  write: (model, nextAudit) => modifyFields(model, { audit: () => nextAudit }),
+  toParentMessage: message => Message.GotAuditMessage({ message }),
+})
+
+const enterAudit = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (child: Audit.Model) =>
+      Audit.enter(origin, reportId, child.generation + 1),
+    read: (model: Model) => Option.some(model.audit),
+    write: (model, nextAudit) => modifyFields(model, { audit: () => nextAudit }),
+    toParentMessage: message => Message.GotAuditMessage({ message }),
+  })
+
 const foldPublish = Update.foldChild({
   update: Publish.update,
   read: (model: Model) => Option.some(model.publish),
@@ -1041,6 +1083,8 @@ const enterRoute = (
       enterHistory(model.origin, reportId, Option.some(draft))(model),
     Inbox: () => enterInbox(model.origin)(model),
     Comments: ({ reportId }) => enterComments(model.origin, reportId)(model),
+    Grid: ({ reportId }) => enterGrid(model.origin, reportId)(model),
+    Audit: ({ reportId }) => enterAudit(model.origin, reportId)(model),
     Revision: ({ reportId, revision }) =>
       enterReview(model.origin, reportId, revision)(model),
     NotFound: () => ({ model }),
@@ -1399,6 +1443,8 @@ export const update = (model: Model, message: Message) =>
     GotInboxMessage: ({ message }) => foldInbox(model, message),
     GotReviewMessage: ({ message }) => foldReview(model, message),
     GotCommentsMessage: ({ message }) => foldComments(model, message),
+    GotGridMessage: ({ message }) => foldGrid(model, message),
+    GotAuditMessage: ({ message }) => foldAudit(model, message),
     SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({

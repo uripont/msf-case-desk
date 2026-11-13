@@ -9,6 +9,10 @@ import {
   zoneChoices,
   zonedTimeToEpoch,
 } from './zoned'
+import { toDateTimeInput } from '../entryForm'
+import { formatInstant } from '../format'
+import { momentText, timeText } from './draftText'
+import { formatMoment } from './ui'
 
 describe('zoned deadlines', () => {
   test('a wall clock time in a zone is the right instant, in winter and in summer', () => {
@@ -60,4 +64,20 @@ describe('zoned deadlines', () => {
     expect(zoneChoices('Pacific/Auckland')[0]).toBe('Pacific/Auckland')
     expect(zoneChoices('Europe/Madrid')).toContain('Europe/Madrid')
   })
+})
+
+describe('formatting never throws on a stored value', () => {
+  test.each([8.7e15, -8.7e15, Number.MAX_SAFE_INTEGER, Number.NaN, Number.POSITIVE_INFINITY])(
+    'a time of %s reads as text, in every formatter',
+    value => {
+      expect(typeof deadlineText(value, 'Europe/Madrid')).toBe('string')
+      expect(typeof deadlineText(value, 'Not/AZone')).toBe('string')
+      expect(typeof dateTextIn(value, 'UTC')).toBe('string')
+      expect(typeof formatMoment(value)).toBe('string')
+      expect(typeof formatInstant(value)).toBe('string')
+      expect(typeof momentText(value)).toBe('string')
+      expect(typeof timeText(value)).toBe('string')
+      expect(typeof toDateTimeInput(value)).toBe('string')
+    },
+  )
 })

@@ -260,17 +260,24 @@ export const CreateCommittee = Command.define('CreateCommittee', {
 export const UpdateCommittee = Command.define('UpdateCommittee', {
   args: {
     committeeId: Schema.String,
-    memberIds: Schema.Option(Schema.Array(Schema.String)),
+    // NOTE: a member change is one operation on the stored list, never a whole
+    // list from a screen that may be a step behind.
+    maybeAdd: Schema.Option(Schema.String),
+    maybeRemove: Schema.Option(Schema.String),
     retired: Schema.Option(Schema.Boolean),
   },
   messages: [Message.SucceededUpdateCommittee, Message.FailedUpdateCommittee],
-  execute: ({ committeeId, memberIds, retired }) =>
+  execute: ({ committeeId, maybeAdd, maybeRemove, retired }) =>
     withQuoroom(client =>
       client.UpdateCommittee({
         committeeId,
-        ...Option.match(memberIds, {
+        ...Option.match(maybeAdd, {
           onNone: () => ({}),
-          onSome: value => ({ memberIds: value }),
+          onSome: value => ({ addMemberIds: [value] }),
+        }),
+        ...Option.match(maybeRemove, {
+          onNone: () => ({}),
+          onSome: value => ({ removeMemberIds: [value] }),
         }),
         ...Option.match(retired, {
           onNone: () => ({}),
@@ -493,11 +500,15 @@ export const update = (model: Model, message: Message) =>
             commands: [
               UpdateCommittee({
                 committeeId,
-                memberIds: Option.some(
-                  Array.contains(committee.memberIds, accountId)
-                    ? Array.filter(committee.memberIds, id => id !== accountId)
-                    : Array.append(committee.memberIds, accountId),
-                ),
+                ...(Array.contains(committee.memberIds, accountId)
+                  ? {
+                      maybeAdd: Option.none(),
+                      maybeRemove: Option.some(accountId),
+                    }
+                  : {
+                      maybeAdd: Option.some(accountId),
+                      maybeRemove: Option.none(),
+                    }),
                 retired: Option.none(),
               }),
             ],
@@ -509,7 +520,8 @@ export const update = (model: Model, message: Message) =>
       commands: [
         UpdateCommittee({
           committeeId,
-          memberIds: Option.none(),
+          maybeAdd: Option.none(),
+          maybeRemove: Option.none(),
           retired: Option.some(true),
         }),
       ],

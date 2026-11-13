@@ -61,6 +61,12 @@ export type ReportEvent =
       accountId: string
       at: number
     }>
+  | Readonly<{
+      type: 'reviewer_removed'
+      revision: number
+      accountId: string
+      at: number
+    }>
   | (Readonly<{ type: 'review' }> & ReviewFact)
   | Readonly<{
       type: 'round_decided'

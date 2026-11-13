@@ -97,6 +97,34 @@ const config = DEFAULT_NOTIFICATION_CONFIG
 const kinds = (jobs: ReadonlyArray<{ kind: string }>): ReadonlyArray<string> =>
   jobs.map(j => j.kind)
 
+describe('a removed reviewer is told (D6)', () => {
+  test('one job for the removed reviewer only, kept needed by the recheck, and none for the others', () => {
+    const base = published()
+    const flow = must(base.template, base.flow, T0 + HOUR, {
+      type: 'remove_reviewer',
+      accountId: 'r2',
+    })
+    const events: ReadonlyArray<ReportEvent> = [
+      ...base.events,
+      { type: 'reviewer_removed', revision: 1, accountId: 'r2', at: T0 + HOUR },
+    ]
+    const jobs = notificationJobs(
+      state({ template: base.template, flow, events }),
+      T0 + HOUR,
+      config,
+    )
+    const told = jobs.filter(j => j.kind === 'removed_from_round')
+    expect(told.map(j => [j.recipient, j.dueAt])).toEqual([['r2', T0 + HOUR]])
+    // Nothing else is scheduled for the removed reviewer.
+    expect(
+      jobs.filter(j => j.recipient === 'r2' && j.kind !== 'removed_from_round'),
+    ).toEqual([])
+    expect(
+      isJobNeeded(told[0]!, state({ template: base.template, flow, events }), T0 + HOUR, config),
+    ).toBe(true)
+  })
+})
+
 describe('what is scheduled on publication (D12)', () => {
   test('a request for each reviewer, the two reminders, and the deadline job', () => {
     const jobs = notificationJobs(state(published()), T0, config)

@@ -339,6 +339,25 @@ export const makeWorld = async (scenario: Scenario) => {
     return result.failure
   }
 
+  // NOTE: sends a review the way the send dialog does: the pending comments
+  // are read first and their ids sent with the decision.
+  const sendReview = async (
+    who: PersonName,
+    reportId: string,
+    revision: number,
+    decision: 'approve' | 'request_changes' | 'comment',
+  ) => {
+    const pending = await call(who, c => c.GetPendingReview({ reportId, revision }))
+    return call(who, c =>
+      c.SendReview({
+        reportId,
+        revision,
+        decision,
+        commentIds: pending.comments.map(comment => comment.id),
+      }),
+    )
+  }
+
   const raw = (who: PersonName, path: string, init?: RequestInit) =>
     fetchFor(who)(`https://desk.test${path}`, init)
 
@@ -398,6 +417,7 @@ export const makeWorld = async (scenario: Scenario) => {
     shareId: string,
     counter: number,
     confirm?: boolean,
+    closing?: boolean,
   ) => {
     const outline = await call(who, c => c.GetWorkingCopy({ reportId }))
     const hashes: Array<string> = []
@@ -429,6 +449,16 @@ export const makeWorld = async (scenario: Scenario) => {
         shareId,
         saveCounter: counter,
         ...(seen === undefined ? {} : { redactionHash: seen }),
+        // NOTE: "share and publish" when `closing` is given.
+        ...(closing === undefined
+          ? {}
+          : {
+              publish: {
+                deadline: deadline(),
+                selections: selections(),
+                closing,
+              },
+            }),
       }),
     )
     return { outcome }
@@ -472,6 +502,7 @@ export const makeWorld = async (scenario: Scenario) => {
     reportId: string,
     draft: number,
     closing = false,
+    deadlineAt?: number,
   ) => {
     // NOTE: what the browser does before it confirms: it reads the redacted
     // text it shows, the people list and the redacted case title and
@@ -505,7 +536,11 @@ export const makeWorld = async (scenario: Scenario) => {
       c.PublishRevision({
         reportId,
         draft,
-        terms: { deadline: deadline(), selections: selections(), closing },
+        terms: {
+          deadline: deadlineAt === undefined ? deadline() : { ...deadline(), at: deadlineAt },
+          selections: selections(),
+          closing,
+        },
       }),
     )
   }
@@ -530,6 +565,7 @@ export const makeWorld = async (scenario: Scenario) => {
     app,
     call,
     attempt,
+    sendReview,
     refused,
     raw,
     createReport,

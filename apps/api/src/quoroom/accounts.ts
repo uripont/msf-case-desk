@@ -276,10 +276,15 @@ export const accountHandlers: Pick<
       const current = account?.profile ?? null
       // NOTE: the person's own number and consent, on their own account.
       const nextPhone = phone === undefined ? (current?.phone ?? null) : phone
+      // NOTE: consent is for one number: a changed number loses it unless the
+      // owner gives it again in the same request.
+      const phoneChanged = nextPhone !== (current?.phone ?? null)
       const consent =
         nextPhone === null
           ? false
-          : (whatsappConsent ?? current?.whatsappConsent ?? false)
+          : phoneChanged
+            ? whatsappConsent === true
+            : (whatsappConsent ?? current?.whatsappConsent ?? false)
       yield* db.putProfile(
         user.id,
         {
@@ -287,7 +292,9 @@ export const accountHandlers: Pick<
           whatsappConsent: consent,
           whatsappConsentAt: !consent
             ? null
-            : current?.whatsappConsent === true && current.whatsappConsentAt !== null
+            : !phoneChanged &&
+              current?.whatsappConsent === true &&
+              current.whatsappConsentAt !== null
               ? current.whatsappConsentAt
               : now,
           notifyOnApproval,
@@ -726,7 +733,14 @@ export const accountHandlers: Pick<
 
   // NOTE: the committee is looked up among the units the caller is an author
   // in; one anywhere else answers as if it did not exist.
-  UpdateCommittee: ({ committeeId, name, memberIds, retired }) =>
+  UpdateCommittee: ({
+    committeeId,
+    name,
+    memberIds,
+    addMemberIds,
+    removeMemberIds,
+    retired,
+  }) =>
     Effect.gen(function* () {
       const db = yield* store
       const user = yield* CurrentUser
@@ -741,9 +755,9 @@ export const accountHandlers: Pick<
       }
       const unit = found.unitId
       yield* allowCapability(db, { type: 'manage_committees', unit })
-      if (memberIds !== undefined) {
+      if (memberIds !== undefined || addMemberIds !== undefined) {
         const reviewers = new Set((yield* reviewersOf(db, unit)).map(a => a.userId))
-        if (memberIds.some(id => !reviewers.has(id))) {
+        if ([...(memberIds ?? []), ...(addMemberIds ?? [])].some(id => !reviewers.has(id))) {
           return yield* Effect.fail(validation('input', 'member_not_in_unit'))
         }
       }
@@ -752,6 +766,10 @@ export const accountHandlers: Pick<
         ...(name === undefined ? {} : { name }),
         ...(retired === undefined ? {} : { archived: retired }),
         ...(memberIds === undefined ? {} : { memberIds: [...new Set(memberIds)] }),
+        ...(addMemberIds === undefined ? {} : { addMemberIds: [...new Set(addMemberIds)] }),
+        ...(removeMemberIds === undefined
+          ? {}
+          : { removeMemberIds: [...new Set(removeMemberIds)] }),
         now,
         audit: {
           at: now,

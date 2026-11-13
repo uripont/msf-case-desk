@@ -10,7 +10,7 @@ import {
   text,
   type,
 } from 'foldkit/scene'
-import { describe, test } from 'vitest'
+import { describe, expect as expectThat, test } from 'vitest'
 
 import { type AuthorCommentView, INTAKE_TEMPLATE } from '@case-desk/domain'
 
@@ -257,8 +257,22 @@ describe('the pending review and sending', () => {
         }),
       ),
       click(role('button', { name: 'Send your review' })),
+      expect(text('Checking your comments…')).toExist(),
+      // NOTE: the list is read again when the dialog opens; a comment added in
+      // another tab shows up, and the counts are those of the fresh list.
+      Command.resolve(
+        Review.ReadPending,
+        Review.Message.SucceededReadPending({
+          scope: SCOPE,
+          comments: [
+            textComment('c1'),
+            textComment('c2', { visibility: 'committee' }),
+            textComment('c3', { visibility: 'committee' }),
+          ],
+        }),
+      ),
       expect(
-        text('2 comments are sent: 1 to the authors only, 1 to the whole committee.'),
+        text('3 comments are sent: 1 to the authors only, 2 to the whole committee.'),
       ).toExist(),
       expect(
         role('button', { name: 'Confirm and send review' }),
@@ -303,8 +317,94 @@ describe('the pending review and sending', () => {
       { update, view },
       given(reviewScreen({ canVote: false })),
       click(role('button', { name: 'Send your review' })),
+      Command.resolve(
+        Review.ReadPending,
+        Review.Message.SucceededReadPending({ scope: SCOPE, comments: [] }),
+      ),
       expect(role('radio', { name: /Comment only/ })).toExist(),
       expect(role('radio', { name: /Approve/ })).toBeAbsent(),
+    )
+  })
+
+  test('the send carries the ids of the comments the dialog showed', () => {
+    const opened = update(
+      reviewScreen({ comments: [textComment('c1')] }),
+      Message.GotReviewMessage({ message: Review.Message.ClickedSendReview() }),
+    ).model
+    const read = [
+      Review.Message.SucceededReadPending({
+        scope: SCOPE,
+        comments: [
+          textComment('c1'),
+          textComment('c2', { visibility: 'committee' }),
+          textComment('c9', { sent: true }),
+        ],
+      }),
+      Review.Message.ChoseDecision({ decision: 'comment' }),
+    ].reduce(
+      (model, message) =>
+        update(model, Message.GotReviewMessage({ message })).model,
+      opened,
+    )
+    const { commands } = update(
+      read,
+      Message.GotReviewMessage({ message: Review.Message.ClickedConfirmSend() }),
+    )
+    expectThat(commands ?? []).toHaveLength(1)
+    expectThat(commands?.[0]).toMatchObject({
+      args: { decision: 'comment', commentIds: ['c1', 'c2'] },
+    })
+  })
+
+  test('a send refused because the comments changed re-reads them and says so', () => {
+    scene(
+      { update, view },
+      given(reviewScreen({ comments: [textComment('c1')] })),
+      click(role('button', { name: 'Send your review' })),
+      Command.resolve(
+        Review.ReadPending,
+        Review.Message.SucceededReadPending({
+          scope: SCOPE,
+          comments: [textComment('c1')],
+        }),
+      ),
+      click(role('radio', { name: /Comment only/ })),
+      click(role('button', { name: 'Confirm and send review' })),
+      Command.resolve(
+        Review.SendReview,
+        Review.Message.FailedSendReview({
+          scope: SCOPE,
+          failure: { _tag: 'Refused', message: 'Your waiting comments changed while you were sending. Check the list and send again.' },
+        }),
+      ),
+      Command.resolve(
+        Review.RefreshReview,
+        Review.Message.SucceededRefreshReview({
+          scope: SCOPE,
+          outline: outlineOf(),
+          comments: [textComment('c1'), textComment('c2')],
+        }),
+      ),
+      expect(text('Your waiting comments changed', { exact: false })).toExist(),
+      expect(selector('[data-pending-count="2"]')).toExist(),
+    )
+  })
+
+  test('a session that ended while the dialog read the comments closes it with the notice', () => {
+    scene(
+      { update, view },
+      given(
+        withReviewMessages(
+          reviewScreen(),
+          Review.Message.ClickedSendReview(),
+          Review.Message.FailedReadPending({
+            scope: SCOPE,
+            failure: { _tag: 'SignInRequired' },
+          }),
+        ),
+      ),
+      expect(selector('[data-dialog="send-review"]')).toBeAbsent(),
+      expect(text('Your session has ended', { exact: false })).toExist(),
     )
   })
 

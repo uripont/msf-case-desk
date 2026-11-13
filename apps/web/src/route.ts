@@ -29,6 +29,8 @@ export const AppRoute = defineRouteUnion({
   Drafts: { reportId: Schema.String },
   Draft: { reportId: Schema.String, draft: Schema.Int },
   Comments: { reportId: Schema.String },
+  Grid: { reportId: Schema.String },
+  Audit: { reportId: Schema.String },
   Revision: { reportId: Schema.String, revision: Schema.Int },
   NotFound: { path: Schema.String },
 })
@@ -94,6 +96,18 @@ const commentsRouter = pipe(
   Route.slash(Route.literal('comments')),
   Route.mapTo(AppRoute.Comments),
 )
+const gridRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('grid')),
+  Route.mapTo(AppRoute.Grid),
+)
+const auditRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('audit')),
+  Route.mapTo(AppRoute.Audit),
+)
 const revisionRouter = pipe(
   Route.literal('r'),
   Route.slash(Route.string('reportId')),
@@ -115,6 +129,8 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     linkRouter,
     revisionRouter,
     commentsRouter,
+    gridRouter,
+    auditRouter,
     draftRouter,
     draftsRouter,
     shareRouter,
@@ -143,6 +159,8 @@ export const pathOf = (route: AppRoute): string =>
     Drafts: ({ reportId }) => draftsRouter({ reportId }),
     Draft: ({ reportId, draft }) => draftRouter({ reportId, draft }),
     Comments: ({ reportId }) => commentsRouter({ reportId }),
+    Grid: ({ reportId }) => gridRouter({ reportId }),
+    Audit: ({ reportId }) => auditRouter({ reportId }),
     Revision: ({ reportId, revision }) =>
       revisionRouter({ reportId, revision }),
     NotFound: ({ path }) => path,
@@ -169,6 +187,8 @@ export const needsSession = (route: AppRoute): boolean =>
     Drafts: () => true,
     Draft: () => true,
     Comments: () => true,
+    Grid: () => true,
+    Audit: () => true,
     Revision: () => true,
     NotFound: () => false,
   })
@@ -193,6 +213,8 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Drafts: () => false,
     Draft: () => false,
     Comments: () => false,
+    Grid: () => false,
+    Audit: () => false,
     Revision: () => false,
     NotFound: () => false,
   })

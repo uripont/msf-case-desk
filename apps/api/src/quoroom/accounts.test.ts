@@ -371,6 +371,39 @@ describe('the reviewer registry holds the unit\'s own entries (D13)', () => {
   })
 })
 
+describe('a changed phone number loses the WhatsApp consent', () => {
+  test('consent given for one number does not carry to another; it is given again in the same request or not at all', async () => {
+    const w = await world()
+    const alice = w.browser()
+    await alice.signIn('alice@case-desk.test')
+    const given = await alice.call(c =>
+      c.SetNotificationPreferences({ notifyOnApproval: false, phone: '+34600000001', whatsappConsent: true }),
+    )
+    expect(given).toMatchObject({ phone: '+34600000001', whatsappConsent: true })
+    // The same number, nothing about consent: it stays.
+    const same = await alice.call(c =>
+      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000001' }),
+    )
+    expect(same.whatsappConsent).toBe(true)
+    // Another number and no word about consent: not given.
+    const changed = await alice.call(c =>
+      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000002' }),
+    )
+    expect(changed).toMatchObject({ phone: '+34600000002', whatsappConsent: false })
+    expect((await alice.call(c => c.GetMe())).profile.whatsappConsent).toBe(false)
+    // Consent given again for the new number, in the same request.
+    const again = await alice.call(c =>
+      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000003', whatsappConsent: true }),
+    )
+    expect(again).toMatchObject({ phone: '+34600000003', whatsappConsent: true })
+    // Another number with consent explicitly refused: not given.
+    const refused = await alice.call(c =>
+      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000004', whatsappConsent: false }),
+    )
+    expect(refused.whatsappConsent).toBe(false)
+  })
+})
+
 describe('links', () => {
   test('an invited existing email gets no link and the same response shape; a new one is activated once', async () => {
     const w = await world()

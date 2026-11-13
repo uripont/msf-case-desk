@@ -91,6 +91,8 @@ export type NotificationKind =
   | 'review_received'
   | 'approval_received'
   | 'round_decided'
+  // NOTE: D6: told to a reviewer an author removed from the open round.
+  | 'removed_from_round'
 
 // NOTE: The kinds scheduled for the open round, none of which may exist for a
 // superseded or decided round.
@@ -253,6 +255,11 @@ const authorJobs = (
         )
       }
     }
+  }
+  for (const removal of eventsOfType(state.events, 'reviewer_removed')) {
+    const round = state.flow.rounds.find(r => r.revision === removal.revision)
+    if (round === undefined) continue
+    out.push(job('removed_from_round', round, removal.accountId, removal.at))
   }
   for (const round of state.flow.rounds) {
     const at = decidedAtOf(state.events, round)

@@ -58,8 +58,14 @@ export const formatSlaCompact = (sla: SlaStatus): string =>
     }),
   )
 
-export const formatInstant = (epochMs: number): string =>
-  `${dateTimeFormat.format(new Date(epochMs))} UTC`
+// NOTE: never throws: a time no date can hold reads as an unknown time.
+export const formatInstant = (epochMs: number): string => {
+  try {
+    return `${dateTimeFormat.format(new Date(epochMs))} UTC`
+  } catch {
+    return 'an unknown time'
+  }
+}
 
 export const hoursToMs = (hours: number): number => hours * HOUR_MS
 

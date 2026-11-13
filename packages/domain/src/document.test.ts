@@ -1064,3 +1064,11 @@ test('the description is plain data: the same input gives the same output', () =
     { numRuns: 30 },
   )
 })
+
+describe('formatInstant never throws', () => {
+  test('a time no date can hold reads as an unknown time', () => {
+    expect(formatInstant(8.7e15)).toBe('an unknown time')
+    expect(formatInstant(Number.NaN)).toBe('an unknown time')
+    expect(formatInstant(Date.UTC(2026, 10, 12, 14, 5))).toBe('2026-11-12 14:05 UTC')
+  })
+})

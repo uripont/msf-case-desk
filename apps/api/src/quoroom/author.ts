@@ -12,7 +12,6 @@ import {
   Validation,
   applyEvent,
   canonicalJson,
-  checkClosingDraft,
   checkSave,
   compareDrafts,
   contentProblems,
@@ -21,7 +20,6 @@ import {
   peopleListProblems,
   redactedSectionOf,
   redactedCaseOf,
-  redactorFor,
   resolveMerge,
 } from '@case-desk/domain'
 
@@ -50,6 +48,7 @@ import {
 } from './core'
 import {
   auditOf,
+  closingGuard,
   comparisonOf,
   dataOf,
   draftHeader,
@@ -665,31 +664,16 @@ export const authorHandlers: Pick<
 
       const expected = (yield* db.listWorkingCopySections(reportKey, user.id))
         .length
-      if (loaded.record.state === 'concluding') {
-        const revision = loaded.revisions[loaded.revisions.length - 1]
-        if (revision !== undefined) {
-          const baseRows = yield* db.getDraftContents(
-            reportKey,
-            revision.draftNumber,
-            'original',
-          )
-          const ourRows = yield* db.getWorkingCopyContents(reportKey, user.id)
-          const closing = checkClosingDraft(
-            loaded.template,
-            loaded.record.state,
-            dataOf(loaded.template, baseRows, []).content,
-            dataOf(loaded.template, ourRows, []).content,
-          )
-          if (Result.isFailure(closing)) {
-            return yield* Effect.fail(
-              new Validation({
-                problems: closing.failure.sectionIds.map(id =>
-                  problem('flow', closing.failure.code, [id]),
-                ),
-              }),
-            )
-          }
-        }
+      // NOTE: while concluding only the conclusion may differ from the
+      // revision being closed; with a publish `planPublish` checks it, and
+      // that the conclusion is written.
+      if (loaded.record.state === 'concluding' && publish === undefined) {
+        yield* closingGuard(
+          db,
+          loaded,
+          yield* db.getWorkingCopyContents(reportKey, user.id),
+          false,
+        )
       }
       const shared = applyEvent(
         { template: loaded.template, authors: loaded.authors, now: loaded.now },
@@ -747,6 +731,7 @@ export const authorHandlers: Pick<
               newNumber,
               true,
               confirmed,
+              db.getWorkingCopyContents(reportKey, user.id),
             )
       const outcome = yield* db.finishShare({
         shareId,
@@ -892,6 +877,40 @@ export const authorHandlers: Pick<
           }),
         )
       }
+      // NOTE: a merge rewrites the working copy, so the save rule of the state
+      // applies to each section it changes, and to the people list if that
+      // changes (while concluding, only the conclusion may change).
+      const current = new Map(
+        (yield* db.getWorkingCopyContents(reportId, user.id)).map(row => [
+          row.sectionId,
+          canonicalJson(parseSection(row.content)),
+        ]),
+      )
+      const changedSections = Object.entries(resolved.success.content.sections)
+        .filter(
+          ([sectionId, section]) =>
+            canonicalJson(section) !==
+            (current.get(sectionId) ?? canonicalJson(EMPTY_SECTION)),
+        )
+        .map(([sectionId]) => sectionId)
+      const targets = [
+        ...changedSections.map(sectionId => ({ kind: 'section' as const, sectionId })),
+        ...(canonicalJson(resolved.success.people) !==
+        canonicalJson(peopleOf(copy.people))
+          ? [{ kind: 'people' as const }]
+          : []),
+      ]
+      for (const target of targets) {
+        const checked = checkSave(loaded.template, loaded.record.state, target)
+        if (Result.isFailure(checked)) {
+          return yield* Effect.fail(
+            new NotAllowedInState({
+              state: loaded.record.state,
+              code: checked.failure.code,
+            }),
+          )
+        }
+      }
       const clock = yield* QuoroomClock
       const now = yield* clock.now
       const outcome = yield* db.rebaseWorkingCopy({
@@ -969,6 +988,19 @@ export const authorHandlers: Pick<
       }
       const rows = yield* db.getDraftContents(reportId, draft, 'original')
       void loaded
+      // NOTE: the grid's "read" fact for a draft: another author opened it.
+      // Whoever shared a draft has not "read" it by opening it again.
+      const reader = yield* CurrentUser
+      if (draft >= 1 && found.authorId !== reader.id) {
+        const clock = yield* QuoroomClock
+        yield* db.recordEvent({
+          reportId,
+          kind: 'draft_read',
+          accountId: reader.id,
+          draftNumber: draft,
+          at: yield* clock.now,
+        })
+      }
       return {
         header,
         sections: sectionRefsOf(rows),
@@ -1101,6 +1133,7 @@ export const authorHandlers: Pick<
         draft,
         false,
         header.redactionConfirmed,
+        db.getDraftContents(reportId, draft, 'original'),
       )
       const outcome = yield* db.publishRevision({
         ...plan.input,

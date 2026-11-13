@@ -11,6 +11,7 @@ import {
   type Selection,
   type Template,
   chooseParticipants,
+  deadlineTooFar,
 } from '@case-desk/domain'
 
 import { fieldClassName, labelClassName } from '../style'
@@ -241,6 +242,11 @@ export const termsOf = (
   if (deadline.value <= context.nowMs) {
     return Result.fail<ReadonlyArray<string>>([
       'The deadline must be in the future.',
+    ])
+  }
+  if (deadlineTooFar(deadline.value, context.nowMs)) {
+    return Result.fail<ReadonlyArray<string>>([
+      'The deadline can be at most one year ahead.',
     ])
   }
   const problems = choiceProblems(model, context)

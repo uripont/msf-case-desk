@@ -32,7 +32,9 @@ import {
   ApprovalRecordData,
   DownloadSet,
   NotificationPage,
+  AuditKind,
   WhatsAppLink,
+  WhatsAppReadiness,
 } from './activity'
 import {
   ApiId,
@@ -258,6 +260,14 @@ export class QuoroomRpcs extends RpcGroup.make(
       committeeId: ApiId,
       name: Schema.optionalKey(DisplayName),
       memberIds: Schema.optionalKey(
+        Schema.Array(ApiId).check(Schema.isMaxLength(200)),
+      ),
+      // NOTE: Member changes as operations on the stored list, so two quick
+      // changes never overwrite each other. A member in both lists is added.
+      addMemberIds: Schema.optionalKey(
+        Schema.Array(ApiId).check(Schema.isMaxLength(200)),
+      ),
+      removeMemberIds: Schema.optionalKey(
         Schema.Array(ApiId).check(Schema.isMaxLength(200)),
       ),
       retired: Schema.optionalKey(Schema.Boolean),
@@ -622,7 +632,15 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: TimedError,
   }),
   Rpc.make('SendReview', {
-    payload: { ...ReportId, revision: Revision, decision: ReviewDecisionSchema },
+    payload: {
+      ...ReportId,
+      revision: Revision,
+      decision: ReviewDecisionSchema,
+      // NOTE: The pending comments the reviewer saw in the send dialog. The
+      // review is refused (Conflict `pending_changed`) when the server's set
+      // is not exactly this one, so nothing is sent that was not shown.
+      commentIds: Schema.Array(ApiId),
+    },
     success: ReviewResult,
     error: TimedError,
   }),
@@ -665,6 +683,9 @@ export class QuoroomRpcs extends RpcGroup.make(
     payload: {
       subject: AuditSubject,
       before: Schema.optionalKey(ApiId),
+      // NOTE: Only the events of this kind (the part of the action before the
+      // dot), applied before the page is cut.
+      kind: Schema.optionalKey(AuditKind),
       limit: Limit,
     },
     success: AuditPage,
@@ -692,6 +713,11 @@ export class QuoroomRpcs extends RpcGroup.make(
   Rpc.make('GetWhatsAppLink', {
     payload: { ...ReportId, revision: Revision, accountId: ApiId },
     success: WhatsAppLink,
+    error: WriteError,
+  }),
+  Rpc.make('ListWhatsAppLinks', {
+    payload: { ...ReportId, revision: Revision },
+    success: Schema.Array(WhatsAppReadiness),
     error: WriteError,
   }),
   Rpc.make('RecordWhatsAppOpened', {

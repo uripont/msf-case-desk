@@ -95,6 +95,26 @@ describe('publishing', () => {
     expect(names(step)).toEqual([])
   })
 
+  test('a deadline more than a year ahead is refused before sending', () => {
+    const step = send(
+      publishScreen(),
+      chooseCommittee,
+      formMessage(PublishForm.Message.TypedDate({ value: '2030-01-01' })),
+      click,
+    )
+    expect(names(step)).toEqual([])
+  })
+
+  test('a deadline just inside the year is sent', () => {
+    const step = send(
+      publishScreen(),
+      chooseCommittee,
+      formMessage(PublishForm.Message.TypedDate({ value: '2027-11-01' })),
+      click,
+    )
+    expect(names(step)).toEqual(['PublishRevision'])
+  })
+
   test('a published revision reloads the screen', () => {
     const step = send(
       publishScreen(),
@@ -128,6 +148,8 @@ describe('the WhatsApp list', () => {
     accountId: 'reviewer-1',
     name: 'Reviewer One',
     roleName: 'Committee',
+    isReady: true,
+    isPreparing: false,
     maybeLink: Option.some(LINK),
     isOpened: false,
   }
@@ -137,6 +159,21 @@ describe('the WhatsApp list', () => {
       round: ROUND,
       whatsapp: [entry],
     })
+
+  test('a tap fetches the number for that person only', () => {
+    const step = update(
+      publishScreen({
+        revisions: [revision(2, 'open')],
+        round: ROUND,
+        whatsapp: [{ ...entry, isReady: true, maybeLink: Option.none() }],
+      }),
+      publishMessage(
+        Publish.Message.ClickedPrepareWhatsApp({ accountId: 'reviewer-1' }),
+      ),
+    )
+    expect(names(step)).toEqual(['PrepareWhatsAppLink'])
+    expect(JSON.stringify(step.model)).toContain('"isPreparing":true')
+  })
 
   test('opening the link records it once through the existing procedure', () => {
     const step = update(

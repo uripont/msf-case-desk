@@ -1,5 +1,6 @@
 import { Option } from 'effect'
 import {
+  Command,
   click,
   expect,
   given,
@@ -149,7 +150,7 @@ describe('the round display', () => {
 })
 
 describe('the WhatsApp requests', () => {
-  test('one link per reviewer with a number and consent, holding the deadline and no report content', () => {
+  test('a ready reviewer is prepared on a tap and then has one link, holding the deadline and no report content', () => {
     scene(
       { update, view },
       given(
@@ -159,11 +160,15 @@ describe('the WhatsApp requests', () => {
           whatsapp: [
             {
               ...REVIEWERS[0]!,
-              maybeLink: Option.some(LINK),
+              isReady: true,
+              isPreparing: false,
+              maybeLink: Option.none(),
               isOpened: false,
             },
             {
               ...REVIEWERS[1]!,
+              isReady: false,
+              isPreparing: false,
               maybeLink: Option.none(),
               isOpened: false,
             },
@@ -173,13 +178,22 @@ describe('the WhatsApp requests', () => {
       expect(
         role('heading', { name: 'Send the first request on WhatsApp' }),
       ).toExist(),
+      // NOTE: no number is on the page before the tap.
+      expect(selector('a[href^="https://wa.me/"]')).toBeAbsent(),
+      expect(
+        text('No WhatsApp number or consent. They are told in Quoroom only.'),
+      ).toExist(),
+      click(
+        role('button', { name: 'Prepare the WhatsApp message for Reviewer One' }),
+      ),
+      Command.resolve(
+        Publish.PrepareWhatsAppLink,
+        Publish.Message.SucceededPrepareWhatsApp({ scope: SCOPE, link: LINK }),
+      ),
       expect(
         role('link', { name: 'Send on WhatsApp to Reviewer One' }),
       ).toExist(),
       expect(selector('a[href^="https://wa.me/34600000001?text="]')).toExist(),
-      expect(
-        text('No WhatsApp number or consent. They are told in Quoroom only.'),
-      ).toExist(),
     )
   })
 })

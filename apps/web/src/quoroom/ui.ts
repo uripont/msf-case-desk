@@ -282,5 +282,11 @@ export const listOf = <M, A>(
       ),
   })
 
-export const formatMoment = (epochMs: number): string =>
-  new Date(epochMs).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
+// NOTE: never throws: a time no date can hold reads as an unknown time.
+export const formatMoment = (epochMs: number): string => {
+  try {
+    return new Date(epochMs).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
+  } catch {
+    return 'an unknown time'
+  }
+}

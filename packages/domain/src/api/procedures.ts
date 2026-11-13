@@ -160,6 +160,7 @@ export const PROCEDURES = {
   GetUnreadCount: p('notifications', 'signed_in'),
   MarkNotificationsRead: p('notifications', 'signed_in'),
   GetWhatsAppLink: p('notifications', 'report_author', ['publish_revision'], 'Needs the reviewer\'s number and consent.'),
+  ListWhatsAppLinks: p('notifications', 'report_author', ['publish_revision'], 'Who can get a link; no numbers.'),
   RecordWhatsAppOpened: p('notifications', 'report_author', ['publish_revision']),
   // -- downloads
   GetDownloads: p('downloads', 'report_author', ['read_draft']),

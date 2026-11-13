@@ -192,7 +192,7 @@ describe.each(SCENARIOS)('$name', scenario => {
       )
       const own = await w.call('erin', c => c.ListReviewerComments({ reportId, revision: 1 }))
       expect(own[0]?.anchor.kind).toBe('text')
-      await w.call('erin', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+      await w.sendReview('erin', reportId, 1, 'approve')
       const seen = await w.call('carol', c => c.ListReviewerComments({ reportId, revision: 1 }))
       expect(seen).toHaveLength(1)
       expect(seen[0]?.anchor.kind).toBe('section_note')
@@ -559,9 +559,7 @@ describe.each(SCENARIOS)('$name', scenario => {
       c.UpdatePendingComment({ reportId, commentId: shared.id, body: 'For the committee, edited.' }),
     )
     expect(edited.body).toBe('For the committee, edited.')
-    const result = await w.call('carol', c =>
-      c.SendReview({ reportId, revision: 1, decision: 'comment' }),
-    )
+    const result = await w.sendReview('carol', reportId, 1, 'comment')
     expect(result.commentsSent).toBe(2)
 
     const seenByDan = await w.call('dan', c => c.ListReviewerComments({ reportId, revision: 1 }))
@@ -656,7 +654,7 @@ describe.each(SCENARIOS)('$name', scenario => {
       w.refused('carol', c =>
         c.AddComment({ reportId, revision: 1, anchor: { kind: 'section', sectionId }, body: 'Late.', visibility: 'authors' }),
       ),
-      w.refused('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' })),
+      w.refused('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' })),
     ])
     expect(late[0]).toMatchObject({ _tag: 'DeadlinePassed' })
     expect(late[1]).toMatchObject({ _tag: 'NotAllowedInState', state: 'decided' })
@@ -710,8 +708,8 @@ describe.each(SCENARIOS)('$name', scenario => {
     test('while concluding only the conclusion may differ from the revision being closed', async () => {
       const w = await world()
       const { reportId } = await w.published()
-      await w.call('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
-      await w.call('dan', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+      await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
+      await w.call('dan', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
       expect((await w.call('alice', c => c.GetReport({ reportId }))).summary.state).toBe('decided')
 
       // NOTE: an edit of another section, made before concluding, stays unshared.
@@ -814,6 +812,13 @@ describe.each(SCENARIOS)('$name', scenario => {
         ListUnits: () => w.call('adam', c => c.ListUnits()),
         ListAccounts: () => w.call('adam', c => c.ListAccounts()),
         GetGrid: () => w.call('alice', c => c.GetGrid({ reportId })),
+        ListWhatsAppLinks: () => w.call('alice', c => c.ListWhatsAppLinks({ reportId, revision: 1 })),
+        RecordWhatsAppOpened: () =>
+          w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }).pipe(Effect.ignore)),
+        ListAuditEventsOfKind: () =>
+          w.call('alice', c =>
+            c.ListAuditEvents({ subject: { kind: 'report', reportId }, kind: 'revision', limit: 20 }),
+          ),
         ListAuditEvents: () =>
           w.call('alice', c => c.ListAuditEvents({ subject: { kind: 'report', reportId }, limit: 20 })),
       }
@@ -841,8 +846,8 @@ describe.each(SCENARIOS)('$name', scenario => {
       await w.call('carol', c =>
         c.AddComment({ reportId, revision: 1, anchor: { kind: 'section', sectionId }, body: 'Budget.', visibility: 'committee' }),
       )
-      await w.call('carol', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
-      await w.call('dan', c => c.SendReview({ reportId, revision: 1, decision: 'approve' }))
+      await w.sendReview('carol', reportId, 1, 'approve')
+      await w.call('dan', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
       expect(w.worstRequest()).toBeGreaterThan(0)
       expect(w.worstRequest()).toBeLessThanOrEqual(50)
     })

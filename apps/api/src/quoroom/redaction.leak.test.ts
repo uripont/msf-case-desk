@@ -15,7 +15,7 @@ import {
 import { fullContent } from '@case-desk/domain/testing/fixtures'
 
 import { topLevelIds } from './content'
-import { peopleOfRevision } from './reviewer'
+import { peopleOfDraft, peopleOfRevision } from './reviewer'
 import { makePng, pngChunk } from './imageFixtures'
 import {
   type Client,
@@ -410,7 +410,7 @@ const REQUESTS: Readonly<Record<string, (c: Context) => unknown>> = {
   DeletePendingComment: c => ({ ...R(c), commentId: 'no-such-comment' }),
   GetPendingReview: REVISION,
   SavePendingReview: REVISION,
-  SendReview: c => ({ ...REVISION(c), decision: 'comment' }),
+  SendReview: c => ({ ...REVISION(c), decision: 'comment', commentIds: [] }),
   ListDraftComments: c => ({ ...R(c), draft: 1 }),
   AddDraftComment: c => ({
     ...R(c),
@@ -427,6 +427,7 @@ const REQUESTS: Readonly<Record<string, (c: Context) => unknown>> = {
   GetUnreadCount: () => ({}),
   MarkNotificationsRead: () => ({ ids: ['1'] }),
   GetWhatsAppLink: c => ({ ...REVISION(c), accountId: 'dan' }),
+  ListWhatsAppLinks: REVISION,
   RecordWhatsAppOpened: c => ({ ...REVISION(c), accountId: 'dan' }),
   GetDownloads: R,
   GetApprovalRecordData: R,
@@ -504,6 +505,28 @@ describe('what a redacted role can reach', () => {
     expect(Result.isFailure(missingRevision)).toBe(true)
   })
 
+  test('a people list that is missing or unreadable is refused for drafts and revisions alike (a reply is redacted against it)', async () => {
+    const missing = { getDraft: () => Effect.succeed(null) } as never
+    const garbled = {
+      getDraft: () => Effect.succeed({ people: 'not json {' }),
+    } as never
+    const notAList = {
+      getDraft: () => Effect.succeed({ people: '{"a":1}' }),
+    } as never
+    const fine = {
+      getDraft: () => Effect.succeed({ people: '[]' }),
+    } as never
+    const loaded = {
+      record: { id: 'report-1' },
+      revisions: [{ number: 1, draftNumber: 1 }],
+    } as never
+    for (const db of [missing, garbled, notAList]) {
+      expect(Result.isFailure(await Effect.runPromise(Effect.result(peopleOfDraft(db, 'report-1', 1))))).toBe(true)
+      expect(Result.isFailure(await Effect.runPromise(Effect.result(peopleOfRevision(db, loaded, 1))))).toBe(true)
+    }
+    expect(await Effect.runPromise(peopleOfDraft(fine, 'report-1', 1))).toEqual([])
+  })
+
   describe.each(LEAK_SCENARIOS)('$name', scenario => {
     test('no alias and no unmarked image reaches any response a reviewer can get', async () => {
       const w = await makeWorld(scenario)
@@ -579,7 +602,7 @@ describe('what a redacted role can reach', () => {
           visibility: 'committee',
         }),
       )
-      await w.call('carol', c => c.SendReview({ reportId, revision, decision: 'comment' }))
+      await w.sendReview('carol', reportId, revision, 'comment')
       await w.call('alice', c =>
         c.ReplyToComment({
           reportId,
@@ -631,7 +654,7 @@ describe('what a redacted role can reach', () => {
             }),
           )
         }
-        await w.call('erin', c => c.SendReview({ reportId, revision, decision: 'comment' }))
+        await w.sendReview('erin', reportId, revision, 'comment')
       }
       // NOTE: the case file is retitled after the share: still nothing new
       // reaches a redacted role.

@@ -2106,12 +2106,56 @@ export const reportRepositoryContract = (
       await event('notified', 3)
       await event('notified', 4)
       expect(
-        (await run(r.listEvents(REPORT))).map(e => [e.kind, e.at]),
+        (await run(r.listEvents(REPORT, 100))).map(e => [e.kind, e.at]),
       ).toEqual([
         ['draft_read', 1],
         ['notified', 3],
         ['notified', 4],
       ])
+      // NOTE: bounded: the newest events, oldest first.
+      expect(
+        (await run(r.listEvents(REPORT, 2))).map(e => [e.kind, e.at]),
+      ).toEqual([
+        ['notified', 3],
+        ['notified', 4],
+      ])
+    })
+
+    test('a WhatsApp tap is recorded once per reviewer and revision', async () => {
+      const s = await published()
+      const { r } = s
+      const tap = (accountId: string, revisionNumber: number, at: number) =>
+        run(
+          r.recordEvent({
+            reportId: REPORT,
+            kind: 'whatsapp_opened',
+            accountId,
+            revisionNumber,
+            at,
+          }),
+        )
+      await tap(CAROL, 1, 10)
+      await tap(CAROL, 1, 20)
+      await tap(DAN, 1, 30)
+      await tap(CAROL, 2, 40)
+      expect(
+        (await run(r.listEvents(REPORT, 100))).map(e => [
+          e.accountId,
+          e.revisionNumber,
+          e.at,
+        ]),
+      ).toEqual([
+        [CAROL, 1, 10],
+        [DAN, 1, 30],
+        [CAROL, 2, 40],
+      ])
+    })
+
+    test('accounts are read by ID, only the ones asked for', async () => {
+      const { r } = await setup()
+      const some = await run(r.listAccountsByIds([ALICE, DAN, 'nobody']))
+      expect(some.map(a => a.id).sort()).toEqual([ALICE, DAN].sort())
+      expect(await run(r.listAccountsByIds([]))).toEqual([])
     })
 
     test('the audit log lists newest first, by report and by template', async () => {

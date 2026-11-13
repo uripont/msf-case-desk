@@ -64,8 +64,13 @@ export type EntryField = typeof EntryField.Type
 
 // NOTE: the datetime-local input has no time zone. Case Desk shows times in
 // UTC everywhere, so the field is read and written as UTC.
-export const toDateTimeInput = (instant: number): string =>
-  new Date(instant).toISOString().slice(0, 16)
+export const toDateTimeInput = (instant: number): string => {
+  try {
+    return new Date(instant).toISOString().slice(0, 16)
+  } catch {
+    return ''
+  }
+}
 
 export const fromDateTimeInput = (value: string): Option.Option<number> =>
   pipe(

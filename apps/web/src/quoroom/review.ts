@@ -52,6 +52,9 @@ export type Composer = typeof Composer.Type
 
 export const Dialog = defineTaggedUnion({
   Closed: {},
+  // NOTE: the pending comments are read again from the server when the dialog
+  // opens, so it lists exactly what will be sent.
+  Reading: {},
   Choosing: { maybeDecision: Schema.Option(ReviewDecisionSchema) },
   Sending: { decision: ReviewDecisionSchema },
 })
@@ -154,6 +157,11 @@ export const Message = defineMessageUnion({
   SucceededDeleteComment: { scope: PageScope, commentId: Schema.String },
   FailedDeleteComment: { scope: PageScope, failure: Failure },
   ClickedSendReview: {},
+  SucceededReadPending: {
+    scope: PageScope,
+    comments: Schema.Array(ReviewerCommentView),
+  },
+  FailedReadPending: { scope: PageScope, failure: Failure },
   ChoseDecision: { decision: ReviewDecisionSchema },
   ClickedCancelSend: {},
   ClickedConfirmSend: {},
@@ -178,6 +186,22 @@ const refreshed = (reportId: string, revision: number) =>
     }),
   )
 
+export const ReadPending = Command.define('ReadPending', {
+  args: { scope: PageScope, revision: Schema.Int },
+  messages: [Message.SucceededReadPending, Message.FailedReadPending],
+  execute: ({ scope, scope: { reportId }, revision }) =>
+    withQuoroom(client =>
+      client.ListReviewerComments({ reportId, revision }),
+    ).pipe(
+      Effect.map(comments => Message.SucceededReadPending({ scope, comments })),
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedReadPending({ scope, failure: failureOf(error) }),
+        ),
+      ),
+    ),
+})
+
 export const LoadReview = Command.define('LoadReview', {
   args: { scope: PageScope, revision: Schema.Int },
   messages: [Message.SucceededLoadReview, Message.FailedLoadReview],
@@ -191,9 +215,12 @@ export const LoadReview = Command.define('LoadReview', {
           reportId,
           revision,
         })
-        const comments = yield* client
-          .ListReviewerComments({ reportId, revision })
-          .pipe(Effect.catch(() => Effect.succeed([])))
+        // NOTE: a failure here fails the load: an empty list would show a
+        // review with no comments while some are waiting.
+        const comments = yield* client.ListReviewerComments({
+          reportId,
+          revision,
+        })
         const first = Array.findFirst(
           topLevelSections(version.template),
           section =>
@@ -359,11 +386,12 @@ export const SendReview = Command.define('SendReview', {
     scope: PageScope,
     revision: Schema.Int,
     decision: ReviewDecisionSchema,
+    commentIds: Schema.Array(Schema.String),
   },
   messages: [Message.SucceededSendReview, Message.FailedSendReview],
-  execute: ({ scope, scope: { reportId }, revision, decision }) =>
+  execute: ({ scope, scope: { reportId }, revision, decision, commentIds }) =>
     withQuoroom(client =>
-      client.SendReview({ reportId, revision, decision }),
+      client.SendReview({ reportId, revision, decision, commentIds }),
     ).pipe(
       Effect.map(result => Message.SucceededSendReview({ scope, result })),
       Effect.catch(error =>
@@ -691,9 +719,26 @@ const updateCurrent = (model: Model, message: Message) =>
     }),
     ClickedSendReview: () => ({
       model: modifyFields(model, {
-        dialog: () => Dialog.Choosing({ maybeDecision: Option.none() }),
+        dialog: () => Dialog.Reading(),
         maybeNotice: () => Option.none(),
         maybeSent: () => Option.none(),
+      }),
+      commands: [
+        ReadPending({ scope: pageScopeOf(model), revision: model.revision }),
+      ],
+    }),
+    SucceededReadPending: ({ comments }) =>
+      Dialog.guards.Reading(model.dialog)
+        ? {
+            model: modifyFields(model, {
+              comments: () => comments,
+              dialog: () => Dialog.Choosing({ maybeDecision: Option.none() }),
+            }),
+          }
+        : { model },
+    FailedReadPending: ({ failure }) => ({
+      model: modifyFields(failedWith(model, failure), {
+        dialog: () => Dialog.Closed(),
       }),
     }),
     ChoseDecision: ({ decision }) =>
@@ -712,6 +757,7 @@ const updateCurrent = (model: Model, message: Message) =>
     ClickedConfirmSend: () =>
       Dialog.match<Update.Return<Model, Message>>(model.dialog, {
         Closed: () => ({ model }),
+        Reading: () => ({ model }),
         Sending: () => ({ model }),
         Choosing: ({ maybeDecision }) =>
           Option.match(maybeDecision, {
@@ -725,6 +771,7 @@ const updateCurrent = (model: Model, message: Message) =>
                   scope: pageScopeOf(model),
                   revision: model.revision,
                   decision,
+                  commentIds: Array.map(pendingComments(model), c => c.id),
                 }),
               ],
             }),
@@ -744,6 +791,10 @@ const updateCurrent = (model: Model, message: Message) =>
       model: modifyFields(failedWith(model, failure), {
         dialog: () => Dialog.Closed(),
       }),
+      // NOTE: the list is read again, so what is shown is what is stored.
+      commands: [
+        RefreshReview({ scope: pageScopeOf(model), revision: model.revision }),
+      ],
     }),
     SucceededRefreshReview: ({ outline, comments }) => ({
       model: modifyFields(model, {
@@ -1308,6 +1359,34 @@ const sendDialog = (
 ): Html =>
   Dialog.match(model.dialog, {
     Closed: () => h.empty,
+    Reading: () =>
+      h.section(
+        [
+          h.AriaLabel('Send your review'),
+          h.Role('alertdialog'),
+          h.DataAttribute('dialog', 'send-review'),
+          h.Class(
+            'flex max-w-3xl flex-col gap-4 border-2 border-msf-ink bg-white px-4 py-4',
+          ),
+        ],
+        [
+          h.h2(
+            [h.Class('text-2xl font-black text-msf-black')],
+            ['Send your review'],
+          ),
+          h.p(
+            [h.Class('text-lg text-msf-ink'), h.Role('status')],
+            ['Checking your comments…'],
+          ),
+          actionButton(
+            h,
+            'Cancel',
+            'Cancel, do not send',
+            Message.ClickedCancelSend(),
+            false,
+          ),
+        ],
+      ),
     Choosing: ({ maybeDecision }) =>
       sendDialogBody(h, model, outline, template, maybeDecision, false),
     Sending: ({ decision }) =>

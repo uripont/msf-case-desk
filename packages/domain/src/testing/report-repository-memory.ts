@@ -716,11 +716,15 @@ export const makeMemoryReportRepository = (
                 )
                 .sort(byKey(r => r.sentAt))
                 .pop()
-              const mine = pending.find(
-                q => q.roundId === round.id && q.reviewerId === userId,
-              )
+              const isOpen = round.state === 'open'
+              const mine = isOpen
+                ? pending.find(
+                    q => q.roundId === round.id && q.reviewerId === userId,
+                  )
+                : undefined
               const pendingComments = comments.filter(
                 c =>
+                  isOpen &&
                   c.roundId === round.id &&
                   c.authorId === userId &&
                   c.reviewId === null,
@@ -769,6 +773,13 @@ export const makeMemoryReportRepository = (
               ),
             )
             .slice(options.offset, options.offset + options.limit),
+        ),
+      listAccountsByIds: userIds =>
+        Effect.sync(() =>
+          users
+            .filter(u => userIds.includes(u.id))
+            .sort(byKey(u => u.email))
+            .map(accountRecord),
         ),
       listAccounts: () =>
         Effect.sync(() =>
@@ -1218,6 +1229,21 @@ export const makeMemoryReportRepository = (
               committeeMembers.push({ committeeId: input.id, userId }),
             )
           }
+          const removing = new Set(input.removeMemberIds ?? [])
+          if (removing.size > 0) {
+            committeeMembers = committeeMembers.filter(
+              m => m.committeeId !== input.id || !removing.has(m.userId),
+            )
+          }
+          new Set(input.addMemberIds ?? []).forEach(userId => {
+            if (
+              !committeeMembers.some(
+                m => m.committeeId === input.id && m.userId === userId,
+              )
+            ) {
+              committeeMembers.push({ committeeId: input.id, userId })
+            }
+          })
           addAudit(input.audit)
           return true
         }),
@@ -2231,6 +2257,7 @@ export const makeMemoryReportRepository = (
             removedBy: input.removedBy,
           }
           skipJobsOf(input.roundId, input.userId)
+          addJobs(input.reportId, input.roundId, input.jobs ?? [], input.now)
           addAudit(input.audit)
           if (decision !== undefined) applyDecision(decision)
           return { _tag: 'Removed' } as const
@@ -2321,7 +2348,8 @@ export const makeMemoryReportRepository = (
             c =>
               c.id === input.id &&
               c.authorId === input.reviewerId &&
-              c.reviewId === null,
+              c.reviewId === null &&
+              rounds.find(r => r.id === c.roundId)?.state === 'open',
           )
           if (index < 0) return false
           comments[index] = {
@@ -2343,7 +2371,10 @@ export const makeMemoryReportRepository = (
         Effect.sync(() => {
           const index = comments.findIndex(
             c =>
-              c.id === id && c.authorId === reviewerId && c.reviewId === null,
+              c.id === id &&
+              c.authorId === reviewerId &&
+              c.reviewId === null &&
+              rounds.find(r => r.id === c.roundId)?.state === 'open',
           )
           if (index < 0) return false
           comments.splice(index, 1)
@@ -2586,7 +2617,10 @@ export const makeMemoryReportRepository = (
         }),
       recordEvent: event =>
         Effect.sync(() => {
-          const once = event.kind === 'draft_read' || event.kind === 'read'
+          const once =
+            event.kind === 'draft_read' ||
+            event.kind === 'read' ||
+            event.kind === 'whatsapp_opened'
           if (
             once &&
             events.some(
@@ -2612,8 +2646,10 @@ export const makeMemoryReportRepository = (
             at: event.at,
           })
         }),
-      listEvents: reportId =>
-        Effect.sync(() => events.filter(e => e.reportId === reportId)),
+      listEvents: (reportId, limit) =>
+        Effect.sync(() =>
+          events.filter(e => e.reportId === reportId).slice(-limit),
+        ),
       appendAudit: input => Effect.sync(() => addAudit(input)),
       listAudit: filter =>
         Effect.sync(() =>

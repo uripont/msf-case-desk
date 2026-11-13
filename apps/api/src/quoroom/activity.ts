@@ -11,6 +11,7 @@ import {
   applyEvent,
   buildGrid,
   checkNewAuthor,
+  deadlineTooFar,
   draftLabel,
   draftingRoleOf,
   revisionTitle,
@@ -31,7 +32,7 @@ import {
   timeZoneOk,
   validation,
 } from './core'
-import { auditOf, member } from './support'
+import { auditOf, deadlineTooFarFailure, member } from './support'
 import { roundViewOf } from './views'
 
 // NOTE: Report extras (co-authors, case file title, deadline, removing a
@@ -42,13 +43,18 @@ type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
 
 // ---- Events ------------------------------------------------------------------------------------
 
+// NOTE: the log of a report is read bounded: the newest events. Reads and
+// WhatsApp taps are stored once per person, so only the repeatable kinds
+// (sent, reminded) can grow, and slowly.
+const EVENT_LIMIT = 2000
+
 // NOTE: what the grid and the approval record read: the log of the report with
 // times. Drafts shared come from the drafts, the reads and sends from the event
 // table, the rest from what is stored. Two reads.
 const eventsFor = (db: Store, loaded: Loaded) =>
   Effect.gen(function* () {
     const drafts = yield* db.listDrafts(loaded.record.id)
-    const logged = yield* db.listEvents(loaded.record.id)
+    const logged = yield* db.listEvents(loaded.record.id, EVENT_LIMIT)
     const extra: Array<ReportEvent> = []
     for (const draft of drafts) {
       if (draft.number >= 1 && draft.authorId !== null) {
@@ -125,18 +131,24 @@ const metaOf = (text: string): Record<string, string | number | boolean> => {
 
 // ---- WhatsApp ----------------------------------------------------------------------------------
 
-const when = (at: number, zone: string): string => {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: zone,
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(at)
-  const part = (type: string) => parts.find(entry => entry.type === type)?.value ?? ''
-  const city = (zone.split('/').pop() ?? zone).replaceAll('_', ' ')
-  return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')} ${city} time`
+// NOTE: never throws, whatever was stored: a time or a zone `Intl` cannot
+// format reads as a plain "its deadline".
+export const when = (at: number, zone: string): string => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(at)
+    const part = (type: string) => parts.find(entry => entry.type === type)?.value ?? ''
+    const city = (zone.split('/').pop() ?? zone).replaceAll('_', ' ')
+    return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')} ${city} time`
+  } catch {
+    return 'its deadline'
+  }
 }
 
 const originOf = (headers: Readonly<Record<string, string | undefined>>): string => {
@@ -183,6 +195,7 @@ export const activityHandlers: Pick<
   | 'GetUnreadCount'
   | 'MarkNotificationsRead'
   | 'GetWhatsAppLink'
+  | 'ListWhatsAppLinks'
   | 'RecordWhatsAppOpened'
   | 'GetDownloads'
   | 'GetApprovalRecordData'
@@ -272,6 +285,9 @@ export const activityHandlers: Pick<
       if (entry === undefined) return yield* Effect.fail(new NotFound())
       if (!timeZoneOk(deadline.timeZone)) {
         return yield* Effect.fail(validation('input', 'unknown_time_zone', ['deadline', 'timeZone']))
+      }
+      if (deadlineTooFar(deadline.at, loaded.now)) {
+        return yield* Effect.fail(deadlineTooFarFailure())
       }
       const applied = applyEvent(
         { template: loaded.template, authors: loaded.authors, now: loaded.now },
@@ -383,20 +399,22 @@ export const activityHandlers: Pick<
             }
           : each,
       )
+      // NOTE: the removed reviewer is told (D6), and when the removal decides
+      // the round the outcome jobs go in the same batch.
+      const jobs = yield* jobsFor(db, yield* QuoroomConfig, {
+        template: loaded.template,
+        flow: applied.success,
+        authors: loaded.authors,
+        approvalWatchers: new Set(),
+        revisions: loaded.revisions,
+        rounds: decidedRounds,
+        reviews: loaded.reviews,
+        extraEvents: [],
+        reportId,
+        now: loaded.now,
+      })
       let decide: Parameters<typeof db.removeParticipant>[0]['decide']
       if (decidedNow) {
-        const jobs = yield* jobsFor(db, yield* QuoroomConfig, {
-          template: loaded.template,
-          flow: applied.success,
-          authors: loaded.authors,
-          approvalWatchers: new Set(),
-          revisions: loaded.revisions,
-          rounds: decidedRounds,
-          reviews: loaded.reviews,
-          extraEvents: [],
-          reportId,
-          now: loaded.now,
-        })
         decide = {
           decidedBy: 'rule_met',
           toState: applied.success.state,
@@ -418,6 +436,7 @@ export const activityHandlers: Pick<
         reportId,
         userId: accountId,
         removedBy: user.id,
+        jobs,
         now: loaded.now,
         audit: auditOf(loaded.now, user.id, 'round.reviewer_removed', reportId, {
           revisionNumber: revision,
@@ -462,7 +481,7 @@ export const activityHandlers: Pick<
 
   // NOTE: newest first. A report's log is for its authors, a template's for
   // template editors and the theme's for administrators.
-  ListAuditEvents: ({ subject, before, limit }) =>
+  ListAuditEvents: ({ subject, before, kind, limit }) =>
     Effect.gen(function* () {
       const db = yield* store
       if (subject.kind === 'report') {
@@ -478,11 +497,21 @@ export const activityHandlers: Pick<
         ...(subject.kind === 'report' ? { reportId: subject.reportId } : {}),
         ...(subject.kind === 'template' ? { templateId: subject.templateId } : {}),
         ...(subject.kind === 'theme' ? { actionPrefix: 'theme.' } : {}),
+        // NOTE: the kind filter is part of the query, so a page holds `limit`
+        // events of that kind, not `limit` events of which some are shown.
+        ...(kind !== undefined && subject.kind === 'report'
+          ? { actionPrefix: `${kind}.` }
+          : {}),
         ...(cursor === undefined || !Number.isFinite(cursor) ? {} : { before: cursor }),
         limit: limit + 1,
       })
       const page = rows.slice(0, limit)
-      const accounts = yield* db.listAccounts()
+      // NOTE: only the accounts named on this page are read.
+      const accounts = yield* db.listAccountsByIds([
+        ...new Set(
+          page.flatMap(row => (row.actorId === null ? [] : [row.actorId])),
+        ),
+      ])
       const names = new Map(accounts.map(account => [account.id, account.name]))
       return {
         events: page.map(row => ({
@@ -610,6 +639,30 @@ export const activityHandlers: Pick<
       }
     }),
 
+  // NOTE: one read of the round and one of the profiles of its people, however
+  // many there are. It says who can be sent a link, never the numbers: a number
+  // is read only when the author taps for that person (`GetWhatsAppLink`).
+  ListWhatsAppLinks: ({ reportId, revision }) =>
+    Effect.gen(function* () {
+      const { loaded, db } = yield* member(reportId, { type: 'publish_revision' })
+      const entry = roundOf(loaded, revision)
+      if (entry === undefined) return yield* Effect.fail(new NotFound())
+      if (entry.round.state !== 'open') return []
+      const active = entry.participants.filter(p => p.removedAt === null)
+      const profiles = yield* db.listProfiles(active.map(p => p.userId))
+      const byId = new Map(profiles.map(profile => [profile.userId, profile]))
+      return active.map(p => {
+        const profile = byId.get(p.userId)
+        return {
+          accountId: p.userId,
+          ready:
+            profile !== undefined &&
+            profile.phone !== null &&
+            profile.whatsappConsent === true,
+        }
+      })
+    }),
+
   RecordWhatsAppOpened: ({ reportId, revision, accountId }) =>
     Effect.gen(function* () {
       const { loaded, db } = yield* member(reportId, { type: 'publish_revision' })
@@ -670,7 +723,9 @@ export const activityHandlers: Pick<
           title: loaded.record.caseFile.title,
         },
         flow: loaded.flow,
-        events,
+        // NOTE: a removal is in the grid and the audit log; the approval
+        // record's schema lists the facts of the decisions.
+        events: events.filter(event => event.type !== 'reviewer_removed'),
         authors: loaded.authors,
         accountNames: Object.fromEntries(names),
       }

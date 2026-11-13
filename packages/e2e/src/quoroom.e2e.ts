@@ -18,11 +18,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 
-import { type Browser, type Page, chromium } from 'playwright-core'
+import { type Browser, type Locator, type Page, chromium } from 'playwright-core'
 
 const root = join(import.meta.dirname, '../../..')
 const shots = process.env.E2E_SHOTS ?? '/tmp/quoroom-e2e-screens'
 const chromePath = process.env.E2E_CHROMIUM ?? '/usr/bin/chromium'
+
+// NOTE: A committee member is added by a click that the server answers; the
+// box shows the answer. A member change is one add operation, so a second
+// click while the first is still in flight is harmless, and a click that did
+// not take is tried again instead of being waited for.
+const ensureChecked = async (box: Locator, what: string): Promise<void> => {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await box.check({ timeout: 4000 })
+      return
+    } catch {
+      if (await box.isChecked()) return
+    }
+  }
+  assert.ok(await box.isChecked(), what)
+}
 const PASSWORD = 'synthetic-pass-1234'
 
 const freePort = (): Promise<number> =>
@@ -409,11 +425,7 @@ const main = async (): Promise<void> => {
       await ana.getByRole('button', { name: 'Create committee' }).click()
       await ana.getByRole('heading', { name: 'Synthetic Committee' }).waitFor()
       const member = ana.getByLabel('Rae Viewer in Synthetic Committee')
-      await member.click()
-      for (let attempt = 0; attempt < 40 && !(await member.isChecked()); attempt += 1) {
-        await ana.waitForTimeout(250)
-      }
-      assert.ok(await member.isChecked(), 'the member was not added')
+      await ensureChecked(member, 'the member was not added')
       await shot(ana, 'ana-5-committee')
     })
 
@@ -1792,11 +1804,7 @@ const main = async (): Promise<void> => {
       await pia.getByRole('button', { name: 'Create committee' }).click()
       await pia.getByRole('heading', { name: 'Publishing Committee' }).waitFor()
       const member = pia.getByLabel('Pat Panel in Publishing Committee')
-      await member.click()
-      for (let attempt = 0; attempt < 40 && !(await member.isChecked()); attempt += 1) {
-        await pia.waitForTimeout(250)
-      }
-      assert.ok(await member.isChecked(), 'the member was not added')
+      await ensureChecked(member, 'the member was not added')
 
       const pat = await person(launched)
       await activate(pat, patLink, 'pat')
@@ -1853,6 +1861,9 @@ const main = async (): Promise<void> => {
       await pia.locator('[data-current-round="1"]').waitFor()
       await pia.getByText(/Due .*left\./).first().waitFor()
       await noSideScroll(pia)
+      // NOTE: no number is on the page until the author taps for that person.
+      assert.equal(await pia.locator('a[href^="https://wa.me/"]').count(), 0, 'a number is on the page before the tap')
+      await pia.getByRole('button', { name: 'Prepare the WhatsApp message for Pat Panel' }).click()
       const button = pia.getByRole('link', { name: 'Send on WhatsApp to Pat Panel' })
       await button.waitFor()
       const href = (await button.getAttribute('href')) ?? ''
@@ -1906,11 +1917,7 @@ const main = async (): Promise<void> => {
       await pia.getByRole('heading', { name: 'Review Committee' }).waitFor()
       for (const name of ['Rhea Reviewer', 'Ravi Reviewer']) {
         const member = pia.getByLabel(`${name} in Review Committee`)
-        await member.click()
-        for (let attempt = 0; attempt < 40 && !(await member.isChecked()); attempt += 1) {
-          await pia.waitForTimeout(250)
-        }
-        assert.ok(await member.isChecked(), `${name} was not added`)
+        await ensureChecked(member, `${name} was not added`)
       }
 
       const rheaFirst = await person(launched)
@@ -2020,7 +2027,10 @@ const main = async (): Promise<void> => {
       // R2 at desktop width cannot see them before they are sent.
       await ravi.goto(`${pilotUrl}/r/${reportId}/rev/1`)
       await ravi.getByRole('heading', { name: 'Revision 1' }).waitFor()
-      await ravi.getByText(PHRASE, { exact: false }).first().waitFor()
+      await ravi.getByText(PHRASE, { exact: false }).first().waitFor().catch(async error => {
+        console.log((await ravi.locator('main').innerText()).slice(0, 900))
+        throw error
+      })
       await ravi.getByText('No comments here yet.').waitFor()
       assert.equal(await ravi.locator('[data-comment]').count(), 0, 'a pending comment is visible to another reviewer')
       const beside = await ravi.evaluate(() => {
@@ -2067,6 +2077,266 @@ const main = async (): Promise<void> => {
       await shot(ravi, 'review-7-committee-view-desktop')
       await ravi.context().close()
       await rhea.context().close()
+    })
+    // NOTE: Stage 6d and 6e at 375 px with three accounts: the author (Pia) and
+    // two reviewers (Rhea, Ravi) of one committee. The closing path of a report
+    // whose template has a conclusion, then the grid and the audit log.
+    await step('the closing path on a phone: change request and comments, Revision 2, approvals on Revision 2 only, the round decided, the conclusion, the closing revision, the archive; then the grid and the audit log', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      const signedIn = async (path: string, email: string): Promise<Page> => {
+        const page = await person(launched)
+        await page.goto(`${pilotUrl}${path}`)
+        await page.getByRole('heading', { name: 'Sign in' }).waitFor()
+        await page.getByLabel('E-mail').fill(email)
+        await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
+        await page.getByRole('button', { name: 'Sign in' }).click()
+        return page
+      }
+      const doc = (text: string): Json => ({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+      })
+      const PHRASE = 'storage of the tents'
+
+      // A report with Revision 1 published to the Review Committee.
+      await pia.goto(`${pilotUrl}/reports`)
+      await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pia
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Intake and initial assessment (version 1)' })
+      await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0008')
+      await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic closing case file')
+      await pia.getByRole('button', { name: 'Create report' }).click()
+      await pia.getByRole('link', { name: 'Open report PIL-0008' }).click()
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const reportId = reportIdOf(pia)
+      // Bea is a co-author who never opens the report until it is archived.
+      await pia.locator('#co-author-choice').selectOption({ label: 'Bea Second' })
+      await pia.getByRole('button', { name: 'Add co-author' }).click()
+      await pia.getByText(/Bea Second/).first().waitFor()
+      const saveSection = async (sectionId: string, itemId: string, type: 'text' | 'rich_text', text: string): Promise<void> => {
+        let counter: number
+        try {
+          counter = (await rpc(pia, 'StartWorkingCopy', { reportId })).saveCounter
+        } catch {
+          counter = (await rpc(pia, 'GetWorkingCopy', { reportId })).saveCounter
+        }
+        await rpc(pia, 'SaveSection', {
+          reportId,
+          sectionId,
+          saveCounter: counter,
+          content: {
+            values: { [itemId]: type === 'text' ? { type, text } : { type, doc: doc(text) } },
+            sections: {},
+          },
+        })
+      }
+      await saveSection('case-details', 'investigator', 'text', `The report names the ${PHRASE} at the camp.`)
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.getByRole('link', { name: /^Share as Draft/ }).click()
+      await pia.locator('[data-preview="redacted"]').first().waitFor()
+      await pia.getByLabel('Publish this draft for review as soon as it is shared').check()
+      await pia.getByRole('checkbox', { name: /^Review Committee/ }).check()
+      await pia
+        .getByRole('button', { name: /^Confirm the redacted version, share as Draft \d+ and publish/ })
+        .click()
+      await pia.locator('[data-published="1"]').waitFor()
+
+      // Revision 1: Rhea comments on a phrase and, for the committee, on the
+      // section, and asks for changes.
+      const rhea = await signedIn(`/r/${reportId}/rev/1`, 'rhea.reviewer@case-desk.test')
+      await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      await rhea.getByText(PHRASE, { exact: false }).first().waitFor()
+      await rhea.evaluate(phrase => {
+        const root = document.querySelector('[data-comment-item="investigator"]')
+        if (root === null) throw new Error('no item to select in')
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+          const at = (node.textContent ?? '').indexOf(phrase)
+          if (at >= 0) {
+            const range = document.createRange()
+            range.setStart(node, at)
+            range.setEnd(node, at + phrase.length)
+            const selection = window.getSelection()
+            selection?.removeAllRanges()
+            selection?.addRange(range)
+            return
+          }
+        }
+        throw new Error('the phrase is not in the item')
+      }, PHRASE)
+      await rhea.locator('[data-selection-bar]').waitFor()
+      await rhea.getByRole('button', { name: 'Comment on the selected text' }).click()
+      await rhea.getByRole('textbox', { name: 'Your comment' }).fill('Where are the tents stored?')
+      await rhea.getByRole('button', { name: 'Add comment' }).click()
+      await rhea.locator('[data-comment][data-visibility="authors"]').waitFor()
+      await rhea.getByRole('button', { name: 'Comment on this section' }).click()
+      await rhea.getByRole('textbox', { name: 'Your comment' }).fill('The committee should look at the storage.')
+      await rhea.getByRole('radio', { name: /The whole committee/ }).check()
+      await rhea.getByRole('button', { name: 'Add comment' }).click()
+      await rhea.locator('[data-comment][data-visibility="committee"]').waitFor()
+      const send = async (page: Page, decision: RegExp, sent: string): Promise<void> => {
+        await page.getByRole('button', { name: 'Send your review' }).click()
+        await page.getByRole('radio', { name: decision }).check()
+        await page.getByRole('button', { name: 'Confirm and send review' }).click()
+        await page.locator(`[data-review-sent="${sent}"]`).waitFor()
+      }
+      await send(rhea, /Request changes/, 'request_changes')
+
+      // The grid on a phone: the table scrolls inside its box, never the page,
+      // and shows Rhea's decision with its time and Ravi's silence.
+      await pia.goto(`${pilotUrl}/r/${reportId}/grid`)
+      await pia.getByRole('heading', { name: 'Status grid' }).waitFor()
+      await pia.getByRole('heading', { name: 'Revision 1, from Draft 1' }).waitFor()
+      await pia.locator('[data-reviewer][data-removed="false"]').first().waitFor()
+      await noSideScroll(pia)
+      const scrolls = await pia.evaluate(() => {
+        const box = document.querySelector('[role="region"][aria-label="Reviewers of Revision 1"]')
+        return box === null ? undefined : box.scrollWidth > box.clientWidth
+      })
+      assert.equal(scrolls, true, 'the reviewer table does not scroll inside its own box at 375 px')
+      assert.ok((await pia.getByText(/^Asked for changes, \d/).count()) >= 1, 'no decision with a time in the grid')
+      await pia.getByText('No decision yet').waitFor()
+      await shot(pia, 'closing-1-grid-375')
+
+      // A deadline is extended from the grid, and the extension is logged.
+      const later = new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10)
+      await pia.getByLabel('New date').fill(later)
+      await pia.getByRole('button', { name: 'Extend the deadline' }).click()
+      await pia.getByText('The deadline was extended. The reviewers are told.').waitFor()
+
+      // Revision 2 replaces the round.
+      await saveSection('case-details', 'investigator', 'text', 'The tents are now stored in the covered area of the camp.')
+      await pia.goto(`${pilotUrl}/r/${reportId}/share`)
+      await pia.locator('[data-preview="redacted"]').first().waitFor()
+      await pia.getByRole('button', { name: /^Confirm the redacted version and share as Draft/ }).click()
+      await pia.getByText(/^Shared as Draft \d+\.$/).waitFor()
+      await pia.goto(`${pilotUrl}/r/${reportId}/publish`)
+      await pia.getByRole('heading', { name: 'Publish Revision 2' }).waitFor()
+      await pia.getByRole('checkbox', { name: /^Review Committee/ }).check()
+      await pia.getByRole('button', { name: 'Publish Revision 2' }).click()
+      await pia.locator('[data-published="2"]').waitFor()
+
+      // A review of Revision 1 is refused, on the page and by the server.
+      await rhea.reload()
+      await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      await rhea.locator('[data-banner="superseded"]').waitFor()
+      assert.equal(await rhea.getByRole('button', { name: 'Send your review' }).count(), 0, 'a review can be started on a superseded revision')
+      await assert.rejects(() => rpc(rhea, 'SendReview', { reportId, revision: 1, decision: 'approve', commentIds: [] }))
+
+      // Approvals on Revision 2 only: the round is decided by its rule.
+      const approve = async (page: Page, revision: number): Promise<void> => {
+        await page.goto(`${pilotUrl}/r/${reportId}/rev/${revision}`)
+        await page.getByRole('heading', { name: new RegExp(`^Revision ${revision}`) }).waitFor()
+        await send(page, /Approve/, 'approve')
+      }
+      await approve(rhea, 2)
+      const ravi = await signedIn(`/r/${reportId}/rev/2`, 'ravi.reviewer@case-desk.test')
+      await ravi.getByRole('heading', { name: 'Revision 2' }).waitFor()
+      await send(ravi, /Approve/, 'approve')
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.locator('[data-outcome="decided"]').waitFor()
+      await pia.getByRole('heading', { name: 'Revision 2 was approved' }).waitFor()
+      assert.equal(await pia.getByRole('link', { name: 'Publish another revision' }).count(), 1)
+      await noSideScroll(pia)
+      await shot(pia, 'closing-2-decided-375')
+      await rhea.reload()
+      await rhea.getByText('This round is decided', { exact: false }).waitFor()
+      assert.equal(await rhea.getByRole('button', { name: 'Send your review' }).count(), 0, 'a decided round takes a review')
+
+      // The conclusion: asked first, then only the conclusion can be written.
+      await pia.getByRole('button', { name: 'Start the conclusion' }).click()
+      await pia.getByRole('alertdialog', { name: 'Start the conclusion?' }).waitFor()
+      await pia.getByRole('alertdialog', { name: 'Start the conclusion?' }).getByRole('button', { name: 'Start the conclusion' }).click()
+      await pia.locator('[data-outcome="concluding"]').waitFor()
+      await pia.getByRole('heading', { name: 'The conclusion is being written' }).waitFor()
+      await openIn(pia, /^Case details/)
+      await pia.getByText('The report is concluding. Only the conclusion can be edited now.', { exact: false }).first().waitFor()
+      await shot(pia, 'closing-3-concluding-375')
+      const copy = await rpc(pia, 'GetWorkingCopy', { reportId })
+      await assert.rejects(() =>
+        rpc(pia, 'SaveSection', {
+          reportId,
+          sectionId: 'case-details',
+          saveCounter: copy.saveCounter,
+          content: { values: { investigator: { type: 'text', text: 'No.' } }, sections: {} },
+        }),
+      )
+      await saveSection('committee-conclusion', 'conclusion-decision', 'rich_text', 'The committee closed the case without further action.')
+
+      // The closing revision: shared and published in one go.
+      await pia.goto(`${pilotUrl}/r/${reportId}/share`)
+      await pia.locator('[data-preview="redacted"]').first().waitFor()
+      await pia.getByLabel('Publish this draft for review as soon as it is shared').check()
+      await pia.getByRole('checkbox', { name: /^Review Committee/ }).check()
+      await pia
+        .getByRole('button', { name: /^Confirm the redacted version, share as Draft \d+ and publish/ })
+        .click()
+      await pia.locator('[data-published="3"]').waitFor()
+      await approve(rhea, 3)
+      await approve(ravi, 3)
+
+      // Archived: read-only everywhere.
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.getByRole('heading', { name: 'This report is archived' }).waitFor({ timeout: 8000 }).catch(async error => {
+        console.log((await pia.locator('main').innerText()).slice(0, 900))
+        throw error
+      })
+      assert.equal(await pia.getByRole('link', { name: /^Share as Draft/ }).count(), 0, 'an archived report offers to share')
+      assert.equal(await pia.getByRole('link', { name: 'Publish for review' }).count(), 0)
+      await pia.getByText('Archived', { exact: false }).first().waitFor()
+      await openIn(pia, /^Case details/)
+      await pia.getByText('This report is archived. It can be read, not changed.', { exact: false }).first().waitFor()
+      const archivedCopy = await rpc(pia, 'GetWorkingCopy', { reportId })
+      await assert.rejects(() =>
+        rpc(pia, 'SaveSection', {
+          reportId,
+          sectionId: 'committee-conclusion',
+          saveCounter: archivedCopy.saveCounter,
+          content: { values: {}, sections: {} },
+        }),
+      )
+      await rhea.reload()
+      await rhea.getByText('This round is decided', { exact: false }).waitFor()
+      assert.equal(await rhea.getByRole('button', { name: 'Send your review' }).count(), 0)
+      await shot(pia, 'closing-4-archived-375')
+
+      // A co-author who never opened the report reads the archived report from
+      // the closing revision's draft, with no working copy of their own.
+      const bea = await signedIn(`/r/${reportId}`, 'bea.second@case-desk.test')
+      await bea.getByRole('heading', { name: 'This report is archived' }).waitFor({ timeout: 8000 })
+      await openIn(bea, /Behaviour committee conclusion/)
+      await bea.getByText('The committee closed the case without further action.', { exact: false }).first().waitFor()
+      await assert.rejects(() => rpc(bea, 'GetWorkingCopy', { reportId }), 'reading the archived report started a working copy')
+      await bea.context().close()
+
+      // The grid at phone and desktop width, and the audit log with its filter.
+      await pia.goto(`${pilotUrl}/r/${reportId}/grid`)
+      await pia.getByRole('heading', { name: 'Revision 3 (closing), from Draft 3' }).waitFor()
+      await pia.getByText('Decided, the approval rule was met').first().waitFor()
+      assert.equal(await pia.getByRole('button', { name: 'Extend the deadline' }).count(), 0, 'an archived report offers round actions')
+      await shot(pia, 'closing-5-grid-archived-375')
+      await pia.setViewportSize({ width: 1280, height: 900 })
+      await pia.getByRole('heading', { name: 'Revision 1, from Draft 1' }).waitFor()
+      await noSideScroll(pia)
+      await shot(pia, 'closing-6-grid-1280')
+      await pia.setViewportSize({ width: 375, height: 812 })
+      await pia.goto(`${pilotUrl}/r/${reportId}/audit`)
+      await pia.getByRole('heading', { name: 'Audit log' }).waitFor()
+      await pia.getByText('The deadline was extended').waitFor()
+      await pia.getByLabel('Show').selectOption('revision')
+      // NOTE: the filter is the server's: the list is replaced by the events of that kind.
+      await pia.waitForFunction(() => {
+        const rows = [...document.querySelectorAll('[data-audit]')]
+        return rows.length > 0 && rows.every(row => (row.getAttribute('data-audit') ?? '').startsWith('revision.'))
+      })
+      assert.ok((await pia.locator('[data-audit="revision.published"]').count()) === 3, 'three revisions published')
+      assert.equal(await pia.locator('[data-audit="round.decided"]').count(), 0, 'the filter shows another kind')
+      await noSideScroll(pia)
+      await shot(pia, 'closing-7-audit-375')
+      await rhea.context().close()
+      await ravi.context().close()
     })
   } finally {
     await browser?.close()

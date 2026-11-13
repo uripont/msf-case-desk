@@ -139,6 +139,8 @@ export const CONFLICT_REASONS = [
   'share_incomplete',
   // Another request changed the same thing first.
   'changed_meanwhile',
+  // The pending comments are not the ones the reviewer saw when sending.
+  'pending_changed',
 ] as const
 
 export class Conflict extends Schema.TaggedError<Conflict>()('Conflict', {

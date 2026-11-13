@@ -801,6 +801,10 @@ export interface ReportRepositoryApi {
   readonly listGrants: (userId?: string) => Eff<ReadonlyArray<GrantRecord>>
   readonly listAccounts: () => Eff<ReadonlyArray<AccountRecord>>
   readonly getAccount: (userId: string) => Eff<AccountRecord | null>
+  // NOTE: only the accounts asked for, one query.
+  readonly listAccountsByIds: (
+    userIds: ReadonlyArray<string>,
+  ) => Eff<ReadonlyArray<AccountRecord>>
   readonly findAccountByEmail: (email: string) => Eff<AccountRecord | null>
   readonly updateAccountName: (userId: string, name: string) => Eff<boolean>
   readonly createAccount: (
@@ -946,6 +950,9 @@ export interface ReportRepositoryApi {
       name?: string
       archived?: boolean
       memberIds?: ReadonlyArray<string>
+      // NOTE: applied on the stored list, in one batch, removals first.
+      addMemberIds?: ReadonlyArray<string>
+      removeMemberIds?: ReadonlyArray<string>
       now: number
       audit: AuditInput
     }>,
@@ -1168,6 +1175,9 @@ export interface ReportRepositoryApi {
       reportId: string
       userId: string
       removedBy: string
+      // NOTE: the notification jobs the removal brings (the removed reviewer
+      // is told), written in the same batch; existing keys are ignored.
+      jobs?: ReadonlyArray<NotificationJob>
       now: number
       audit: AuditInput
       // NOTE: when the removal makes the rule met, the same batch decides the
@@ -1300,7 +1310,11 @@ export interface ReportRepositoryApi {
     now: number,
   ) => Eff<number>
   readonly recordEvent: (event: EventInput) => Eff<void>
-  readonly listEvents: (reportId: string) => Eff<ReadonlyArray<EventRecord>>
+  // NOTE: bounded: the newest `limit` events, oldest first.
+  readonly listEvents: (
+    reportId: string,
+    limit: number,
+  ) => Eff<ReadonlyArray<EventRecord>>
   readonly appendAudit: (audit: AuditInput) => Eff<void>
   readonly listAudit: (filter: AuditFilter) => Eff<ReadonlyArray<AuditRecord>>
 
@@ -1382,6 +1396,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   listGrants: 1,
   listAccounts: 1,
   getAccount: 1,
+  listAccountsByIds: 1,
   findAccountByEmail: 1,
   updateAccountName: 2,
   createAccount: 10,

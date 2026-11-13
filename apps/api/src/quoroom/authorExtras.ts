@@ -2,7 +2,6 @@ import { Effect, Result } from 'effect'
 import type { RpcGroup } from 'effect/rpc'
 
 import {
-  type Person,
   type QuoroomRpcs,
   type ReplyRecord,
   type StoreCommentRecord,
@@ -12,6 +11,7 @@ import {
   NotFound,
   applyEvent,
   canSeeComment,
+  checkSave,
   redactorFor,
   templateNodes,
 } from '@case-desk/domain'
@@ -27,7 +27,8 @@ import {
   requireAuthor,
   validation,
 } from './core'
-import { auditOf, member, peopleOf } from './support'
+import { peopleOfDraft, peopleOfRevision } from './reviewer'
+import { auditOf, member } from './support'
 import { roundViewOf, summaryOf } from './views'
 
 // NOTE: Author-side procedures for comments, rounds and images.
@@ -129,20 +130,6 @@ const listFor = (
         }),
       )
       .map(comment => viewOfComment(comment, listed.replies))
-  })
-
-const peopleOfDraft = (db: Store, loaded: Loaded, draft: number) =>
-  Effect.gen(function* () {
-    const found = yield* db.getDraft(loaded.record.id, draft)
-    return found === null ? ([] as ReadonlyArray<Person>) : peopleOf(found.people)
-  })
-
-const peopleOfRevision = (db: Store, loaded: Loaded, revision: number) =>
-  Effect.gen(function* () {
-    const published = loaded.revisions.find(entry => entry.number === revision)
-    if (published === undefined) return [] as ReadonlyArray<Person>
-    const draft = yield* db.getDraft(loaded.record.id, published.draftNumber)
-    return draft === null ? [] : peopleOf(draft.people)
   })
 
 // NOTE: sets `safeToShare` on every figure of one image, anywhere in a
@@ -308,6 +295,23 @@ export const authorExtraHandlers: Pick<
           figure => figure.imageId === imageId,
         ),
       )
+      // NOTE: marking an image changes the sections that hold it, so the save
+      // rule of the state applies to each of them (while concluding, only the
+      // conclusion).
+      for (const row of touched) {
+        const checked = checkSave(loaded.template, loaded.record.state, {
+          kind: 'section',
+          sectionId: row.sectionId,
+        })
+        if (Result.isFailure(checked)) {
+          return yield* Effect.fail(
+            new NotAllowedInState({
+              state: loaded.record.state,
+              code: checked.failure.code,
+            }),
+          )
+        }
+      }
       const clock = yield* QuoroomClock
       const now = yield* clock.now
       if (touched.length === 0) {
@@ -333,7 +337,6 @@ export const authorExtraHandlers: Pick<
       // NOTE: withdrawing is immediate for every published revision; marking
       // safe takes effect when a draft with the mark is shared.
       if (!safe) yield* db.withdrawImage(reportId, imageId)
-      void loaded
       return {
         saveCounter: outcome.saveCounter,
         savedAt: now,
@@ -426,7 +429,7 @@ export const authorExtraHandlers: Pick<
       }
       const redactor = redactorFor(
         comment.targetKind === 'draft'
-          ? yield* peopleOfDraft(db, loaded, comment.targetNumber)
+          ? yield* peopleOfDraft(db, reportId, comment.targetNumber)
           : yield* peopleOfRevision(db, loaded, comment.targetNumber),
       )
       const added = yield* db.addReply({

@@ -6,6 +6,7 @@ import {
   Duration,
   Effect,
   Option,
+  Order,
   Record,
   Result,
   Schema,
@@ -106,6 +107,7 @@ import {
   viewNote,
   viewToggle,
 } from './redactedView'
+import { outcomeOf, outcomeView } from './roundOutcome'
 import { currentRoundOf, revisionsList, roundLine } from './rounds'
 import { PageScope, isCurrentPage } from './scope'
 import {
@@ -204,6 +206,7 @@ export const Confirmation = defineTaggedUnion({
     label: Schema.String,
   },
   ReplaceCopy: {},
+  StartConclusion: {},
   ReapplyEdit: { sectionId: Schema.String, title: Schema.String },
 })
 export type Confirmation = typeof Confirmation.Type
@@ -441,6 +444,16 @@ export const Message = defineMessageUnion({
   },
   TickedDraftingRefresh: {},
   TickedRoundClock: { nowMs: Schema.Int },
+  ClickedStartConclusion: {},
+  ConfirmedStartConclusion: {},
+  SucceededStartConclusion: { scope: Scope },
+  FailedStartConclusion: { scope: Scope, failure: Failure },
+  FailedRefreshRounds: { scope: Scope },
+  SucceededRefreshRounds: {
+    scope: Scope,
+    detail: ReportDetail,
+    revisions: Schema.Array(RevisionHeader),
+  },
   SelectedRichTextRange: {
     sectionKey: Schema.String,
     itemId: Schema.String,
@@ -503,6 +516,50 @@ const readWorkingCopy = (
     }
   })
 
+// NOTE: An archived report is read from the latest revision's draft, never
+// from the private working copy: any co-author can open it, with or without a
+// working copy of their own (the server refuses to start one on an archived
+// report, and a read of a copy that was never started finds nothing).
+const readLatestDraft = (
+  client: QuoroomClient,
+  reportId: string,
+  sectionIds: ReadonlyArray<string>,
+  draft: number,
+) =>
+  Effect.gen(function* () {
+    const outline = yield* client.GetDraftOutline({ reportId, draft })
+    const sections = yield* Effect.forEach(
+      sectionIds,
+      sectionId =>
+        client.GetDraftSection({
+          reportId,
+          draft,
+          sectionId,
+          view: 'original',
+        }),
+      { concurrency: 4 },
+    )
+    const people = yield* client.GetPeople({ reportId, draft })
+    const me = yield* client.GetMe()
+    return {
+      contents: Object.fromEntries(
+        sections
+          .filter(section => hasContent(section.content))
+          .map(section => [section.sectionId, section.content]),
+      ),
+      saveCounter: 0,
+      savedAt: outline.header.sharedAt,
+      copy: {
+        baseDraft: draft,
+        latestDraft: draft,
+        behind: false,
+        hasUnsharedChanges: false,
+      },
+      ownerId: me.id,
+      people: people.people,
+    }
+  })
+
 export const LoadReport = Command.define('LoadReport', {
   args: { scope: Scope },
   messages: [Message.SucceededLoadReport, Message.FailedLoadReport],
@@ -517,13 +574,43 @@ export const LoadReport = Command.define('LoadReport', {
           reportId,
         })
         const template = version.template
-        yield* client.StartWorkingCopy({ reportId })
-        const copy = yield* readWorkingCopy(
-          client,
-          reportId,
-          Array.map(topLevelSections(template), section => section.id),
+        const sectionIds = Array.map(
+          topLevelSections(template),
+          section => section.id,
         )
-        const people = yield* client.GetPeople({ reportId })
+        const isArchived = detail.summary.state === 'archived'
+        // NOTE: the history is needed to find the closing revision's draft of
+        // an archived report, so its failure is not swallowed there.
+        const archivedHistory = isArchived
+          ? yield* client.GetHistory({ reportId })
+          : { drafts: [], revisions: [] }
+        const closing = Array.last(
+          Array.sort(
+            archivedHistory.revisions,
+            Order.mapInput(
+              Order.Number,
+              (revision: { readonly number: number }) => revision.number,
+            ),
+          ),
+        )
+        const opened =
+          isArchived && Option.isSome(closing)
+            ? yield* readLatestDraft(
+                client,
+                reportId,
+                sectionIds,
+                closing.value.draft,
+              )
+            : undefined
+        if (!isArchived) {
+          yield* client.StartWorkingCopy({ reportId })
+        }
+        const copy =
+          opened ?? (yield* readWorkingCopy(client, reportId, sectionIds))
+        const people =
+          opened === undefined
+            ? (yield* client.GetPeople({ reportId })).people
+            : opened.people
         const drafting = yield* client
           .ListDrafting({ reportId })
           .pipe(Effect.catch(() => Effect.succeed([])))
@@ -556,7 +643,7 @@ export const LoadReport = Command.define('LoadReport', {
             units.find(unit => unit.id === detail.summary.caseFile.unit)
               ?.name ?? '',
           contents: copy.contents,
-          people: people.people,
+          people,
           saveCounter: copy.saveCounter,
           savedAt: copy.savedAt,
           copy: copy.copy,
@@ -794,6 +881,48 @@ export const RefreshDrafting = Command.define('RefreshDrafting', {
       Effect.catch(() =>
         Effect.succeed(
           Message.SucceededRefreshDrafting({ scope, drafting: [] }),
+        ),
+      ),
+    ),
+})
+
+// NOTE: The report and its rounds read again: a deadline passed while the
+// screen was open, or the conclusion was just started. The server settles
+// overdue rounds on every read.
+export const RefreshRounds = Command.define('RefreshRounds', {
+  args: { scope: Scope },
+  messages: [Message.SucceededRefreshRounds, Message.FailedRefreshRounds],
+  execute: ({ scope }) =>
+    withQuoroom(client =>
+      Effect.all({
+        detail: client.GetReport({ reportId: scope.reportId }),
+        history: client.GetHistory({ reportId: scope.reportId }),
+      }),
+    ).pipe(
+      Effect.map(({ detail, history }) =>
+        Message.SucceededRefreshRounds({
+          scope,
+          detail,
+          revisions: history.revisions,
+        }),
+      ),
+      Effect.catch(() =>
+        Effect.succeed(Message.FailedRefreshRounds({ scope })),
+      ),
+    ),
+})
+
+export const StartReportConclusion = Command.define('StartReportConclusion', {
+  args: { scope: Scope },
+  messages: [Message.SucceededStartConclusion, Message.FailedStartConclusion],
+  execute: ({ scope }) =>
+    withQuoroom(client =>
+      client.StartConclusion({ reportId: scope.reportId }),
+    ).pipe(
+      Effect.map(() => Message.SucceededStartConclusion({ scope })),
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedStartConclusion({ scope, failure: failureOf(error) }),
         ),
       ),
     ),
@@ -1871,6 +2000,46 @@ const updateCurrent = (model: Model, message: Message) =>
     CompletedFocusSectionHeading: () => ({ model }),
     TickedRoundClock: ({ nowMs }) => ({
       model: modifyFields(model, { nowMs: () => nowMs }),
+      commands: Option.match(currentRoundOf(model.revisions), {
+        onNone: () => [],
+        onSome: round =>
+          nowMs >= round.deadline.at && model.nowMs < round.deadline.at
+            ? [RefreshRounds({ scope: scopeOf(model) })]
+            : [],
+      }),
+    }),
+    ClickedStartConclusion: () => ({
+      model: modifyFields(model, {
+        maybeConfirmation: () => Option.some(Confirmation.StartConclusion()),
+      }),
+      commands: [FocusConfirmation()],
+    }),
+    ConfirmedStartConclusion: () =>
+      !Option.exists(
+        model.maybeConfirmation,
+        Confirmation.guards.StartConclusion,
+      )
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              maybeConfirmation: () => Option.none(),
+            }),
+            commands: [StartReportConclusion({ scope: scopeOf(model) })],
+          },
+    SucceededStartConclusion: () => ({
+      model: setNote(model, 'The conclusion was started.'),
+      commands: [RefreshRounds({ scope: scopeOf(model) })],
+    }),
+    FailedStartConclusion: ({ failure }) => ({
+      model: setNote(model, failureText(failure)),
+      commands: [RefreshRounds({ scope: scopeOf(model) })],
+    }),
+    FailedRefreshRounds: () => ({ model }),
+    SucceededRefreshRounds: ({ detail, revisions }) => ({
+      model: modifyFields(model, {
+        maybeDetail: () => Option.some(detail),
+        revisions: () => revisions,
+      }),
     }),
     TickedDraftingRefresh: () => ({
       model,
@@ -2943,6 +3112,13 @@ const confirmationPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
             'Replace the saved version',
             Message.ConfirmedReapplyEdit(),
           ] as const,
+        StartConclusion: () =>
+          [
+            'Start the conclusion?',
+            'From now on only the conclusion section can be edited. Every other section becomes read-only, and only a closing revision can be published.',
+            'Start the conclusion',
+            Message.ConfirmedStartConclusion(),
+          ] as const,
         ReplaceCopy: () =>
           [
             'Start again from the latest shared draft?',
@@ -3018,6 +3194,31 @@ const sharePrompt = (
             ),
   })
 
+const outcomeBanner = (
+  model: Model,
+  detail: typeof ReportDetail.Type,
+  template: Template,
+  h: HtmlBuilder<Message>,
+): Html =>
+  Option.match(
+    outcomeOf(
+      template,
+      detail.summary.state,
+      model.revisions,
+      detail.permissions,
+    ),
+    {
+      onNone: () => h.empty,
+      onSome: outcome =>
+        outcomeView(
+          h,
+          model.reportId,
+          outcome,
+          Message.ClickedStartConclusion(),
+        ),
+    },
+  )
+
 // NOTE: The review rounds of the report (D11, D18): the open round with its
 // deadline and countdown, every revision with its status, and the way to
 // publish the next one. The countdown is read from a clock the screen ticks.
@@ -3028,7 +3229,7 @@ const reviewPanel = (
 ): Html => {
   const canPublish =
     Array.contains(detail.permissions, 'publish') &&
-    detail.summary.state !== 'archived'
+    (detail.summary.state === 'drafting' || detail.summary.state === 'in_review')
   return Array.isReadonlyArrayEmpty(model.revisions) && !canPublish
     ? h.empty
     : panel(
@@ -3090,6 +3291,32 @@ const reviewPanel = (
                 ],
                 ['Comments from reviewers'],
               ),
+          Array.isReadonlyArrayEmpty(model.revisions)
+            ? h.empty
+            : h.a(
+                [
+                  h.Href(pathOf(AppRoute.Grid({ reportId: model.reportId }))),
+                  h.Class(
+                    clsx(
+                      'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      focusRing,
+                    ),
+                  ),
+                ],
+                ['Status grid'],
+              ),
+          h.a(
+            [
+              h.Href(pathOf(AppRoute.Audit({ reportId: model.reportId }))),
+              h.Class(
+                clsx(
+                  'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                  focusRing,
+                ),
+              ),
+            ],
+            ['Audit log'],
+          ),
         ],
         Option.some(
           'Only the latest revision counts. A new revision replaces the open round.',
@@ -3330,6 +3557,7 @@ const loadedView = (
       staleBanner(model, h),
       keptEditsPanel(model, template, h),
       confirmationPanel(model, h),
+      outcomeBanner(model, detail, template, h),
       endedBanner(outline.end, h),
       h.div(
         [h.Class('flex flex-wrap items-center gap-4')],

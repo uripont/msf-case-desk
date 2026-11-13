@@ -29,16 +29,26 @@ type Parts = Readonly<{
   minute: number
 }>
 
+// NOTE: a time `Intl` cannot format (out of range) reads as the epoch, so
+// nothing here throws on a stored value.
+const formatParts = (epochMs: number, zone: string) => {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(epochMs)
+  } catch {
+    return []
+  }
+}
+
 const partsIn = (epochMs: number, zone: string): Parts => {
-  const found = new Intl.DateTimeFormat('en-GB', {
-    timeZone: zone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(epochMs)
+  const found = formatParts(epochMs, zone)
   const part = (type: string): number =>
     pipe(
       Array.findFirst(found, entry => entry.type === type),
@@ -119,17 +129,22 @@ const city = (zone: string): string =>
 
 // NOTE: "24 Nov, 18:00 Madrid time": the deadline on the wall clock of its own
 // zone, which is what a reader outside that zone needs to convert from.
-export const deadlineText = (epochMs: number, zone: string): string =>
-  isKnownZone(zone)
-    ? `${new Intl.DateTimeFormat('en-GB', {
-        timeZone: zone,
-        day: 'numeric',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      }).format(epochMs)} ${city(zone)} time`
-    : `${new Date(epochMs).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+export const deadlineText = (epochMs: number, zone: string): string => {
+  try {
+    return isKnownZone(zone)
+      ? `${new Intl.DateTimeFormat('en-GB', {
+          timeZone: zone,
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).format(epochMs)} ${city(zone)} time`
+      : `${new Date(epochMs).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+  } catch {
+    return 'an unknown time'
+  }
+}
 
 export const countdownText = (epochMs: number, nowMs: number): string => {
   const remaining = epochMs - nowMs

@@ -265,8 +265,15 @@ export const formatDate = (text: string): string => {
 }
 
 // NOTE: `2026-11-12 14:05 UTC`, from milliseconds since the epoch.
-export const formatInstant = (at: number): string =>
-  `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+// NOTE: never throws: a value no date can hold (a stored time out of range)
+// reads as an unknown time.
+export const formatInstant = (at: number): string => {
+  try {
+    return `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+  } catch {
+    return 'an unknown time'
+  }
+}
 
 const TOKEN = /\{(page|pages|case|title)\}/g
 

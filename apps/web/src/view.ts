@@ -39,7 +39,9 @@ import {
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { actionButton } from './quoroom/entryViews'
+import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
+import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
 import * as Link from './quoroom/link'
@@ -829,6 +831,8 @@ const deskPageView = (
         Draft: () => loadedDesk(model, h),
         Inbox: () => loadedDesk(model, h),
         Comments: () => loadedDesk(model, h),
+        Grid: () => loadedDesk(model, h),
+        Audit: () => loadedDesk(model, h),
         Revision: () => loadedDesk(model, h),
         NotFound: () => loadedDesk(model, h),
       }),
@@ -1083,6 +1087,22 @@ const pageView = (
             model: model.comments,
             view: Comments.view,
             toParentMessage: message => Message.GotCommentsMessage({ message }),
+          }),
+        ],
+        Grid: ({ reportId }) => [
+          h.submodel({
+            slotId: `grid-${reportId}`,
+            model: model.grid,
+            view: Grid.view,
+            toParentMessage: message => Message.GotGridMessage({ message }),
+          }),
+        ],
+        Audit: ({ reportId }) => [
+          h.submodel({
+            slotId: `audit-${reportId}`,
+            model: model.audit,
+            view: Audit.view,
+            toParentMessage: message => Message.GotAuditMessage({ message }),
           }),
         ],
         Revision: ({ reportId, revision }) => [

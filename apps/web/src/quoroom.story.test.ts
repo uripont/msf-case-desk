@@ -475,8 +475,45 @@ describe('the author', () => {
     expect(namesOf(toggled)).toEqual([Unit.UpdateCommittee.name])
     expect(toggled.commands?.[0]?.args).toEqual({
       committeeId: committee.id,
-      memberIds: Option.some(['account-3', 'account-4']),
+      maybeAdd: Option.some('account-4'),
+      maybeRemove: Option.none(),
       retired: Option.none(),
+    })
+  })
+
+  test('two quick toggles each send their own operation, never a whole list', () => {
+    const committee = {
+      id: 'committee-1',
+      unit: SYNTHETIC_UNIT.id,
+      name: 'Synthetic Committee',
+      memberIds: ['account-3'],
+      retired: false,
+    }
+    const toggle = (accountId: string) =>
+      unitMessage(
+        Unit.Message.ToggledCommitteeMember({ committeeId: committee.id, accountId }),
+      )
+    const first = run(unitLoaded, [
+      unitMessage(Unit.Message.SucceededCreateCommittee({ committee })),
+      toggle('account-4'),
+    ])
+    const second = run(unitLoaded, [
+      unitMessage(Unit.Message.SucceededCreateCommittee({ committee })),
+      toggle('account-4'),
+      toggle('account-5'),
+    ])
+    expect(first.commands?.[0]?.args).toMatchObject({ maybeAdd: Option.some('account-4') })
+    expect(second.commands?.[0]?.args).toMatchObject({
+      maybeAdd: Option.some('account-5'),
+      maybeRemove: Option.none(),
+    })
+    const removed = run(unitLoaded, [
+      unitMessage(Unit.Message.SucceededCreateCommittee({ committee })),
+      toggle('account-3'),
+    ])
+    expect(removed.commands?.[0]?.args).toMatchObject({
+      maybeAdd: Option.none(),
+      maybeRemove: Option.some('account-3'),
     })
   })
 })

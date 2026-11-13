@@ -13,21 +13,49 @@ import type {
 // (a conflict key such as `s:allegations/s:allegation/e:7f3a/i:summary`) in
 // the template. Pure, so each is tested without a screen.
 
-export const timeText = (epochMs: number): string =>
-  new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(epochMs))
+// NOTE: neither throws: a time no date can hold reads as an unknown time.
+export const timeText = (epochMs: number): string => {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(epochMs))
+  } catch {
+    return 'an unknown time'
+  }
+}
 
-export const momentText = (epochMs: number): string =>
-  new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(epochMs))
+// NOTE: the same moment with the name of the zone it is shown in (the
+// viewer's own), for the places where a time stands alone, such as a log.
+export const momentWithZone = (epochMs: number): string => {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZoneName: 'short',
+    }).format(new Date(epochMs))
+  } catch {
+    return 'an unknown time'
+  }
+}
+
+export const momentText = (epochMs: number): string => {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(epochMs))
+  } catch {
+    return 'an unknown time'
+  }
+}
 
 export const topLevelSections = (template: Template): ReadonlyArray<Section> =>
   template.conclusion === undefined

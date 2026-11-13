@@ -358,6 +358,20 @@ export const eventsOf = (
         ]
       : [],
   ),
+  ...rounds.flatMap(({ round, participants }): ReadonlyArray<ReportEvent> =>
+    participants.flatMap((participant): ReadonlyArray<ReportEvent> =>
+      participant.removedAt === null
+        ? []
+        : [
+            {
+              type: 'reviewer_removed',
+              revision: round.revision,
+              accountId: participant.userId,
+              at: participant.removedAt,
+            },
+          ],
+    ),
+  ),
   ...extra,
 ]
 

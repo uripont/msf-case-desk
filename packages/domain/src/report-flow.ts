@@ -6,6 +6,7 @@ import {
   type ReviewDecision,
   type ReviewRecord,
   checkPublishable,
+  standingDecisions,
   tallyRound,
   voterProblems,
 } from './approval'
@@ -179,6 +180,9 @@ export type FlowErrorCode =
   | 'not_latest'
   | 'unpublishable'
   | 'removal_makes_rule_unmeetable'
+  // NOTE: D6: a reviewer with a standing decision (approve or request
+  // changes) on the open round cannot be removed; silent ones can.
+  | 'reviewer_has_decision'
   | 'cannot_archive'
 
 export type FlowError = Readonly<{
@@ -425,6 +429,14 @@ const handle = (
           'That person is not part of this round.',
         )
       }
+      if (standingDecisions(round.reviews, round.revision).has(event.accountId)) {
+        return fail(
+          'reviewer_has_decision',
+          flow,
+          event,
+          'That person has already decided on this revision.',
+        )
+      }
       const remaining = round.participants.filter(
         p => p.accountId !== event.accountId,
       )
@@ -471,6 +483,14 @@ export const applyEvent = (
     ? result
     : Result.succeed(settle(context, result.success))
 }
+
+// NOTE: A deadline can be at most this far ahead of the time it is set (a bit
+// over a year). Publishing and extending refuse a later one, in the API and
+// in the web.
+export const MAX_DEADLINE_AHEAD_MS = 366 * 24 * 3_600_000
+
+export const deadlineTooFar = (deadlineAt: number, now: number): boolean =>
+  deadlineAt > now + MAX_DEADLINE_AHEAD_MS
 
 // ---- Saving content ---------------------------------------------------------
 
@@ -641,5 +661,51 @@ export const checkClosingDraft = (
         sectionIds: changed,
         message:
           'Only the conclusion can differ from the revision being closed.',
+      })
+}
+
+// ---- Publishing while concluding --------------------------------------------
+
+export type ClosingConclusionError = Readonly<{
+  code: 'conclusion_empty'
+  sectionId: string
+  message: string
+}>
+
+// NOTE: True when a value holds something a reader would see: text that is not
+// blank, a figure, a chosen option or person, a date, a name, a repeated entry.
+const hasSubstance = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.some(hasSubstance)
+  if (value === null || typeof value !== 'object') return false
+  const node = value as Record<string, unknown>
+  if (node.type === 'figure') return true
+  if (typeof node.text === 'string' && node.text.trim() !== '') return true
+  if (typeof node.name === 'string' && node.name.trim() !== '') return true
+  if (typeof node.date === 'string' && node.date !== '') return true
+  if (Array.isArray(node.optionIds) && node.optionIds.length > 0) return true
+  if (Array.isArray(node.personIds) && node.personIds.length > 0) return true
+  return Object.values(node).some(hasSubstance)
+}
+
+// NOTE: The rule on publishing a closing revision (D18): the conclusion
+// section must hold something. Sharing a draft of it that is still empty is
+// allowed; publishing one is not. In any other state it accepts.
+export const checkClosingConclusion = (
+  template: Template,
+  state: ReportState,
+  draft: ReportContent,
+): Result.Result<true, ClosingConclusionError> => {
+  if (state !== 'concluding') return Result.succeed(true)
+  const conclusionId = template.conclusion?.id
+  if (conclusionId === undefined) return Result.succeed(true)
+  const section = draft.sections[conclusionId]
+  return section !== undefined &&
+    section.notApplicable === undefined &&
+    hasSubstance(section)
+    ? Result.succeed(true)
+    : Result.fail({
+        code: 'conclusion_empty',
+        sectionId: conclusionId,
+        message: 'The conclusion must be written before a closing revision.',
       })
 }

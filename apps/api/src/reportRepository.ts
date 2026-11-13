@@ -697,6 +697,18 @@ const ops: Impl = {
           LEFT JOIN account_profiles p ON p.user_id = u.id ORDER BY u.email`,
       )
     ).map(accountOf),
+  listAccountsByIds: async (db, userIds) =>
+    userIds.length === 0
+      ? []
+      : (
+          await rows(
+            db,
+            `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM users u
+              LEFT JOIN account_profiles p ON p.user_id = u.id
+              WHERE u.id IN (SELECT value FROM json_each(?)) ORDER BY u.email`,
+            JSON.stringify(userIds),
+          )
+        ).map(accountOf),
   getAccount: async (db, userId) => {
     const found = await row(
       db,
@@ -1354,6 +1366,20 @@ const ops: Impl = {
               sql: `INSERT INTO committee_members (committee_id, user_id, added_at)
                 SELECT DISTINCT ?, j.value, ? FROM json_each(?) j`,
               values: [input.id, input.now, JSON.stringify(input.memberIds)],
+            },
+        input.removeMemberIds === undefined || input.removeMemberIds.length === 0
+          ? null
+          : {
+              sql: `DELETE FROM committee_members WHERE committee_id = ?
+                AND user_id IN (SELECT j.value FROM json_each(?) j)`,
+              values: [input.id, JSON.stringify(input.removeMemberIds)],
+            },
+        input.addMemberIds === undefined || input.addMemberIds.length === 0
+          ? null
+          : {
+              sql: `INSERT OR IGNORE INTO committee_members (committee_id, user_id, added_at)
+                SELECT DISTINCT ?, j.value, ? FROM json_each(?) j`,
+              values: [input.id, input.now, JSON.stringify(input.addMemberIds)],
             },
         auditStep(input.audit),
       ]),
@@ -2428,10 +2454,10 @@ const ops: Impl = {
           v.published_at, p.role_id,
           (SELECT decision FROM reviews WHERE round_id = r.id AND reviewer_id = p.user_id
             AND decision <> 'comment' ORDER BY sent_at DESC, id DESC LIMIT 1) AS decision,
-          (SELECT decision FROM pending_reviews WHERE round_id = r.id AND reviewer_id = p.user_id)
-            AS pending_decision,
+          (SELECT decision FROM pending_reviews WHERE round_id = r.id AND reviewer_id = p.user_id
+            AND r.state = 'open') AS pending_decision,
           (SELECT COUNT(*) FROM comments WHERE round_id = r.id AND author_id = p.user_id
-            AND review_id IS NULL) AS pending_comments
+            AND review_id IS NULL AND r.state = 'open') AS pending_comments
           FROM round_participants p
           JOIN review_rounds r ON r.id = p.round_id
           JOIN reports rep ON rep.id = r.report_id
@@ -2439,7 +2465,7 @@ const ops: Impl = {
           JOIN revisions v ON v.report_id = r.report_id AND v.number = r.revision_number
           WHERE p.user_id = ? AND p.removed_at IS NULL${options.openOnly ? " AND r.state = 'open'" : ''}${
             options.pendingOnly
-              ? ` AND (EXISTS (SELECT 1 FROM pending_reviews q WHERE q.round_id = r.id
+              ? ` AND r.state = 'open' AND (EXISTS (SELECT 1 FROM pending_reviews q WHERE q.round_id = r.id
                   AND q.reviewer_id = p.user_id AND q.decision IS NOT NULL)
                 OR EXISTS (SELECT 1 FROM comments c WHERE c.round_id = r.id
                   AND c.author_id = p.user_id AND c.review_id IS NULL))`
@@ -2541,7 +2567,7 @@ const ops: Impl = {
     }
   },
   removeParticipant: async (db, input) => {
-    const outcome = await runBatch(db, [
+    const outcome = await runBatch(db, compact<GuardedStep>([
       {
         sql: `UPDATE round_participants SET removed_at = ?, removed_by = ?
           WHERE round_id = ? AND user_id = ? AND removed_at IS NULL
@@ -2561,6 +2587,7 @@ const ops: Impl = {
           AND kind IN (${SKIPPABLE_SQL})`,
         values: [input.roundId, input.userId],
       },
+      insertJobsStep(input.reportId, input.roundId, input.jobs ?? [], input.now),
       auditStep(input.audit),
       ...(input.decide === undefined
         ? []
@@ -2570,7 +2597,7 @@ const ops: Impl = {
             reportId: input.reportId,
             now: input.now,
           })),
-    ])
+    ]))
     if (outcome._tag === 'Committed') return { _tag: 'Removed' }
     const open = await row(
       db,
@@ -2668,7 +2695,8 @@ const ops: Impl = {
       await runBatch(db, [
         {
           sql: `UPDATE comments SET body = ?, redacted_body = ?, visibility = ?
-            WHERE id = ? AND author_id = ? AND review_id IS NULL`,
+            WHERE id = ? AND author_id = ? AND review_id IS NULL
+            AND round_id IN (SELECT id FROM review_rounds WHERE state = 'open')`,
           values: [
             input.body,
             input.redactedBody ?? null,
@@ -2693,7 +2721,8 @@ const ops: Impl = {
     (
       await rows(
         db,
-        `DELETE FROM comments WHERE id = ? AND author_id = ? AND review_id IS NULL RETURNING id`,
+        `DELETE FROM comments WHERE id = ? AND author_id = ? AND review_id IS NULL
+          AND round_id IN (SELECT id FROM review_rounds WHERE state = 'open') RETURNING id`,
         id,
         reviewerId,
       )
@@ -2944,7 +2973,10 @@ const ops: Impl = {
           )
         ).length,
   recordEvent: async (db, event) => {
-    const once = event.kind === 'draft_read' || event.kind === 'read'
+    const once =
+      event.kind === 'draft_read' ||
+      event.kind === 'read' ||
+      event.kind === 'whatsapp_opened'
     await exec(
       db,
       `INSERT INTO report_events (report_id, kind, account_id, draft_number, revision_number, at, detail)
@@ -2972,12 +3004,14 @@ const ops: Impl = {
         : []),
     )
   },
-  listEvents: async (db, reportId) =>
+  listEvents: async (db, reportId, limit) =>
     (
       await rows(
         db,
-        'SELECT * FROM report_events WHERE report_id = ? ORDER BY id',
+        `SELECT * FROM (SELECT * FROM report_events WHERE report_id = ?
+          ORDER BY id DESC LIMIT ?) ORDER BY id`,
         reportId,
+        limit,
       )
     ).map((r): EventRecord => ({
       id: n(r['id']),
