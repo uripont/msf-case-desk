@@ -3074,6 +3074,22 @@ const reviewPanel = (
                 ['Publish for review'],
               )
             : h.empty,
+          Array.isReadonlyArrayEmpty(model.revisions)
+            ? h.empty
+            : h.a(
+                [
+                  h.Href(
+                    pathOf(AppRoute.Comments({ reportId: model.reportId })),
+                  ),
+                  h.Class(
+                    clsx(
+                      'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      focusRing,
+                    ),
+                  ),
+                ],
+                ['Comments from reviewers'],
+              ),
         ],
         Option.some(
           'Only the latest revision counts. A new revision replaces the open round.',

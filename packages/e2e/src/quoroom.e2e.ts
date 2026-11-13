@@ -536,7 +536,7 @@ const main = async (): Promise<void> => {
       await visitor.getByLabel('E-mail').fill('rae.viewer@case-desk.test')
       await visitor.getByLabel('Password', { exact: true }).fill(PASSWORD)
       await visitor.getByRole('button', { name: 'Sign in' }).click()
-      await visitor.getByText('Revision 2 of report syn-1').waitFor()
+      await visitor.getByRole('heading', { name: 'Revision 2' }).waitFor()
       assert.equal(new URL(visitor.url()).pathname, '/r/syn-1/rev/2')
       await shot(visitor, 'deep-link-returned')
       await visitor.context().close()
@@ -1879,6 +1879,194 @@ const main = async (): Promise<void> => {
       await pia.getByText('Superseded by Revision 2').waitFor()
       await noSideScroll(pia)
       await shot(pia, 'publish-3-superseded')
+    })
+
+    await step('reviewing: a deep link signs in, comments on a phrase and a section, a pending review survives a reload, the review is sent, and each reader sees only what is theirs', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      const desktop = async (): Promise<Page> => {
+        const context = await launched.newContext({ viewport: { width: 1280, height: 900 } })
+        return context.newPage()
+      }
+
+      // Two redacted reviewers in one committee.
+      await pia.goto(`${pilotUrl}/unit`)
+      await pia.getByRole('heading', { name: 'My unit' }).waitFor()
+      const register = async (name: string, email: string): Promise<string> => {
+        await pia.getByLabel('Reviewer name').fill(name)
+        await pia.getByLabel('Reviewer e-mail').fill(email)
+        await pia.getByRole('button', { name: 'Register reviewer' }).click()
+        await pia.getByRole('textbox', { name: 'Link' }).waitFor()
+        return copiedLink(pia)
+      }
+      const rheaLink = await register('Rhea Reviewer', 'rhea.reviewer@case-desk.test')
+      const raviLink = await register('Ravi Reviewer', 'ravi.reviewer@case-desk.test')
+      await pia.getByLabel('Committee name').fill('Review Committee')
+      await pia.getByRole('button', { name: 'Create committee' }).click()
+      await pia.getByRole('heading', { name: 'Review Committee' }).waitFor()
+      for (const name of ['Rhea Reviewer', 'Ravi Reviewer']) {
+        const member = pia.getByLabel(`${name} in Review Committee`)
+        await member.click()
+        for (let attempt = 0; attempt < 40 && !(await member.isChecked()); attempt += 1) {
+          await pia.waitForTimeout(250)
+        }
+        assert.ok(await member.isChecked(), `${name} was not added`)
+      }
+
+      const rheaFirst = await person(launched)
+      await activate(rheaFirst, rheaLink, 'rhea')
+      await rheaFirst.context().close()
+      const ravi = await desktop()
+      await activate(ravi, raviLink, 'ravi')
+
+      // A report with a sentence in it, shared and published to the committee.
+      await pia.goto(`${pilotUrl}/reports`)
+      await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pia
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Intake and initial assessment (version 1)' })
+      await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0007')
+      await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic reviewing case file')
+      await pia.getByRole('button', { name: 'Create report' }).click()
+      await pia.getByRole('link', { name: 'Open report PIL-0007' }).click()
+      await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+      const reportId = reportIdOf(pia)
+      const PHRASE = 'delay in the supply'
+      const copy = await rpc(pia, 'StartWorkingCopy', { reportId })
+      await rpc(pia, 'SaveSection', {
+        reportId,
+        sectionId: 'case-details',
+        saveCounter: copy.saveCounter,
+        content: {
+          values: { investigator: { type: 'text', text: `The camp reported a ${PHRASE} of water.` } },
+          sections: {},
+        },
+      })
+      await pia.goto(`${pilotUrl}/r/${reportId}`)
+      await pia.getByRole('link', { name: /^Share as Draft/ }).click()
+      await pia.locator('[data-preview="redacted"]').first().waitFor()
+      await pia.getByLabel('Publish this draft for review as soon as it is shared').check()
+      await pia.getByRole('checkbox', { name: /^Review Committee/ }).check()
+      await pia
+        .getByRole('button', { name: /^Confirm the redacted version, share as Draft \d+ and publish/ })
+        .click()
+      await pia.locator('[data-published="1"]').waitFor()
+
+      // R1 at 375 px: the deep link, a sign-in, a phrase, a section.
+      const rhea = await person(launched)
+      await rhea.goto(`${pilotUrl}/r/${reportId}/rev/1`)
+      await rhea.getByRole('heading', { name: 'Sign in' }).waitFor()
+      assert.equal(new URL(rhea.url()).pathname, `/r/${reportId}/rev/1`)
+      await rhea.getByLabel('E-mail').fill('rhea.reviewer@case-desk.test')
+      await rhea.getByLabel('Password', { exact: true }).fill(PASSWORD)
+      await rhea.getByRole('button', { name: 'Sign in' }).click()
+      await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      assert.equal(new URL(rhea.url()).pathname, `/r/${reportId}/rev/1`)
+      await rhea.getByText(PHRASE, { exact: false }).first().waitFor()
+      await shot(rhea, 'review-1-reading-375')
+
+      const selectPhrase = async (page: Page): Promise<void> => {
+        await page.evaluate(phrase => {
+          const root = document.querySelector('[data-comment-item="investigator"]')
+          if (root === null) {
+            throw new Error('no item to select in')
+          }
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+          for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+            const at = (node.textContent ?? '').indexOf(phrase)
+            if (at >= 0) {
+              const range = document.createRange()
+              range.setStart(node, at)
+              range.setEnd(node, at + phrase.length)
+              const selection = window.getSelection()
+              selection?.removeAllRanges()
+              selection?.addRange(range)
+              return
+            }
+          }
+          throw new Error('the phrase is not in the item')
+        }, PHRASE)
+      }
+      await selectPhrase(rhea)
+      await rhea.locator('[data-selection-bar]').waitFor()
+      await rhea.getByRole('button', { name: 'Comment on the selected text' }).click()
+      await rhea.getByRole('textbox', { name: 'Your comment' }).fill('Which camp, and how late?')
+      assert.ok(await rhea.getByRole('radio', { name: /Authors only/ }).isChecked(), 'authors only is not the default')
+      await rhea.getByRole('button', { name: 'Add comment' }).click()
+      await rhea.locator('[data-comment][data-visibility="authors"]').waitFor()
+      await rhea.locator('[data-comment-highlight]').first().waitFor()
+      await shot(rhea, 'review-2-text-comment-375')
+
+      await rhea.getByRole('button', { name: 'Comment on this section' }).click()
+      await rhea.getByRole('textbox', { name: 'Your comment' }).fill('The whole committee should read this.')
+      await rhea.getByRole('radio', { name: /The whole committee/ }).check()
+      await rhea.getByRole('button', { name: 'Add comment' }).click()
+      await rhea.locator('[data-comment][data-visibility="committee"]').waitFor()
+
+      // At 375 px the comments sit below the text.
+      const below = await rhea.evaluate(() => {
+        const text = document.querySelector('[data-revision-section]')?.getBoundingClientRect()
+        const panel = document.querySelector('[data-comments-panel]')?.getBoundingClientRect()
+        return text !== undefined && panel !== undefined && panel.top >= text.bottom - 1
+      })
+      assert.ok(below, 'at phone width the comments are not below the text')
+
+      // A reload keeps the pending review.
+      await rhea.reload()
+      await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      await rhea.locator('[data-pending-count="2"]').waitFor()
+      await shot(rhea, 'review-3-pending-after-reload-375')
+
+      // R2 at desktop width cannot see them before they are sent.
+      await ravi.goto(`${pilotUrl}/r/${reportId}/rev/1`)
+      await ravi.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      await ravi.getByText(PHRASE, { exact: false }).first().waitFor()
+      await ravi.getByText('No comments here yet.').waitFor()
+      assert.equal(await ravi.locator('[data-comment]').count(), 0, 'a pending comment is visible to another reviewer')
+      const beside = await ravi.evaluate(() => {
+        const text = document.querySelector('[data-revision-section]')?.getBoundingClientRect()
+        const panel = document.querySelector('[data-comments-panel]')?.getBoundingClientRect()
+        return text !== undefined && panel !== undefined && panel.left >= text.right - 1 && panel.top < text.bottom
+      })
+      assert.ok(beside, 'at desktop width the comments are not beside the text')
+
+      // R1 sends the review after a summary and a confirmation.
+      await rhea.getByRole('button', { name: 'Send your review' }).click()
+      await rhea.getByText('2 comments are sent: 1 to the authors only, 1 to the whole committee.').waitFor()
+      assert.ok(
+        await rhea.getByRole('button', { name: 'Confirm and send review' }).isDisabled(),
+        'a review can be confirmed with no decision',
+      )
+      await rhea.getByRole('radio', { name: /Request changes/ }).check()
+      await shot(rhea, 'review-4-send-dialog-375')
+      await rhea.getByRole('button', { name: 'Confirm and send review' }).click()
+      await rhea.locator('[data-review-sent="request_changes"]').waitFor()
+      await shot(rhea, 'review-5-sent-375')
+
+      // The author sees both, replies to the committee one, and resolves it.
+      await pia.goto(`${pilotUrl}/r/${reportId}/comments`)
+      await pia.getByRole('heading', { name: 'Comments from reviewers' }).waitFor()
+      await pia.getByText('Which camp, and how late?').waitFor()
+      await pia.getByText('The whole committee should read this.').waitFor()
+      const committee = pia.locator('[data-comment][data-visibility="committee"]')
+      await committee.getByRole('textbox', { name: 'Reply' }).fill('It was the north camp, about a week.')
+      await committee.getByRole('button', { name: 'Send reply to this comment' }).click()
+      await committee.locator('[data-reply]').waitFor()
+      await committee.getByRole('button', { name: 'Resolve this comment' }).click()
+      await pia.locator('[data-comment][data-visibility="committee"][data-resolved="true"]').waitFor()
+      await shot(pia, 'review-6-author-comments-375')
+
+      // R2 now sees only the committee comment, with its author and the reply.
+      await ravi.reload()
+      await ravi.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      await ravi.getByText('The whole committee should read this.').waitFor()
+      await ravi.getByText('It was the north camp, about a week.').waitFor()
+      await ravi.getByText('Rhea Reviewer', { exact: false }).first().waitFor()
+      assert.equal(await ravi.locator('[data-comment]').count(), 1, 'R2 sees more than the committee comment')
+      assert.equal(await ravi.getByText('Which camp, and how late?').count(), 0, 'an authors-only comment reached R2')
+      await shot(ravi, 'review-7-committee-view-desktop')
+      await ravi.context().close()
+      await rhea.context().close()
     })
   } finally {
     await browser?.close()

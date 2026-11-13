@@ -39,11 +39,14 @@ import {
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { actionButton } from './quoroom/entryViews'
+import * as Comments from './quoroom/comments'
 import * as History from './quoroom/history'
+import * as Inbox from './quoroom/inbox'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
 import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
+import * as Review from './quoroom/review'
 import * as Reports from './quoroom/reports'
 import * as Share from './quoroom/share'
 import * as Unit from './quoroom/unit'
@@ -208,6 +211,7 @@ const pageLinksFor = (
   ...(hasCapability(me, 'admin')
     ? [{ route: AppRoute.Admin(), label: 'Administration' }]
     : []),
+  { route: AppRoute.Inbox(), label: 'Inbox' },
   { route: AppRoute.Account(), label: 'My account' },
 ]
 
@@ -823,6 +827,8 @@ const deskPageView = (
         Publish: () => loadedDesk(model, h),
         Drafts: () => loadedDesk(model, h),
         Draft: () => loadedDesk(model, h),
+        Inbox: () => loadedDesk(model, h),
+        Comments: () => loadedDesk(model, h),
         Revision: () => loadedDesk(model, h),
         NotFound: () => loadedDesk(model, h),
       }),
@@ -1063,12 +1069,29 @@ const pageView = (
             toParentMessage: message => Message.GotHistoryMessage({ message }),
           }),
         ],
+        Inbox: () => [
+          h.submodel({
+            slotId: 'inbox',
+            model: model.inbox,
+            view: Inbox.view,
+            toParentMessage: message => Message.GotInboxMessage({ message }),
+          }),
+        ],
+        Comments: ({ reportId }) => [
+          h.submodel({
+            slotId: `comments-${reportId}`,
+            model: model.comments,
+            view: Comments.view,
+            toParentMessage: message => Message.GotCommentsMessage({ message }),
+          }),
+        ],
         Revision: ({ reportId, revision }) => [
-          unavailablePage(
-            'Revision',
-            `Revision ${revision} of report ${reportId} opens here once reviews are available.`,
-            h,
-          ),
+          h.submodel({
+            slotId: `rev-${reportId}-${revision}`,
+            model: model.review,
+            view: Review.view,
+            toParentMessage: message => Message.GotReviewMessage({ message }),
+          }),
         ],
         NotFound: () => [
           unavailablePage(

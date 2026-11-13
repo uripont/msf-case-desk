@@ -78,3 +78,18 @@ export const revisionsList = <M>(
         ),
       ),
   })
+
+export const decisionText = (
+  decision: 'approve' | 'request_changes' | 'comment',
+): string =>
+  decision === 'approve'
+    ? 'Approved'
+    : decision === 'request_changes'
+      ? 'Asked for changes'
+      : 'Commented only'
+
+// NOTE: The reviewer's own time zone, read in a Command (the browser knows it;
+// the domain never does), and the zone of a deadline when the author's zone
+// is the same one.
+export const zoneNote = (authorZone: string, ownZone: string): string =>
+  authorZone === ownZone ? '' : ` (set in ${authorZone.replaceAll('_', ' ')})`

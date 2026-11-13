@@ -13,11 +13,13 @@ import {
   type TableHeaderNode,
   type TableRowNode,
   isRichTextEmpty,
+  textBlockStarts,
 } from '@case-desk/domain'
 
 import './images/figureImage'
 import { imageElement } from './images/spec'
-import { markedChildren } from './marked'
+import { type HighlightRange } from './highlight'
+import { highlightedChildren } from './marked'
 
 // NOTE: Rich text shown without the editor, for drafts that are shared,
 // revisions, and any report an author may only read. It is a plain Foldkit
@@ -58,28 +60,90 @@ const withMark =
 
 // NOTE: `marks` are the strings a redacted preview highlights (the labels that
 // took the place of names, and the placeholder of a withheld image); empty
-// everywhere else.
+// everywhere else. `ranges` are the comments on selected text in this item
+// (stage 6b) and `starts` where each text block begins in the anchor text.
 type Marks = ReadonlyArray<string>
+
+type Ctx = Readonly<{
+  marks: Marks
+  ranges: ReadonlyArray<HighlightRange>
+  starts: ReadonlyMap<object, number>
+}>
+
+// NOTE: The text blocks of a document in the order of `richTextBlocks`, each
+// with its starting offset in the anchor text of the domain.
+type Container = BlockNode | ListBlock
+
+const textBlocksOf = (block: Container): ReadonlyArray<Container> => {
+  switch (block.type) {
+    case 'paragraph':
+    case 'heading':
+    case 'figure':
+      return [block]
+    case 'bulletList':
+    case 'orderedList':
+      return Array.flatMap(block.content, item =>
+        Array.flatMap(item.content, textBlocksOf),
+      )
+    case 'table':
+      return Array.flatMap(block.content, row =>
+        Array.flatMap(row.content, cell =>
+          Array.flatMap(cell.content, textBlocksOf),
+        ),
+      )
+  }
+}
+
+const blockStarts = (doc: RichTextDoc): ReadonlyMap<object, number> =>
+  new Map(
+    Array.zip(
+      Array.flatMap(doc.content, textBlocksOf),
+      textBlockStarts(doc),
+    ),
+  )
+
+const inlineLength = (node: InlineNode): number =>
+  node.type === 'text' ? node.text.length : 1
 
 const inlineView = <M>(
   h: HtmlBuilder<M>,
   node: InlineNode,
-  marks: Marks,
+  ctx: Ctx,
+  maybeStart: number | undefined,
 ): Html =>
   node.type === 'hardBreak'
     ? h.br([])
     : Array.reduce(
         node.marks ?? [],
-        h.span([], markedChildren(h, node.text, marks)),
+        h.span(
+          [],
+          highlightedChildren(
+            h,
+            node.text,
+            maybeStart ?? 0,
+            maybeStart === undefined ? [] : ctx.ranges,
+            ctx.marks,
+          ),
+        ),
         (inner, mark) => withMark(h, mark)(inner),
       )
 
 const inlines = <M>(
   h: HtmlBuilder<M>,
-  nodes: ReadonlyArray<InlineNode> | undefined,
-  marks: Marks,
-): ReadonlyArray<Html> =>
-  Array.map(nodes ?? [], node => inlineView(h, node, marks))
+  block: Readonly<{ content?: ReadonlyArray<InlineNode> | undefined }>,
+  ctx: Ctx,
+): ReadonlyArray<Html> => {
+  const maybeStart = ctx.starts.get(block)
+  return Array.mapAccum(block.content ?? [], 0, (offset, node) => [
+    offset + inlineLength(node),
+    inlineView(
+      h,
+      node,
+      ctx,
+      maybeStart === undefined ? undefined : maybeStart + offset,
+    ),
+  ])[1]
+}
 
 const HEADING_TAGS = ['h4', 'h5', 'h6', 'h6'] as const
 
@@ -106,43 +170,43 @@ const headingView = <M>(
 const listItemView = <M>(
   h: HtmlBuilder<M>,
   item: ListItemNode,
-  marks: Marks,
+  ctx: Ctx,
 ): Html =>
   h.li(
     [],
-    Array.map(item.content, block => listBlockView(h, block, marks)),
+    Array.map(item.content, block => listBlockView(h, block, ctx)),
   )
 
 const listBlockView = <M>(
   h: HtmlBuilder<M>,
   block: ListBlock,
-  marks: Marks,
+  ctx: Ctx,
 ): Html => {
   if (block.type === 'paragraph') {
     return h.p(
       [h.Class('text-pretty'), h.DataAttribute(RICH_TEXT_BLOCK, '')],
-      inlines(h, block.content, marks),
+      inlines(h, block, ctx),
     )
   }
   if (block.type === 'heading') {
-    return headingView(h, block.attrs.level, inlines(h, block.content, marks))
+    return headingView(h, block.attrs.level, inlines(h, block, ctx))
   }
   if (block.type === 'bulletList') {
     return h.ul(
       [h.Class('list-disc pl-6')],
-      Array.map(block.content, item => listItemView(h, item, marks)),
+      Array.map(block.content, item => listItemView(h, item, ctx)),
     )
   }
   return h.ol(
     [h.Class('list-decimal pl-6'), h.Start(block.attrs?.start ?? 1)],
-    Array.map(block.content, item => listItemView(h, item, marks)),
+    Array.map(block.content, item => listItemView(h, item, ctx)),
   )
 }
 
 const cellView = <M>(
   h: HtmlBuilder<M>,
   cell: TableCellNode | TableHeaderNode,
-  marks: Marks,
+  ctx: Ctx,
 ): Html => {
   const attributes = [
     h.Class('border border-msf-line px-2 py-1 text-left align-top'),
@@ -156,17 +220,17 @@ const cellView = <M>(
     }),
   ]
   const children = Array.map(cell.content, block =>
-    listBlockView(h, block, marks),
+    listBlockView(h, block, ctx),
   )
   return cell.type === 'tableHeader'
     ? h.th([...attributes, h.Class('bg-msf-mist font-medium')], children)
     : h.td(attributes, children)
 }
 
-const rowView = <M>(h: HtmlBuilder<M>, row: TableRowNode, marks: Marks): Html =>
+const rowView = <M>(h: HtmlBuilder<M>, row: TableRowNode, ctx: Ctx): Html =>
   h.tr(
     [],
-    Array.map(row.content, cell => cellView(h, cell, marks)),
+    Array.map(row.content, cell => cellView(h, cell, ctx)),
   )
 
 const blockView = <M>(
@@ -174,7 +238,7 @@ const blockView = <M>(
   block: BlockNode,
   reportId: string,
   imageContext: string,
-  marks: Marks,
+  ctx: Ctx,
 ): Html => {
   if (block.type === 'table') {
     return h.div(
@@ -191,7 +255,7 @@ const blockView = <M>(
           [
             h.tbody(
               [],
-              Array.map(block.content, row => rowView(h, row, marks)),
+              Array.map(block.content, row => rowView(h, row, ctx)),
             ),
           ],
         ),
@@ -243,12 +307,12 @@ const blockView = <M>(
             h.Class('text-sm text-msf-grey'),
             h.DataAttribute(RICH_TEXT_BLOCK, ''),
           ],
-          inlines(h, block.content, marks),
+          inlines(h, block, ctx),
         ),
       ],
     )
   }
-  return listBlockView(h, block, marks)
+  return listBlockView(h, block, ctx)
 }
 
 export const richTextView = <M>(
@@ -263,8 +327,14 @@ export const richTextView = <M>(
   imageContext = '',
   // NOTE: Strings to highlight (the redacted preview).
   marks: Marks = [],
-): Html =>
-  isRichTextEmpty(doc)
+  highlights: ReadonlyArray<HighlightRange> = [],
+): Html => {
+  const ctx: Ctx = {
+    marks,
+    ranges: highlights,
+    starts: highlights.length === 0 ? new Map() : blockStarts(doc),
+  }
+  return isRichTextEmpty(doc)
     ? h.p(
         [h.Class('text-base text-msf-grey'), ...attributes],
         ['Nothing written.'],
@@ -275,6 +345,7 @@ export const richTextView = <M>(
           ...attributes,
         ],
         Array.map(doc.content, block =>
-          blockView(h, block, reportId, imageContext, marks),
+          blockView(h, block, reportId, imageContext, ctx),
         ),
       )
+}

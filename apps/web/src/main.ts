@@ -76,11 +76,14 @@ import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
+import * as Comments from './quoroom/comments'
 import * as History from './quoroom/history'
+import * as Inbox from './quoroom/inbox'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
 import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
+import * as Review from './quoroom/review'
 import * as Reports from './quoroom/reports'
 import * as Share from './quoroom/share'
 import * as Unit from './quoroom/unit'
@@ -179,6 +182,9 @@ export const Model = Schema.Struct({
   share: Share.Model,
   names: Names.Model,
   history: History.Model,
+  inbox: Inbox.Model,
+  review: Review.Model,
+  comments: Comments.Model,
   publish: Publish.Model,
   loginForm: LoginForm,
   deskLoad: DeskLoad,
@@ -244,6 +250,9 @@ export const Message = defineMessageUnion({
   GotShareMessage: { message: Share.Message },
   GotNamesMessage: { message: Names.Message },
   GotHistoryMessage: { message: History.Message },
+  GotInboxMessage: { message: Inbox.Message },
+  GotReviewMessage: { message: Review.Message },
+  GotCommentsMessage: { message: Comments.Message },
   GotPublishMessage: { message: Publish.Message },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
@@ -358,6 +367,9 @@ export const initialModel = Model.make({
   share: Share.initialModel,
   names: Names.initialModel,
   history: History.initialModel,
+  inbox: Inbox.initialModel,
+  review: Review.initialModel,
+  comments: Comments.initialModel,
   publish: Publish.initialModel,
   loginForm: emptyLoginForm,
   deskLoad: DeskLoad.Loading(),
@@ -740,6 +752,9 @@ const signedOut = (model: Model): Model =>
     share: Share.cleared,
     names: Names.cleared,
     history: History.cleared,
+    inbox: Inbox.cleared,
+    review: Review.cleared,
+    comments: Comments.cleared,
     publish: Publish.cleared,
     maybeLeaving: () => Option.none(),
     deskLoad: () => DeskLoad.Loading(),
@@ -878,6 +893,57 @@ const foldHistory = Update.foldChild({
   toParentMessage: message => Message.GotHistoryMessage({ message }),
 })
 
+const foldInbox = Update.foldChild({
+  update: Inbox.update,
+  read: (model: Model) => Option.some(model.inbox),
+  write: (model, nextInbox) => modifyFields(model, { inbox: () => nextInbox }),
+  toParentMessage: message => Message.GotInboxMessage({ message }),
+})
+
+const enterInbox = (origin: string) =>
+  Update.foldChildStep({
+    update: (child: Inbox.Model) => Inbox.enter(origin, child.generation + 1),
+    read: (model: Model) => Option.some(model.inbox),
+    write: (model, nextInbox) => modifyFields(model, { inbox: () => nextInbox }),
+    toParentMessage: message => Message.GotInboxMessage({ message }),
+  })
+
+const foldReview = Update.foldChild({
+  update: Review.update,
+  read: (model: Model) => Option.some(model.review),
+  write: (model, nextReview) =>
+    modifyFields(model, { review: () => nextReview }),
+  toParentMessage: message => Message.GotReviewMessage({ message }),
+})
+
+const enterReview = (origin: string, reportId: string, revision: number) =>
+  Update.foldChildStep({
+    update: (child: Review.Model) =>
+      Review.enter(origin, reportId, revision, child.generation + 1),
+    read: (model: Model) => Option.some(model.review),
+    write: (model, nextReview) =>
+      modifyFields(model, { review: () => nextReview }),
+    toParentMessage: message => Message.GotReviewMessage({ message }),
+  })
+
+const foldComments = Update.foldChild({
+  update: Comments.update,
+  read: (model: Model) => Option.some(model.comments),
+  write: (model, nextComments) =>
+    modifyFields(model, { comments: () => nextComments }),
+  toParentMessage: message => Message.GotCommentsMessage({ message }),
+})
+
+const enterComments = (origin: string, reportId: string) =>
+  Update.foldChildStep({
+    update: (child: Comments.Model) =>
+      Comments.enter(origin, reportId, child.generation + 1),
+    read: (model: Model) => Option.some(model.comments),
+    write: (model, nextComments) =>
+      modifyFields(model, { comments: () => nextComments }),
+    toParentMessage: message => Message.GotCommentsMessage({ message }),
+  })
+
 const foldPublish = Update.foldChild({
   update: Publish.update,
   read: (model: Model) => Option.some(model.publish),
@@ -973,7 +1039,10 @@ const enterRoute = (
       enterHistory(model.origin, reportId, Option.none())(model),
     Draft: ({ reportId, draft }) =>
       enterHistory(model.origin, reportId, Option.some(draft))(model),
-    Revision: () => ({ model }),
+    Inbox: () => enterInbox(model.origin)(model),
+    Comments: ({ reportId }) => enterComments(model.origin, reportId)(model),
+    Revision: ({ reportId, revision }) =>
+      enterReview(model.origin, reportId, revision)(model),
     NotFound: () => ({ model }),
   })
 
@@ -1327,6 +1396,9 @@ export const update = (model: Model, message: Message) =>
     GotNamesMessage: ({ message }) => foldNames(model, message),
     GotHistoryMessage: ({ message }) => foldHistory(model, message),
     GotPublishMessage: ({ message }) => foldPublish(model, message),
+    GotInboxMessage: ({ message }) => foldInbox(model, message),
+    GotReviewMessage: ({ message }) => foldReview(model, message),
+    GotCommentsMessage: ({ message }) => foldComments(model, message),
     SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({
@@ -1520,11 +1592,21 @@ const publishSubscriptions = Subscription.lift(Publish.subscriptions)<
   when: model => AppRoute.guards.Publish(model.route),
 })
 
+const reviewSubscriptions = Subscription.lift(Review.subscriptions)<
+  Model,
+  Message
+>({
+  read: model => Option.some(model.review),
+  toParentMessage: message => Message.GotReviewMessage({ message }),
+  when: model => AppRoute.guards.Revision(model.route),
+})
+
 export const subscriptions = Subscription.aggregate(
   appSubscriptions,
   reportSubscriptions,
   historySubscriptions,
   publishSubscriptions,
+  reviewSubscriptions,
 )
 
 // VIEW TRANSITION

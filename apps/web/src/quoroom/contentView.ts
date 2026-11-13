@@ -10,11 +10,13 @@ import {
   type Section,
   type SectionContent,
   type SectionEntry,
+  anchorText,
   entryDisplayTitle,
   formatDate,
 } from '@case-desk/domain'
 
-import { markedChildren } from './marked'
+import { type HighlightRange, resolveRange } from './highlight'
+import { highlightedChildren, markedChildren } from './marked'
 import { richTextView } from './richTextView'
 
 // NOTE: A section of a shared draft, or one unit of it, read-only (stage 4g):
@@ -39,7 +41,15 @@ export type ViewContext = Readonly<{
   // NOTE: Strings the redacted preview highlights (labels in place of names,
   // the placeholder of a withheld image).
   marks?: ReadonlyArray<string>
+  // NOTE: Comments on selected text (stage 6b), by the item they are on
+  // (`itemKey`: the entry path and the item, joined with `/`).
+  highlights?: ReadonlyArray<ItemHighlight>
+  // NOTE: A reader without the people list (a reviewer) sees how many people
+  // an item names, never an ID.
+  peopleHidden?: boolean
 }>
+
+export type ItemHighlight = HighlightRange & Readonly<{ itemKey: string }>
 
 const EMPTY = 'Nothing written.'
 
@@ -68,10 +78,25 @@ const plain = <M>(
   text: string,
   attributes: ReadonlyArray<Attribute<M>>,
   marks: ReadonlyArray<string>,
+  ranges: ReadonlyArray<HighlightRange>,
 ): Html =>
   text === ''
     ? h.p([h.Class('text-base text-msf-grey')], [EMPTY])
-    : h.p([...attributes], markedChildren(h, text, marks))
+    : h.p([...attributes], highlightedChildren(h, text, 0, ranges, marks))
+
+const rangesFor = (
+  context: ViewContext,
+  entryPath: ReadonlyArray<string>,
+  itemId: string,
+  text: string,
+): ReadonlyArray<HighlightRange> => {
+  const key = [...entryPath, itemId].join('/')
+  return Array.flatMap(context.highlights ?? [], highlight => {
+    const resolved =
+      highlight.itemKey === key ? resolveRange(text, highlight) : undefined
+    return resolved === undefined ? [] : [resolved]
+  })
+}
 
 export const valueText = (
   item: Item,
@@ -107,6 +132,17 @@ export const valueText = (
   }
 }
 
+const shownText = (
+  item: Item,
+  value: ItemValue,
+  context: ViewContext,
+): string =>
+  value.type === 'people' && context.peopleHidden === true
+    ? value.personIds.length === 1
+      ? '1 person listed'
+      : `${value.personIds.length} people listed`
+    : valueText(item, value, context.people)
+
 const itemRow = <M>(
   h: HtmlBuilder<M>,
   item: Item,
@@ -128,14 +164,21 @@ const itemRow = <M>(
               context.reportId,
               context.imageContext,
               context.marks ?? [],
+              rangesFor(context, entryPath, item.id, anchorText(value.doc)),
             )
           : value.type === 'repeated'
             ? h.empty
             : plain(
                 h,
-                valueText(item, value, context.people),
+                shownText(item, value, context),
                 attributes('whitespace-pre-wrap text-lg text-msf-ink'),
                 context.marks ?? [],
+                rangesFor(
+                  context,
+                  entryPath,
+                  item.id,
+                  shownText(item, value, context),
+                ),
               )
   return h.div(
     [h.Class('flex min-w-0 flex-col gap-1'), h.DataAttribute('item', item.id)],

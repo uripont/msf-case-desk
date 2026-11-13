@@ -25,7 +25,9 @@ import {
 } from './main'
 import { ADMIN_ME, SYNTHETIC_UNIT } from './quoroom.fixtures'
 import * as Admin from './quoroom/admin'
+import { Failure } from './quoroom/failure'
 import * as Link from './quoroom/link'
+import * as Review from './quoroom/review'
 import {
   AppRoute,
   needsSession,
@@ -129,6 +131,13 @@ describe('a deep link opened signed out', () => {
       Command.resolve(
         LoadDesk,
         Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
+      ),
+      Command.resolve(
+        Review.LoadReview,
+        Review.Message.FailedLoadReview({
+          scope: { reportId: 'rep-1', generation: 2 },
+          failure: Failure.NotAllowed(),
+        }),
       ),
     )
   })

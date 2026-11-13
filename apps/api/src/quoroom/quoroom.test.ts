@@ -198,6 +198,8 @@ describe.each(SCENARIOS)('$name', scenario => {
       expect(seen[0]?.anchor.kind).toBe('section_note')
       expect(JSON.stringify(seen)).not.toContain(SECRET)
       expect(JSON.stringify(seen)).toContain('Person A')
+      expect(JSON.stringify(seen)).not.toMatch(/\bAna\b/)
+      expect(JSON.stringify(seen)).not.toContain('Garcia')
       const authors = await w.call('alice', c => c.ListRevisionComments({ reportId, revision: 1 }))
       expect(authors[0]?.body).toContain(SECRET)
       expect(authors[0]?.redactedBody).not.toContain(SECRET)

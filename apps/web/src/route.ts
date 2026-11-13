@@ -20,6 +20,7 @@ export const AppRoute = defineRouteUnion({
   Unit: {},
   Reports: {},
   Admin: {},
+  Inbox: {},
   Link: {},
   Report: { reportId: Schema.String },
   Share: { reportId: Schema.String },
@@ -27,6 +28,7 @@ export const AppRoute = defineRouteUnion({
   Publish: { reportId: Schema.String },
   Drafts: { reportId: Schema.String },
   Draft: { reportId: Schema.String, draft: Schema.Int },
+  Comments: { reportId: Schema.String },
   Revision: { reportId: Schema.String, revision: Schema.Int },
   NotFound: { path: Schema.String },
 })
@@ -48,6 +50,7 @@ const reportsRouter = pipe(
   Route.mapTo(AppRoute.Reports),
 )
 const adminRouter = pipe(Route.literal('admin'), Route.mapTo(AppRoute.Admin))
+const inboxRouter = pipe(Route.literal('inbox'), Route.mapTo(AppRoute.Inbox))
 const linkRouter = pipe(Route.literal('link'), Route.mapTo(AppRoute.Link))
 const reportRouter = pipe(
   Route.literal('r'),
@@ -85,6 +88,12 @@ const draftRouter = pipe(
   Route.slash(Route.int('draft')),
   Route.mapTo(AppRoute.Draft),
 )
+const commentsRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('comments')),
+  Route.mapTo(AppRoute.Comments),
+)
 const revisionRouter = pipe(
   Route.literal('r'),
   Route.slash(Route.string('reportId')),
@@ -102,8 +111,10 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     unitRouter,
     reportsRouter,
     adminRouter,
+    inboxRouter,
     linkRouter,
     revisionRouter,
+    commentsRouter,
     draftRouter,
     draftsRouter,
     shareRouter,
@@ -123,6 +134,7 @@ export const pathOf = (route: AppRoute): string =>
     Unit: () => unitRouter(),
     Reports: () => reportsRouter(),
     Admin: () => adminRouter(),
+    Inbox: () => inboxRouter(),
     Link: () => linkRouter(),
     Report: ({ reportId }) => reportRouter({ reportId }),
     Share: ({ reportId }) => shareRouter({ reportId }),
@@ -130,6 +142,7 @@ export const pathOf = (route: AppRoute): string =>
     Publish: ({ reportId }) => publishRouter({ reportId }),
     Drafts: ({ reportId }) => draftsRouter({ reportId }),
     Draft: ({ reportId, draft }) => draftRouter({ reportId, draft }),
+    Comments: ({ reportId }) => commentsRouter({ reportId }),
     Revision: ({ reportId, revision }) =>
       revisionRouter({ reportId, revision }),
     NotFound: ({ path }) => path,
@@ -147,6 +160,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Unit: () => true,
     Reports: () => true,
     Admin: () => true,
+    Inbox: () => true,
     Link: () => false,
     Report: () => true,
     Share: () => true,
@@ -154,6 +168,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Publish: () => true,
     Drafts: () => true,
     Draft: () => true,
+    Comments: () => true,
     Revision: () => true,
     NotFound: () => false,
   })
@@ -169,6 +184,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Unit: () => false,
     Reports: () => false,
     Admin: () => false,
+    Inbox: () => false,
     Link: () => false,
     Report: () => false,
     Share: () => false,
@@ -176,6 +192,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Publish: () => false,
     Drafts: () => false,
     Draft: () => false,
+    Comments: () => false,
     Revision: () => false,
     NotFound: () => false,
   })

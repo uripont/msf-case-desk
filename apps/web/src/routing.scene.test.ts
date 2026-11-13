@@ -13,6 +13,8 @@ import { describe, test } from 'vitest'
 import { PILOT_CONFIG, SYNTHETIC_ME, configuredAt } from './fixtures'
 import { LoadDesk, Message, SignIn, update } from './main'
 import { ADMIN_ME } from './quoroom.fixtures'
+import { Failure } from './quoroom/failure'
+import * as Review from './quoroom/review'
 import { view } from './view'
 
 const signedOutAt = (path: string) =>
@@ -24,7 +26,7 @@ describe('a deep link opened signed out', () => {
       { update, view },
       given(signedOutAt('/r/rep-1/rev/2')),
       expect(role('heading', { name: 'Sign in' })).toExist(),
-      expect(role('heading', { name: 'Revision' })).toBeAbsent(),
+      expect(role('heading', { name: 'Revision 2' })).toBeAbsent(),
       type(role('textbox', { name: 'E-mail' }), SYNTHETIC_ME.email),
       type(role('textbox', { name: 'Password' }), 'synthetic-password'),
       submit(role('form')),
@@ -34,8 +36,17 @@ describe('a deep link opened signed out', () => {
         Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
       ),
       expect(role('heading', { name: 'Sign in' })).toBeAbsent(),
-      expect(role('heading', { name: 'Revision' })).toExist(),
-      expect(text('Revision 2 of report rep-1', { exact: false })).toExist(),
+      expect(role('heading', { name: 'Revision 2' })).toExist(),
+      Command.resolve(
+        Review.LoadReview,
+        Review.Message.FailedLoadReview({
+          scope: { reportId: 'rep-1', generation: 2 },
+          failure: Failure.NotAllowed(),
+        }),
+      ),
+      expect(
+        text('This revision is not available to you.', { exact: false }),
+      ).toExist(),
     )
   })
 
