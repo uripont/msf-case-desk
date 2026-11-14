@@ -124,6 +124,13 @@ const UNSPACED =
   /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Thai}\p{Script_Extensions=Khmer}\p{Script_Extensions=Lao}\p{Script_Extensions=Myanmar}\p{Script_Extensions=Tibetan}\p{Script_Extensions=Bopomofo}]/u
 const SPACED_WORD = (ch: string): boolean => WORD.test(ch) && !UNSPACED.test(ch)
 
+const isAsciiWord = (code: number): boolean =>
+  (code >= 0x30 && code <= 0x39) || (code >= 0x61 && code <= 0x7a)
+
+// NOTE: exported for the equivalence test of the ASCII path only.
+export const foldForTest = (input: string, loose: boolean): Folded =>
+  fold(input, loose)
+
 const fold = (input: string, loose: boolean): Folded => {
   const text: Array<string> = []
   const starts: Array<number> = []
@@ -145,6 +152,32 @@ const fold = (input: string, loose: boolean): Folded => {
     const start = offset
     const end = offset + ch.length
     offset = end
+    // NOTE: ASCII, the bulk of most texts, without the Unicode tests below,
+    // with the same result: no ASCII character is a format character or a
+    // mark, the spaces are TAB to CR and SPACE, NFKD changes nothing, and the
+    // only one in SPECIAL is the backtick.
+    const code = ch.charCodeAt(0)
+    if (code < 0x80) {
+      if (code === 0x20 || (code >= 0x09 && code <= 0x0d)) {
+        pushSpace(start, end)
+        continue
+      }
+      const unit =
+        code >= 0x41 && code <= 0x5a
+          ? String.fromCharCode(code + 0x20)
+          : code === 0x60
+            ? "'"
+            : ch
+      lastFirst = text.length
+      if (loose && !isAsciiWord(unit.charCodeAt(0))) {
+        pushSpace(start, end)
+      } else {
+        text.push(unit)
+        starts.push(start)
+        ends.push(end)
+      }
+      continue
+    }
     if (FORMAT.test(ch) || ch === MARK) {
       pushRun(MARK, start, end)
       continue

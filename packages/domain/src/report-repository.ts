@@ -247,6 +247,17 @@ export type ReportBundle = Readonly<{
   revisions: ReadonlyArray<RevisionRecord>
 }>
 
+// NOTE: what a procedure reads of a report before it decides anything, in one
+// batch (one round trip): exactly what `getReport`, `listMembers`, `listRounds`,
+// `listReviews` and `listRevisions` return, names included.
+export type ReportParts = Readonly<{
+  record: ReportRecord
+  members: ReadonlyArray<MemberRecord>
+  rounds: ReadonlyArray<RoundWithParticipants>
+  reviews: ReadonlyArray<StoreReviewRecord>
+  revisions: ReadonlyArray<RevisionRecord>
+}>
+
 export type MemberRecord = Readonly<{
   userId: string
   name: string
@@ -265,6 +276,15 @@ export type WorkingCopyRecord = Readonly<{
   people: string
   startedAt: number
   lastSavedAt: number
+}>
+
+// NOTE: what an outline shows of a stored section: its size in UTF-8 bytes and
+// whether it is marked not applicable, in the view asked for, without the text.
+export type StoredSectionRef = Readonly<{
+  sectionId: string
+  ordinal: number
+  bytes: number
+  notApplicable: boolean
 }>
 
 export type SectionOutline = Readonly<{
@@ -1050,6 +1070,7 @@ export interface ReportRepositoryApi {
     reportId: string,
     options: Readonly<{ template: boolean }>,
   ) => Eff<ReportBundle | null>
+  readonly readReportParts: (reportId: string) => Eff<ReportParts | null>
   readonly listReportsForMember: (
     userId: string,
   ) => Eff<ReadonlyArray<ReportRecord>>
@@ -1103,6 +1124,15 @@ export interface ReportRepositoryApi {
     userId: string,
     sectionId: string,
   ) => Eff<Readonly<{ content: string; version: number }> | null>
+  // NOTE: `getWorkingCopy` and `getWorkingCopySection` in one batch.
+  readonly getWorkingCopyWithSection: (
+    reportId: string,
+    userId: string,
+    sectionId: string,
+  ) => Eff<Readonly<{
+    copy: WorkingCopyRecord | null
+    section: Readonly<{ content: string; version: number }> | null
+  }>>
   readonly saveWorkingCopy: (input: SaveWorkingCopyInput) => Eff<SaveOutcome>
   readonly getWorkingCopyContents: (
     reportId: string,
@@ -1136,6 +1166,24 @@ export interface ReportRepositoryApi {
     reportId: string,
     number: number,
   ) => Eff<ReadonlyArray<SectionOutline>>
+  // NOTE: `getDraft` and `listDraftSections` in one batch (one round trip).
+  readonly getDraftWithSections: (
+    reportId: string,
+    number: number,
+  ) => Eff<Readonly<{
+    draft: DraftRecord
+    sections: ReadonlyArray<SectionOutline>
+  }> | null>
+  // NOTE: `getDraft` and the outline of the sections in `view`, in one batch,
+  // without reading the texts out (`StoredSectionRef`).
+  readonly getDraftOutline: (
+    reportId: string,
+    number: number,
+    view: DraftView,
+  ) => Eff<Readonly<{
+    draft: DraftRecord | null
+    sections: ReadonlyArray<StoredSectionRef>
+  }>>
   readonly getDraftSection: (
     reportId: string,
     number: number,
@@ -1390,6 +1438,12 @@ export interface ReportRepositoryApi {
     before?: number,
   ) => Eff<ReadonlyArray<JobRecord>>
   readonly countUnread: (userId: string) => Eff<number>
+  // NOTE: `listInbox` and `countUnread` in one batch.
+  readonly inboxPage: (
+    userId: string,
+    limit: number,
+    before?: number,
+  ) => Eff<Readonly<{ jobs: ReadonlyArray<JobRecord>; unread: number }>>
   readonly markInboxRead: (
     userId: string,
     ids: ReadonlyArray<number>,
@@ -1522,6 +1576,11 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   createReport: 9,
   getReport: 1,
   readReport: 7,
+  readReportParts: 6,
+  getDraftWithSections: 2,
+  getDraftOutline: 2,
+  getWorkingCopyWithSection: 2,
+  inboxPage: 2,
   listReportsForMember: 1,
   listMembers: 1,
   getMembership: 1,

@@ -185,9 +185,19 @@ export const wrapRepository = (api: ReportRepositoryApi): Store =>
     ]),
   ) as unknown as Store
 
+// NOTE: the wrapped store is a plain object of functions over the repository,
+// so it is made once per repository (per isolate on the Worker), not on every
+// `yield* store`.
+const wrapped = new WeakMap<ReportRepositoryApi, Store>()
+
 export const store: Effect.Effect<Store, never, ReportRepository> =
   Effect.gen(function* () {
-    return wrapRepository(yield* ReportRepository)
+    const api = yield* ReportRepository
+    const known = wrapped.get(api)
+    if (known !== undefined) return known
+    const made = wrapRepository(api)
+    wrapped.set(api, made)
+    return made
   })
 
 // NOTE: what the notification pass (stage 7) calls once per run: unreferenced
@@ -500,19 +510,16 @@ const readParts = (
           : yield* slimTemplate(key, record.templateId, record.templateVersion, bundle.template))
       return { ...bundle, template }
     }
-    const record = yield* db.getReport(reportId)
-    if (record === null) return undefined
+    // NOTE: one round trip for the report, its members, rounds, reviews and
+    // revisions; the template is cached per isolate once published.
+    const parts = yield* db.readReportParts(reportId)
+    if (parts === null) return undefined
     const template = yield* loadTemplate(
       db,
-      record.templateId,
-      record.templateVersion,
+      parts.record.templateId,
+      parts.record.templateVersion,
     )
-    const members = yield* db.listMembers(reportId)
-    const rounds = yield* db.listRounds(reportId)
-    const reviews = rounds.length === 0 ? [] : yield* db.listReviews(reportId)
-    const revisions =
-      rounds.length === 0 ? [] : yield* db.listRevisions(reportId)
-    return { record, template, members, rounds, reviews, revisions }
+    return { ...parts, template }
   })
 
 const loadRaw = (

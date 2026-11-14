@@ -3,10 +3,13 @@
 // stage (`live_uripont`, from .env) by mistake.
 //
 //   pnpm pilot:plan | pilot:deploy | pilot:destroy     stage "pilot" only
-//   pnpm test-env:up   test_<name> [--fast]            throwaway copy
+//   pnpm test-env:up   test_<name> [--fast] [--invocation-logs]   throwaway copy
 //   pnpm test-env:down test_<name>
 //
 // --fast gives the test environment notification timings of minutes (D12).
+// --invocation-logs turns on the Workers invocation logs of the test Worker,
+// which record the CPU time of each request (the stage 10 CPU measurements);
+// the pilot never has them.
 // Extra flags for alchemy are an allowlist (--yes, -y, --dry-run, --detailed);
 // anything else is refused, --stage, --config, --env-file, --profile and -p
 // included. Every command also runs alchemy with `--profile default` and
@@ -97,15 +100,23 @@ else if (command === 'pilot-destroy') pilot('destroy')
 else if (command === 'up' || command === 'down') {
   const { stage, flags } = testStage(rest)
   const fast = flags.includes('--fast')
-  const unknown = flags.filter(flag => flag !== '--fast')
+  const invocationLogs = flags.includes('--invocation-logs')
+  const unknown = flags.filter(flag => flag !== '--fast' && flag !== '--invocation-logs')
   if (unknown.length > 0) fail(`Unknown option: ${unknown.join(' ')}`)
-  if (command === 'down' && fast) fail('--fast only applies to test-env:up.')
+  if (command === 'down' && (fast || invocationLogs)) {
+    fail('--fast and --invocation-logs only apply to test-env:up.')
+  }
 
   const result = alchemy(
     command === 'up' ? 'deploy' : 'destroy',
     stage,
     ['--yes'],
-    command === 'up' && fast ? { QUOROOM_FAST_TIMINGS: '1' } : {},
+    command === 'up'
+      ? {
+          ...(fast ? { QUOROOM_FAST_TIMINGS: '1' } : {}),
+          ...(invocationLogs ? { QUOROOM_INVOCATION_LOGS: '1' } : {}),
+        }
+      : {},
     true,
   )
   if (result.status !== 0) process.exit(result.status ?? 1)
@@ -119,6 +130,6 @@ else if (command === 'up' || command === 'down') {
   }
 } else {
   fail(
-    'Usage: pilot-stack.mjs pilot-plan|pilot-deploy|pilot-destroy | up <test_name> [--fast] | down <test_name>',
+    'Usage: pilot-stack.mjs pilot-plan|pilot-deploy|pilot-destroy | up <test_name> [--fast] [--invocation-logs] | down <test_name>',
   )
 }

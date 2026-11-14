@@ -71,6 +71,17 @@ export const hashOfSections = (
   sections: ReadonlyArray<{ version: number | string }>,
 ): Promise<string> => sha256Hex(sections.map(s => String(s.version)).join(','))
 
+// NOTE: the same, from what the store measured without reading the texts out
+// (`getDraftOutline`).
+export const storedSectionRefsOf = (
+  refs: ReadonlyArray<Readonly<{ sectionId: string; bytes: number; notApplicable: boolean }>>,
+): ReadonlyArray<typeof SectionRefSchema.Type> =>
+  refs.map(ref => ({
+    sectionId: ref.sectionId,
+    size: ref.bytes,
+    notApplicable: ref.notApplicable,
+  }))
+
 export const sectionRefsOf = (
   rows: ReadonlyArray<SectionContentRow>,
 ): ReadonlyArray<typeof SectionRefSchema.Type> =>

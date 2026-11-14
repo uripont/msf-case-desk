@@ -64,6 +64,7 @@ import {
   hashOfSections,
   revisionHeaderOf,
   sectionRefsOf,
+  storedSectionRefsOf,
   summaryOf,
   summaryOfRecord,
 } from './views'
@@ -561,12 +562,15 @@ export const authorHandlers: Pick<
         type: 'share_draft',
       })
       yield* sectionOrFail(loaded.template, sectionId)
-      const copy = yield* writableCopy(db, reportId, user.id)
+      // NOTE: the working copy and the section in one round trip.
+      const read = yield* db.getWorkingCopyWithSection(reportId, user.id, sectionId)
+      const copy = read.copy
+      if (copy === null) return yield* Effect.fail(missingCopy())
       if (copy.saveCounter !== saveCounter) {
         return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
       yield* requireValidPeople(copy.people)
-      const row = yield* db.getWorkingCopySection(reportId, user.id, sectionId)
+      const row = read.section
       const original: SectionContent =
         row === null ? EMPTY_SECTION : parseSection(row.content)
       // NOTE: the redaction of a section, made here, on the server, every
@@ -982,11 +986,11 @@ export const authorHandlers: Pick<
         number: draft,
       })
       const header = yield* draftHeader(db, reportId, draft)
-      const found = yield* db.getDraft(reportId, draft)
+      const outline = yield* db.getDraftOutline(reportId, draft, 'original')
+      const found = outline.draft
       if (header === undefined || found === null) {
         return yield* Effect.fail(new NotFound())
       }
-      const rows = yield* db.getDraftContents(reportId, draft, 'original')
       void loaded
       // NOTE: the grid's "read" fact for a draft: another author opened it.
       // Whoever shared a draft has not "read" it by opening it again.
@@ -1003,7 +1007,7 @@ export const authorHandlers: Pick<
       }
       return {
         header,
-        sections: sectionRefsOf(rows),
+        sections: storedSectionRefsOf(outline.sections),
         peopleCount: peopleOf(found.people).length,
         redactedCaseTitle: found.caseTitleRedacted,
         redactedCaseReference: found.caseReferenceRedacted,

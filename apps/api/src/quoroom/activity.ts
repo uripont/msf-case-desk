@@ -558,9 +558,9 @@ export const activityHandlers: Pick<
     Effect.gen(function* () {
       const user = yield* CurrentUser
       const db = yield* store
-      const rows = yield* db.listInbox(user.id, limit + 1, before)
+      // NOTE: the page and the unread count in one round trip.
+      const { jobs: rows, unread } = yield* db.inboxPage(user.id, limit + 1, before)
       const page = rows.slice(0, limit)
-      const unread = yield* db.countUnread(user.id)
       return {
         items: page.map(job => ({
           id: String(job.id),

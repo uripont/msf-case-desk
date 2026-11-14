@@ -15,6 +15,7 @@ import {
   type ImageRecord,
   type InvitationRecord,
   type JobRecord,
+  type MemberRecord,
   type ParticipantRecord,
   type PublishInput,
   type PublishOutcome,
@@ -104,6 +105,16 @@ const exec = async (
     .prepare(sql)
     .bind(...values)
     .run()
+}
+
+// NOTE: independent reads in one batch: one round trip instead of one each.
+const readBatch = async (
+  db: SqlStore,
+  steps: ReadonlyArray<Expr>,
+): Promise<ReadonlyArray<Array<Row>>> => {
+  const outcome = await runBatch(db, steps)
+  if (outcome._tag !== 'Committed') throw new Error('read batch not committed')
+  return outcome.results.map(result => result.rows as Array<Row>)
 }
 
 const s = (value: unknown): string => value as string
@@ -290,6 +301,60 @@ const REPORT_SELECT = `SELECT r.id, r.case_file_id, r.template_id, r.template_ve
   (SELECT MAX(number) FROM revisions WHERE report_id = r.id) AS latest_revision
   FROM reports r JOIN case_files f ON f.id = r.case_file_id`
 
+const DRAFT_SECTIONS = `SELECT section_id, ordinal, length(CAST(content AS BLOB)) AS bytes, redacted_hash
+  FROM draft_sections WHERE report_id = ? AND draft_number = ?
+  ORDER BY ordinal, section_id`
+
+const draftSectionOf = (r: Row) => ({
+  sectionId: s(r['section_id']),
+  ordinal: n(r['ordinal']),
+  bytes: n(r['bytes']),
+  version: s(r['redacted_hash']),
+})
+
+const WORKING_COPY_ONE = 'SELECT * FROM working_copies WHERE report_id = ? AND user_id = ?'
+
+const WORKING_COPY_SECTION = `SELECT content, save_counter FROM working_copy_sections
+  WHERE report_id = ? AND user_id = ? AND section_id = ?`
+
+const wcSectionOf = (r: Row) => ({
+  content: s(r['content']),
+  version: n(r['save_counter']),
+})
+
+const inboxRead = (userId: string, limit: number, before?: number): Expr => ({
+  sql: `SELECT j.*, r.deadline_zone FROM notification_jobs j
+    LEFT JOIN review_rounds r ON r.id = j.round_id
+    WHERE j.recipient_id = ? AND j.channel = 'inbox'
+    AND j.state = 'done'${before === undefined ? '' : ' AND j.id < ?'}
+    ORDER BY j.id DESC LIMIT ?`,
+  values: [userId, ...(before === undefined ? [] : [before]), limit],
+})
+
+const UNREAD_COUNT = `SELECT COUNT(*) AS c FROM notification_jobs WHERE recipient_id = ?
+  AND channel = 'inbox' AND state = 'done' AND read_at IS NULL`
+
+const MEMBERS_SELECT = `SELECT m.user_id, u.name, m.role_id, m.added_at FROM report_members m
+  JOIN users u ON u.id = m.user_id WHERE m.report_id = ?
+  ORDER BY m.added_at, m.user_id`
+
+const memberOf = (r: Row): MemberRecord => ({
+  userId: s(r['user_id']),
+  name: s(r['name']),
+  roleId: s(r['role_id']),
+  addedAt: n(r['added_at']),
+})
+
+const REVIEWS_SELECT = `SELECT v.*, r.revision_number FROM reviews v JOIN review_rounds r ON r.id = v.round_id
+  WHERE r.report_id = ? ORDER BY v.sent_at, v.id`
+
+const participantsSelect = (where: 'p.round_id = ?' | 'r.report_id = ?'): string =>
+  `SELECT p.round_id, p.user_id, u.name, p.role_id, p.added_at, p.removed_at, p.removed_by
+  FROM round_participants p JOIN users u ON u.id = p.user_id
+  JOIN review_rounds r ON r.id = p.round_id
+  WHERE ${where}
+  ORDER BY p.added_at, p.user_id`
+
 const reportOf = (r: Row): ReportRecord => ({
   id: s(r['id']),
   caseFile: {
@@ -332,6 +397,8 @@ const DRAFT_SELECT = `SELECT d.report_id, d.number, d.base_number, d.author_id,
   FROM drafts d LEFT JOIN users u ON u.id = d.author_id
   LEFT JOIN redaction_confirmations c
     ON c.report_id = d.report_id AND c.draft_number = d.number`
+
+const DRAFT_ONE = `${DRAFT_SELECT} WHERE d.report_id = ? AND d.number = ?`
 
 const draftOf = (r: Row): DraftRecord => ({
   reportId: s(r['report_id']),
@@ -1749,6 +1816,40 @@ const ops: Impl = {
       revisions,
     }
   },
+  // NOTE: the same five reads as `getReport`, `listMembers`, `listRounds`,
+  // `listReviews` and `listRevisions`, with the same statements, in one batch.
+  readReportParts: async (db, reportId) => {
+    const outcome = await runBatch(db, [
+      { sql: `${REPORT_SELECT} WHERE r.id = ?`, values: [reportId] },
+      { sql: MEMBERS_SELECT, values: [reportId] },
+      {
+        sql: 'SELECT * FROM review_rounds WHERE report_id = ? ORDER BY revision_number',
+        values: [reportId],
+      },
+      { sql: participantsSelect('r.report_id = ?'), values: [reportId] },
+      { sql: REVIEWS_SELECT, values: [reportId] },
+      {
+        sql: 'SELECT * FROM revisions WHERE report_id = ? ORDER BY number',
+        values: [reportId],
+      },
+    ])
+    if (outcome._tag !== 'Committed') throw new Error('readReportParts: batch not committed')
+    const [report, members, roundRows, participantRows, reviewRows, revisionRows] =
+      outcome.results.map(result => result.rows)
+    const found = report?.[0]
+    if (found === undefined) return null
+    const participants = (participantRows ?? []).map(participantOf)
+    return {
+      record: reportOf(found),
+      members: (members ?? []).map(memberOf),
+      rounds: (roundRows ?? []).map(roundOf).map(round => ({
+        round,
+        participants: participants.filter(p => p.roundId === round.id),
+      })),
+      reviews: (reviewRows ?? []).map(reviewRecordOf),
+      revisions: (revisionRows ?? []).map(revisionOf),
+    }
+  },
   listReportsForMember: async (db, userId) =>
     (
       await rows(
@@ -1759,20 +1860,7 @@ const ops: Impl = {
       )
     ).map(reportOf),
   listMembers: async (db, reportId) =>
-    (
-      await rows(
-        db,
-        `SELECT m.user_id, u.name, m.role_id, m.added_at FROM report_members m
-          JOIN users u ON u.id = m.user_id WHERE m.report_id = ?
-          ORDER BY m.added_at, m.user_id`,
-        reportId,
-      )
-    ).map(r => ({
-      userId: s(r['user_id']),
-      name: s(r['name']),
-      roleId: s(r['role_id']),
-      addedAt: n(r['added_at']),
-    })),
+    (await rows(db, MEMBERS_SELECT, reportId)).map(memberOf),
   getMembership: async (db, reportId, userId) => {
     const found = await row(
       db,
@@ -1899,13 +1987,20 @@ const ops: Impl = {
     return raced === null ? null : wcOf(raced)
   },
   getWorkingCopy: async (db, reportId, userId) => {
-    const found = await row(
-      db,
-      'SELECT * FROM working_copies WHERE report_id = ? AND user_id = ?',
-      reportId,
-      userId,
-    )
+    const found = await row(db, WORKING_COPY_ONE, reportId, userId)
     return found === null ? null : wcOf(found)
+  },
+  getWorkingCopyWithSection: async (db, reportId, userId, sectionId) => {
+    const [copy, section] = await readBatch(db, [
+      { sql: WORKING_COPY_ONE, values: [reportId, userId] },
+      { sql: WORKING_COPY_SECTION, values: [reportId, userId, sectionId] },
+    ])
+    const foundCopy = copy?.[0]
+    const foundSection = section?.[0]
+    return {
+      copy: foundCopy === undefined ? null : wcOf(foundCopy),
+      section: foundSection === undefined ? null : wcSectionOf(foundSection),
+    }
   },
   listWorkingCopySections: async (db, reportId, userId) =>
     (
@@ -1924,17 +2019,8 @@ const ops: Impl = {
       version: n(r['save_counter']),
     })),
   getWorkingCopySection: async (db, reportId, userId, sectionId) => {
-    const found = await row(
-      db,
-      `SELECT content, save_counter FROM working_copy_sections
-        WHERE report_id = ? AND user_id = ? AND section_id = ?`,
-      reportId,
-      userId,
-      sectionId,
-    )
-    return found === null
-      ? null
-      : { content: s(found['content']), version: n(found['save_counter']) }
+    const found = await row(db, WORKING_COPY_SECTION, reportId, userId, sectionId)
+    return found === null ? null : wcSectionOf(found)
   },
   // NOTE: one guard on the working copy's save counter, then one upsert per
   // section: 2 + sections queries (one section per save in practice, at most
@@ -2350,13 +2436,41 @@ const ops: Impl = {
 
   // -- drafts and revisions
   getDraft: async (db, reportId, number) => {
-    const found = await row(
-      db,
-      `${DRAFT_SELECT} WHERE d.report_id = ? AND d.number = ?`,
-      reportId,
-      number,
-    )
+    const found = await row(db, DRAFT_ONE, reportId, number)
     return found === null ? null : draftOf(found)
+  },
+  getDraftWithSections: async (db, reportId, number) => {
+    const [draft, sections] = await readBatch(db, [
+      { sql: DRAFT_ONE, values: [reportId, number] },
+      { sql: DRAFT_SECTIONS, values: [reportId, number] },
+    ])
+    const found = draft?.[0]
+    return found === undefined
+      ? null
+      : { draft: draftOf(found), sections: (sections ?? []).map(draftSectionOf) }
+  },
+  getDraftOutline: async (db, reportId, number, view) => {
+    const column = view === 'original' ? 'content' : 'redacted_content'
+    const [draft, sections] = await readBatch(db, [
+      { sql: DRAFT_ONE, values: [reportId, number] },
+      {
+        sql: `SELECT section_id, ordinal, length(CAST(${column} AS BLOB)) AS bytes,
+          json_type(${column}, '$.notApplicable') IS NOT NULL AS not_applicable
+          FROM draft_sections WHERE report_id = ? AND draft_number = ?
+          ORDER BY ordinal, section_id`,
+        values: [reportId, number],
+      },
+    ])
+    const found = draft?.[0]
+    return {
+      draft: found === undefined ? null : draftOf(found),
+      sections: (sections ?? []).map(r => ({
+        sectionId: s(r['section_id']),
+        ordinal: n(r['ordinal']),
+        bytes: n(r['bytes']),
+        notApplicable: n(r['not_applicable']) === 1,
+      })),
+    }
   },
   listDrafts: async (db, reportId) =>
     (
@@ -2367,21 +2481,7 @@ const ops: Impl = {
       )
     ).map(draftOf),
   listDraftSections: async (db, reportId, number) =>
-    (
-      await rows(
-        db,
-        `SELECT section_id, ordinal, length(CAST(content AS BLOB)) AS bytes, redacted_hash
-          FROM draft_sections WHERE report_id = ? AND draft_number = ?
-          ORDER BY ordinal, section_id`,
-        reportId,
-        number,
-      )
-    ).map(r => ({
-      sectionId: s(r['section_id']),
-      ordinal: n(r['ordinal']),
-      bytes: n(r['bytes']),
-      version: s(r['redacted_hash']),
-    })),
+    (await rows(db, DRAFT_SECTIONS, reportId, number)).map(draftSectionOf),
   getDraftSection: async (db, reportId, number, sectionId, view) => {
     const found = await row(
       db,
@@ -2812,19 +2912,19 @@ const ops: Impl = {
       : { _tag: 'Refused', reason: 'not_open' }
   },
   getPendingReview: async (db, roundId, reviewerId) => {
-    const pending = await row(
-      db,
-      'SELECT decision FROM pending_reviews WHERE round_id = ? AND reviewer_id = ?',
-      roundId,
-      reviewerId,
-    )
-    const list = await rows(
-      db,
-      `${COMMENT_SELECT} WHERE c.round_id = ? AND c.author_id = ? AND c.review_id IS NULL
-        ORDER BY c.created_at, c.id`,
-      roundId,
-      reviewerId,
-    )
+    // NOTE: both reads in one round trip.
+    const [decisionRows, list = []] = await readBatch(db, [
+      {
+        sql: 'SELECT decision FROM pending_reviews WHERE round_id = ? AND reviewer_id = ?',
+        values: [roundId, reviewerId],
+      },
+      {
+        sql: `${COMMENT_SELECT} WHERE c.round_id = ? AND c.author_id = ? AND c.review_id IS NULL
+          ORDER BY c.created_at, c.id`,
+        values: [roundId, reviewerId],
+      },
+    ])
+    const pending = decisionRows?.[0]
     return {
       decision: sn(pending?.['decision']) as StoreCommentRecord extends never
         ? never
@@ -2953,14 +3053,7 @@ const ops: Impl = {
     }
   },
   listReviews: async (db, reportId) =>
-    (
-      await rows(
-        db,
-        `SELECT v.*, r.revision_number FROM reviews v JOIN review_rounds r ON r.id = v.round_id
-          WHERE r.report_id = ? ORDER BY v.sent_at, v.id`,
-        reportId,
-      )
-    ).map(reviewRecordOf),
+    (await rows(db, REVIEWS_SELECT, reportId)).map(reviewRecordOf),
   addDraftComment: async (db, input) => {
     const inserted = await rows(
       db,
@@ -3167,31 +3260,19 @@ const ops: Impl = {
         reportId,
       )
     ).map(r => s(r['dedupe_key']).slice(reportId.length + 1)),
-  listInbox: async (db, userId, limit, before) =>
-    (
-      await rows(
-        db,
-        `SELECT j.*, r.deadline_zone FROM notification_jobs j
-          LEFT JOIN review_rounds r ON r.id = j.round_id
-          WHERE j.recipient_id = ? AND j.channel = 'inbox'
-          AND j.state = 'done'${before === undefined ? '' : ' AND j.id < ?'}
-          ORDER BY j.id DESC LIMIT ?`,
-        userId,
-        ...(before === undefined ? [] : [before]),
-        limit,
-      )
-    ).map(jobOf),
+  listInbox: async (db, userId, limit, before) => {
+    const read = inboxRead(userId, limit, before)
+    return (await rows(db, read.sql, ...read.values)).map(jobOf)
+  },
   countUnread: async (db, userId) =>
-    n(
-      (
-        await row(
-          db,
-          `SELECT COUNT(*) AS c FROM notification_jobs WHERE recipient_id = ?
-            AND channel = 'inbox' AND state = 'done' AND read_at IS NULL`,
-          userId,
-        )
-      )?.['c'],
-    ),
+    n((await row(db, UNREAD_COUNT, userId))?.['c']),
+  inboxPage: async (db, userId, limit, before) => {
+    const [jobs, unread] = await readBatch(db, [
+      inboxRead(userId, limit, before),
+      { sql: UNREAD_COUNT, values: [userId] },
+    ])
+    return { jobs: (jobs ?? []).map(jobOf), unread: n(unread?.[0]?.['c']) }
+  },
   markInboxRead: async (db, userId, ids, now) =>
     ids.length === 0
       ? 0
@@ -3596,11 +3677,7 @@ async function withParticipants(
   const participants = (
     await rows(
       db,
-      `SELECT p.round_id, p.user_id, u.name, p.role_id, p.added_at, p.removed_at, p.removed_by
-        FROM round_participants p JOIN users u ON u.id = p.user_id
-        JOIN review_rounds r ON r.id = p.round_id
-        WHERE ${reportId === undefined ? 'p.round_id = ?' : 'r.report_id = ?'}
-        ORDER BY p.added_at, p.user_id`,
+      participantsSelect(reportId === undefined ? 'p.round_id = ?' : 'r.report_id = ?'),
       reportId ?? (list[0] as RoundRecord).id,
     )
   ).map(participantOf)

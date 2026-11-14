@@ -2380,6 +2380,23 @@ export const reportRepositoryContract = (
       expect(await run(r.readReport('no-such-report', { template: true }))).toBeNull()
     })
 
+    test('a report is read in one batch with exactly what the separate reads return, names included', async () => {
+      const s = await published()
+      const { r } = s
+      const parts = await run(r.readReportParts(REPORT))
+      expect(parts).toEqual({
+        record: await run(r.getReport(REPORT)),
+        members: await run(r.listMembers(REPORT)),
+        rounds: await run(r.listRounds(REPORT)),
+        reviews: await run(r.listReviews(REPORT)),
+        revisions: await run(r.listRevisions(REPORT)),
+      })
+      expect(parts?.members.some(m => m.name !== '')).toBe(true)
+      expect(parts?.rounds.length).toBeGreaterThan(0)
+      expect(parts?.rounds.some(e => e.participants.length > 0)).toBe(true)
+      expect(await run(r.readReportParts('no-such-report'))).toBeNull()
+    })
+
     test('a read event is recorded once', async () => {
       const s = await published()
       const { r } = s
@@ -2843,6 +2860,52 @@ export const reportRepositoryContract = (
     })
 
     // ---- whole-document reads and rebasing (stage 2c) --------------------------------
+    test('the batched reads return exactly what the separate reads return', async () => {
+      const s = await setup()
+      const { r } = s
+      const shared = await (
+        await share(s, {
+          baseDraft: 0,
+          shareId: 'share-batched',
+          sections: [
+            { id: 'sec-a', content: '{"values":{},"sections":{},"notApplicable":{"reason":"Ñandú"}}' },
+            { id: 'sec-b', content: '{"values":{"x":{"type":"text","text":"Ærøskøbing 漢字"}},"sections":{}}' },
+          ],
+        })
+      ).finish()
+      expect(shared).toMatchObject({ _tag: 'Shared', number: 1 })
+      expect(await run(r.getDraftWithSections(REPORT, 1))).toEqual({
+        draft: await run(r.getDraft(REPORT, 1)),
+        sections: await run(r.listDraftSections(REPORT, 1)),
+      })
+      expect(await run(r.getDraftWithSections(REPORT, 9))).toBeNull()
+      const outline = await run(r.getDraftOutline(REPORT, 1, 'original'))
+      expect(outline.draft).toEqual(await run(r.getDraft(REPORT, 1)))
+      const contents = await run(r.getDraftContents(REPORT, 1, 'original'))
+      expect(outline.sections).toEqual(
+        contents.map(row => ({
+          sectionId: row.sectionId,
+          ordinal: row.ordinal,
+          bytes: new TextEncoder().encode(row.content).length,
+          notApplicable:
+            (JSON.parse(row.content) as { notApplicable?: unknown }).notApplicable !== undefined,
+        })),
+      )
+      expect(outline.sections.map(x => x.notApplicable)).toEqual([true, false])
+      expect(await run(r.getDraftOutline(REPORT, 9, 'original'))).toEqual({ draft: null, sections: [] })
+      for (const [user, section] of [
+        [ALICE, 'sec-b'],
+        [ALICE, 'sec-x'],
+        [BOB, 'sec-a'],
+      ] as const) {
+        expect(await run(r.getWorkingCopyWithSection(REPORT, user, section))).toEqual({
+          copy: await run(r.getWorkingCopy(REPORT, user)),
+          section: await run(r.getWorkingCopySection(REPORT, user, section)),
+        })
+      }
+      expect((await run(r.getWorkingCopyWithSection(REPORT, ALICE, 'sec-b'))).section).not.toBeNull()
+    })
+
     test('contents, hashes and rebasing serve a merge in few queries', async () => {
       const s = await setup()
       const { r } = s
@@ -3203,6 +3266,12 @@ export const reportRepositoryContract = (
       )
       const total = await run(r.countUnread(CAROL))
       expect(total).toBeGreaterThanOrEqual(3)
+      for (const [limit, before] of [[2, undefined], [10, undefined], [10, 2], [1, 3]] as const) {
+        expect(await run(r.inboxPage(CAROL, limit, before))).toEqual({
+          jobs: await run(r.listInbox(CAROL, limit, before)),
+          unread: await run(r.countUnread(CAROL)),
+        })
+      }
       const first = await run(r.listInbox(CAROL, 2))
       expect(first).toHaveLength(2)
       const next = await run(r.listInbox(CAROL, 10, first[1]?.id))

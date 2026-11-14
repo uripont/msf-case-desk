@@ -108,9 +108,10 @@ export const draftHeader = (
   number: number,
 ): Effect.Effect<DraftHeader | undefined, import('@case-desk/domain').StorageUnavailable> =>
   Effect.gen(function* () {
-    const draft = yield* db.getDraft(reportId, number)
-    if (draft === null) return undefined
-    const sections = yield* db.listDraftSections(reportId, number)
+    // NOTE: the draft and its sections in one round trip.
+    const found = yield* db.getDraftWithSections(reportId, number)
+    if (found === null) return undefined
+    const { draft, sections } = found
     const hash = yield* Effect.promise(async () =>
       hashOfJoined(
         sections.map(section => section.version).join(','),

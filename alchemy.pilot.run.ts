@@ -43,12 +43,17 @@ const FAST_TIMINGS = { requestDelay: 0, firstReminder: 10, finalReminder: 3 };
 // writes no request bodies to the log. Workers Issues stays on for the error
 // alert in alchemy.alerts.run.ts. Plan stage 10 checks the logs of a test
 // environment for invented report text.
-const observability = {
+//
+// A test stage can turn invocation logs on with QUOROOM_INVOCATION_LOGS=1
+// (`pnpm test-env:up <name> --invocation-logs`): they carry the CPU time of
+// each request, which the CPU measurements of stage 10 read. The pilot stage
+// ignores it.
+const observabilityFor = (invocationLogs: boolean) => ({
   enabled: true,
-  logs: { enabled: true, invocationLogs: false, persist: true },
+  logs: { enabled: true, invocationLogs, persist: true },
   traces: { enabled: false },
   issues: { enabled: true },
-};
+});
 
 export default Alchemy.Stack(
   "Quoroom",
@@ -73,6 +78,7 @@ export default Alchemy.Stack(
     const environment = isPilot ? "pilot" : `test-${stage.slice("test_".length)}`;
     const timings =
       !isPilot && process.env.QUOROOM_FAST_TIMINGS === "1" ? FAST_TIMINGS : PRODUCTION_TIMINGS;
+    const invocationLogs = !isPilot && process.env.QUOROOM_INVOCATION_LOGS === "1";
 
     const grantsSql = path.resolve(root, `.local/grants-${environment}.sql`);
     const database = yield* Cloudflare.D1.Database("Database", {
@@ -95,13 +101,17 @@ export default Alchemy.Stack(
         NOTIFY_REQUEST_DELAY_MINUTES: String(timings.requestDelay),
         NOTIFY_FIRST_REMINDER_MINUTES: String(timings.firstReminder),
         NOTIFY_FINAL_REMINDER_MINUTES: String(timings.finalReminder),
+        // A test stage with invocation logs numbers the requests of each
+        // isolate in the answer (`x-seq`, `x-isolate`), so the CPU measurements
+        // can tell warm requests from cold ones. Never on the pilot.
+        ...(invocationLogs ? { REQUEST_SEQUENCE: "1" } : {}),
       },
       // The notification pass (stage 7): `scheduled` in apps/api/src/worker.ts.
       // One Cron Trigger per Worker, every minute on the pilot and on test
       // stages: an idle run is one query. The Free plan allows 5 on the account.
       // `/api/tick` stays unset (no TICK_SECRET): the cron does the work.
       crons: ["* * * * *"],
-      observability,
+      observability: observabilityFor(invocationLogs),
     });
 
     return {

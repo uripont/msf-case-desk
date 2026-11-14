@@ -1530,6 +1530,18 @@ export const makeMemoryReportRepository = (
             revisions: list,
           }
         }),
+      readReportParts: reportId =>
+        Effect.gen(function* () {
+          const record = yield* api.getReport(reportId)
+          if (record === null) return null
+          return {
+            record,
+            members: yield* api.listMembers(reportId),
+            rounds: yield* api.listRounds(reportId),
+            reviews: yield* api.listReviews(reportId),
+            revisions: yield* api.listRevisions(reportId),
+          }
+        }),
       listReportsForMember: userId =>
         Effect.sync(() =>
           reports
@@ -1705,6 +1717,13 @@ export const makeMemoryReportRepository = (
           return row === undefined
             ? null
             : { content: row.content, version: row.saveCounter }
+        }),
+      getWorkingCopyWithSection: (reportId, userId, sectionId) =>
+        Effect.gen(function* () {
+          return {
+            copy: yield* api.getWorkingCopy(reportId, userId),
+            section: yield* api.getWorkingCopySection(reportId, userId, sectionId),
+          }
         }),
       saveWorkingCopy: input =>
         Effect.sync(() => {
@@ -2063,6 +2082,28 @@ export const makeMemoryReportRepository = (
             d => d.reportId === reportId && d.number === number,
           )
           return row === undefined ? null : draftRecord(row)
+        }),
+      getDraftWithSections: (reportId, number) =>
+        Effect.gen(function* () {
+          const draft = yield* api.getDraft(reportId, number)
+          if (draft === null) return null
+          return { draft, sections: yield* api.listDraftSections(reportId, number) }
+        }),
+      getDraftOutline: (reportId, number, view) =>
+        Effect.gen(function* () {
+          const draft = yield* api.getDraft(reportId, number)
+          const rows = yield* api.getDraftContents(reportId, number, view)
+          return {
+            draft,
+            sections: rows.map(row => ({
+              sectionId: row.sectionId,
+              ordinal: row.ordinal,
+              bytes: utf8(row.content),
+              notApplicable:
+                (JSON.parse(row.content) as { notApplicable?: unknown })
+                  .notApplicable !== undefined,
+            })),
+          }
         }),
       listDrafts: reportId =>
         Effect.sync(() =>
@@ -2798,6 +2839,13 @@ export const makeMemoryReportRepository = (
                 rounds.find(r => r.id === j.roundId)?.deadlineZone ?? null,
             })),
         ),
+      inboxPage: (userId, limit, before) =>
+        Effect.gen(function* () {
+          return {
+            jobs: yield* api.listInbox(userId, limit, before),
+            unread: yield* api.countUnread(userId),
+          }
+        }),
       countUnread: userId =>
         Effect.sync(
           () =>

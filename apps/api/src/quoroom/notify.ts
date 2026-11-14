@@ -156,7 +156,7 @@ export const makeRecordingChannel = (
 // a round (the handlers make three); a refused decision leaves its jobs pending
 // for the next run. `notify.test.ts` drives that worst case.
 export const PASS_LIMIT = 5
-export const MAX_REPORTS_PER_RUN = 2
+export const MAX_REPORTS_PER_RUN = 1
 export const MAX_QUERIES = 50
 export const RESERVE_REPORT = 21
 export const RESERVE_FINISH = 7

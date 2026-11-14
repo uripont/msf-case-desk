@@ -41,7 +41,7 @@ import {
   validation,
 } from './core'
 import { auditOf, member } from './support'
-import { roundSummaryOf, roundViewOf, sectionRefsOf, summaryOf } from './views'
+import { roundSummaryOf, roundViewOf, storedSectionRefsOf, summaryOf } from './views'
 
 // NOTE: The reviewer side. Reviewer procedures are for participants only: an
 // author of the report gets `NotFound` here, as for any report they are not a
@@ -385,8 +385,9 @@ export const reviewerHandlers: Pick<
       // NOTE: the view is the role's, from `authorize`; the draft number is the
       // revision's own, never one from the request.
       const view = allowed.view === 'original' ? 'original' : 'redacted'
-      const draft = yield* db.getDraft(reportId, published.draftNumber)
-      const rows = yield* db.getDraftContents(
+      // NOTE: the draft and the outline of its sections in the role's view,
+      // in one round trip and without reading the texts out.
+      const { draft, sections } = yield* db.getDraftOutline(
         reportId,
         published.draftNumber,
         view,
@@ -431,7 +432,7 @@ export const reviewerHandlers: Pick<
           id: person.id,
           label: person.label,
         })),
-        sections: sectionRefsOf(rows),
+        sections: storedSectionRefsOf(sections),
       }
     }),
 

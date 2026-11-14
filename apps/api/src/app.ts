@@ -59,19 +59,40 @@ export const makeApp = (
   quoroom: QuoroomDeps | undefined,
   mode: RuntimeMode,
 ) => {
+  // NOTE: each handler is built on first use, so a request builds only the one
+  // RPC server it is routed to (building one is most of the fixed CPU cost of
+  // a request; the Worker builds a new app per request).
+  const once = <A>(make: () => A): (() => A) => {
+    let built: { value: A } | undefined
+    return () => {
+      built ??= { value: make() }
+      return built.value
+    }
+  }
+  const built: Array<{ dispose: () => Promise<void> }> = []
+  const tracked = <A extends { dispose: () => Promise<void> }>(
+    make: () => A,
+  ): (() => A) =>
+    once(() => {
+      const handler = make()
+      built.push(handler)
+      return handler
+    })
   const config =
-    quoroom === undefined ? undefined : makeConfigHandler(quoroom, mode)
-  const rpc = makeRpcHandler(repository)
+    quoroom === undefined ? undefined : once(() => makeConfigHandler(quoroom, mode))
+  const rpc = tracked(() => makeRpcHandler(repository))
   const quoroomRpc =
-    quoroom === undefined ? undefined : makeQuoroomRpcHandler(repository, quoroom)
+    quoroom === undefined
+      ? undefined
+      : tracked(() => makeQuoroomRpcHandler(repository, quoroom))
   const quoroomPublic =
     quoroom === undefined
       ? undefined
-      : makeQuoroomPublicHandler(repository, quoroom)
+      : tracked(() => makeQuoroomPublicHandler(repository, quoroom))
   const images =
     quoroom === undefined
       ? undefined
-      : makeQuoroomImageHandler(repository, quoroom)
+      : once(() => makeQuoroomImageHandler(repository, quoroom))
   const run = <A>(program: Effect.Effect<A, unknown, Repository>) =>
     Effect.runPromise(
       program.pipe(
@@ -206,14 +227,14 @@ export const makeApp = (
           : session(request)
     }
     if (config !== undefined && pathname === CONFIG_PATH) {
-      return config(request)
+      return config()(request)
     }
     // NOTE: the triage desk is switched off in a pilot (D20).
     if (mode === 'pilot' && (pathname === RPC_PATH || pathname === `${RPC_PATH}/`)) {
       return Promise.resolve(json({ error: 'NotFound' }, 404))
     }
     if (pathname === RPC_PATH) {
-      return rpc.handler(request)
+      return rpc().handler(request)
     }
     // NOTE: the session cookie of the iteration 3 RPC (sign-in, links,
     // sign-out) is set by the handlers through a per-request slot, and the
@@ -243,24 +264,24 @@ export const makeApp = (
       quoroomRpc !== undefined &&
       (pathname === QUOROOM_RPC_PATH || pathname === `${QUOROOM_RPC_PATH}/`)
     ) {
-      return served(quoroomRpc.handler, QUOROOM_RPC_PATH)
+      return served(quoroomRpc().handler, QUOROOM_RPC_PATH)
     }
     if (
       quoroomPublic !== undefined &&
       (pathname === QUOROOM_PUBLIC_PATH || pathname === `${QUOROOM_PUBLIC_PATH}/`)
     ) {
-      return served(quoroomPublic.handler, QUOROOM_PUBLIC_PATH)
+      return served(quoroomPublic().handler, QUOROOM_PUBLIC_PATH)
     }
     if (
       images !== undefined &&
       (pathname === '/api/images' || pathname.startsWith('/api/images/'))
     ) {
-      return images(request)
+      return images()(request)
     }
     if (pathname === `${RPC_PATH}/`) {
       const url = new URL(request.url)
       url.pathname = RPC_PATH
-      return rpc.handler(new Request(url, request))
+      return rpc().handler(new Request(url, request))
     }
     return Promise.resolve(json({ error: 'NotFound' }, 404))
   }
@@ -271,11 +292,7 @@ export const makeApp = (
   return {
     handle,
     dispose: async () => {
-      await Promise.all([
-        rpc.dispose(),
-        quoroomRpc?.dispose(),
-        quoroomPublic?.dispose(),
-      ])
+      await Promise.all(built.map(handler => handler.dispose()))
     },
   }
 }

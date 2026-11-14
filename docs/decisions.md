@@ -293,7 +293,7 @@ They join `@fontsource-variable/hanken-grotesk` 5.3.0 (headings). None depends o
 - **Database.** Its own D1 with `jurisdiction: "eu"` (never change it after the first deploy: it replaces the database), the migrations, `apps/api/seed/builtin-templates.sql` (insert-if-absent, generated from the domain by `pnpm --filter @case-desk/api templates:sql`, kept in sync by a test), and `.local/grants-<env>.sql` if present (`pnpm grant-admin --env pilot|test-<name>`). No demo cases, no `users.sql`.
 - **Runtime mode (D20).** `RUNTIME_MODE` accepts exactly `demo` or `pilot`. Unset or blank is `pilot` (fail closed); any other value is a configuration error: the Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request (`modeOf` in `apps/api/src/runtimeMode.ts`). The demo stack sets `RUNTIME_MODE=demo` explicitly on `app` (`iter2` is a frozen snapshot that does not read it), `pnpm workerd` exports it, and tests pass the mode to `makeApp`. In a pilot the legacy `/api/login`, `/api/logout` and `/api/session` answer 404; in the demo, `/api/login` shares the D13 throttle and the `active` check with the Quoroom `SignIn` (`authenticate`).
 - **Worker.** `RUNTIME_MODE=pilot`, the `NOTIFY_*_MINUTES` timings as variables, a Cron Trigger (every 5 minutes on `pilot`, every minute on test stages) that calls `scheduled`. `scheduled` runs the notification pass (stage 7, `apps/api/src/tick.ts`).
-- **Observability.** Workers Logs on, invocation logs off (they record the URL), traces off, Issues on. Logs keep what the code writes, errors included; no request body is ever logged. Stage 10 checks this with a search for invented text.
+- **Observability.** Workers Logs on, invocation logs off (they record the URL), traces off, Issues on. Logs keep what the code writes, errors included; no request body is ever logged. Stage 10 checks this with a search for invented text. A test stage can turn invocation logs on (`pnpm test-env:up test_<name> --invocation-logs`, `QUOROOM_INVOCATION_LOGS=1`) for CPU measurements; the pilot stage ignores it, and a test checks the stack file.
 - **workerd.** `pnpm workerd --mode demo|pilot` (default demo). Pilot embeds the built-in templates and `grants-workerd.sql` only, keeps its data in `.local/workerd-data-pilot`, and starts workerd with `RUNTIME_MODE=pilot`.
 - **Free plan.** One Cron Trigger and one D1 database per environment; a test environment is always destroyed after use.
 - **Pilot stack guards.** `scripts/pilot-stack.mjs` passes only `--yes`, `-y`, `--dry-run` and `--detailed` to alchemy and refuses `--profile`, `-p` and every other flag. It always passes `--profile default` and refuses to run when `ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID` or another account-selecting variable (nine names in `scripts/pilot-guards.mjs`) is set, in the environment or in `.env`, to anything but the default. The message names the variable, never its value. `test-env:down` also removes `.local/grants-test-<name>.sql`.
@@ -319,7 +319,7 @@ They join `@fontsource-variable/hanken-grotesk` 5.3.0 (headings). None depends o
 - **No duplicates.** The claim is one `UPDATE ... WHERE id IN (SELECT ... ORDER BY due_at LIMIT ?) RETURNING`, and every write that finishes a job is guarded by `state = 'claimed' AND claimed_by = ?`, so a pass whose lease was taken over cannot overwrite the new owner. The in-app inbox item is the `done` job row itself, so inbox delivery cannot be duplicated at all. Channels that leave the app (WhatsApp, stage 11) are at least once; the job's idempotency key is given to the channel.
 - **Recheck.** Before sending, each job is checked with `isJobNeeded` against fresh state (a decided round, a newer revision, a removed reviewer, a review already sent, an approval preference). Not needed: `skipped`, nothing is sent.
 - **Deadlines.** The pass loads each report with the same `loadReport` the handlers use, which decides a round past its deadline and writes its `round_decided` jobs; those are delivered in the same pass by a second, scoped claim.
-- **Sizing for Workers Free.** At most 5 jobs per claim, at most 2 reports per run, and 50 D1 queries per pass; the pass counts the real queries, reserves 21 per report (measured worst case for a report whose deadline decides, with `loadRaw` retries: 20), 7 to finish and 8 for `cleanupStale` and pruning, and releases what it cannot reach. A report is read in one D1 batch (`readReport`, 7 statements, no users join) and the pass uses a slim template (roles and whether a conclusion exists). Measured: see the execution log.
+- **Sizing for Workers Free.** At most 5 jobs per claim, at most 1 report per run (2 until stage 10, see "Stage 10: log test and CPU"), and 50 D1 queries per pass; the pass counts the real queries, reserves 21 per report (measured worst case for a report whose deadline decides, with `loadRaw` retries: 20), 7 to finish and 8 for `cleanupStale` and pruning, and releases what it cannot reach. A report is read in one D1 batch (`readReport`, 7 statements, no users join) and the pass uses a slim template (roles and whether a conclusion exists). Measured: see the execution log.
 - **Channel.** `NotificationChannel.send(message)` takes the template name and ordered parameters (shaped for Meta), a link and an idempotency key, and returns `Sent {providerMessageId, deliveryStatus}` or `Failed {retryable, reason}`. Stage 11 adds WhatsApp with the same interface.
 - **Starting the pass.** The Worker's `scheduled` handler (errors logged, never rethrown) and `POST /api/tick` (guarded by `TICK_SECRET`, constant-time compare, 404 when unset) both call `runNotificationPass`. The demo `app` Worker in `alchemy.run.ts` has `crons: ["*/5 * * * *"]`, which takes effect only when the demo is next deployed (it is not deployed by this stage; D22). `iter1` and `iter2` get no cron and no `TICK_SECRET`. The pilot stack has one cron, every minute on test stages and every 5 minutes otherwise.
 - **Timings** come from `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES`, read by handlers and by the pass the same way, so jobs are written with the timings the pass assumes. Invalid values fall back to the defaults with a logged line.
@@ -361,3 +361,112 @@ They join `@fontsource-variable/hanken-grotesk` 5.3.0 (headings). None depends o
 - **People in a reviewer's PDF.** `RevisionOutline` carries `personLabels` (id and label only, never names or aliases); a people item prints the label for `redacted` and `full` reviewers. `publishedAt` is required: the date of a reviewer's PDF is never 1970.
 - **Download all.** Files are rendered one at a time; images already read are kept for the next versions. The zip is built from parts (no copy of it), carries the newest version's day as its time stamp (same report, same bytes) and is refused above 1.5 GB or 60,000 entries with a message.
 - **Theme logo.** Preview addresses are revoked when replaced, removed, loaded again or the screen is entered again; the one the app holds is kept until a later save replaces it. The app gets the logo reference (type and chunks) from the upload even if the preview never loaded, and the configuration is never rebuilt with an invented mode. A replaced logo is an unreferenced image: the stale-image cleanup of the notification pass removes it after a day (test).
+
+## Stage 10: log test and CPU (iteration 3)
+
+Run on 13 Nov 2026 on one test environment of the pilot stack, `test_s10b` (Worker `test-s10b-pilot`, `RUNTIME_MODE=pilot`, `--fast`), created at 13:34 UTC and destroyed at 14:51 UTC; afterwards the account lists no test Worker or database. Driven by `apps/api/scripts/live-run.mjs` (it bundles `live-run.ts` and runs it: the real RPC client, a cookie per person, every call recorded with its `cf-ray`) and read with `scripts/workers-logs.mjs` (Workers observability API, test Workers only, prints counts, never events). Both refuse any address or Worker that is not a test one.
+
+**Log test: pass.** `live-run pilot` creates the administrator's account from a `grant-admin` link, a unit, two authors and two reviewers, then one report through every step with invented marker strings (random syllables, unique per run) in the case file reference and title, the people's names and aliases, every section, an image caption and alt text, a draft comment, comments for authors and for the committee, a reply, the conclusion, a refused save and review, a wrong sign-in for an invented address, a malformed and a broken RPC body; it shares, publishes three revisions (changes requested, approved, closing approved, archived), waits for the cron's notification pass to deliver the review request and the outcome, reads downloads, the approval record, the grid, the audit and the history, and signs out and in again. Results:
+
+- Pilot configuration (invocation logs off, as on `pilot`): 34 markers, **none found** in the Workers Logs, by the API's free-text search and by a scan of every event of the window. Positive control: `notification_pass`, which the pass writes, is found by both (4 events).
+- The same environment with invocation logs on (they record the URL and headers): a control marker in the path of a 404 request **is found** (1 event, by both), while 322 markers sent in request bodies (the pilot path again and the load below) are **not found** in 1,376 events. So the search would find a marker that reached the logs, and request bodies never reach them even with invocation logs.
+- Configuration read back from the Workers API for the pilot setting: logs on and persisted, `invocation_logs: false`, traces off, Issues on. The code writes only `console.error` messages without content and the pass summary (counts).
+
+**CPU: the thresholds of spike 3 are not met; nothing was cut off.** `cpuTimeMs` of every invocation (invocation logs on), joined to the procedure by `cf-ray`; 1,962 requests and 54 scheduled runs, every outcome `ok`, **none `exceededCpu`**. Spike 3's "warm" (third request of an isolate, from an `x-seq` header) cannot be told here, so these are all requests; leaving out the first two of each procedure changes nothing that matters. Sections of about 6 KB of text. ms, p50 / p95 / p99 (n):
+
+| Procedure | p50 / p95 / p99 | n |
+| --- | --- | --- |
+| `GetRevisionSection` (reviewer reads a section) | 8 / 12 / 16 | 532 |
+| `SaveSection` | 7 / 12 / 19 | 374 |
+| `GetDraftSection` | 7 / 10 / 13 | 302 |
+| `ShareSection` | 11 / 17 / 22 | 151 |
+| `FinishShare` | 11 / 19 / 19 | 15 |
+| `GetWorkingCopySection` | 7 / 10 / 13 | 130 |
+| `GetRevisionOutline` | 10 / 14 / 14 | 54 |
+| `PublishRevision` | 12 / 21 / 21 | 15 |
+| `SendReview` | 14 / 23 / 23 | 18 |
+| `AddComment` | 8 / 12 / 32 | 26 |
+| `GetUnreadCount`, `ListInbox` | 4 / 7 / 8 | 26, 25 |
+| `GetGrid` | 10 / 46 / 46 | 13 |
+| Sign-in (`SignIn`, recorded only) | 30 / 58 / 58 | 10 |
+| Image upload (one chunk) and read | 11 and 10 | 1 each |
+| Baselines: `/api/tick` 404 (no API built); a 404 under `/api/` (API built, no query); `/api/config` (one query); RPC without a session | 0; 1 / 2; 2 / 4; 2 / 7 | 25 each |
+| **Notification pass, busy** (`scheduled`, 2 reports per run) | 19 / 33 / 34 | 25 |
+| **Notification pass, busy, 1 report per run** | 17 / 28 / 31 | 24 |
+| Notification pass, idle (one query) | 5 / 6 / 6 | 5 |
+
+Every authenticated procedure is above spike 3's 8 ms at the 95th percentile, and the busy pass is well above it. The spike's operations cost 1 to 4 ms at the median; the real ones 7 to 14. The baselines show where it goes: building the API for a request costs about 1 ms and an unauthenticated RPC 2 ms, so most of the cost is the work of a real procedure (the session check, the report and membership reads with deadline settling, the guarded write batch), roughly 1 ms of CPU per D1 round trip, not the size of the content. A pass that sends two jobs of one report costs 13 to 26 ms against 4 to 6 ms when idle, so the pass is dominated by its fixed work (Effect layer, the report read, the profiles, the finishing batch), not by the number of reports.
+
+- **Change made:** `MAX_REPORTS_PER_RUN` from 2 to 1, as the plan prescribed. It lowers the busy pass by about 2 to 5 ms (p95 33 to 28, maximum 34 to 31) but does not bring it under 8 ms; jobs of other reports are released unspent and sent by the next runs (one report per minute on the pilot, enough for its size). Tests updated (more passes for the many-report cases).
+- **Not changed:** no procedure was rewritten; nothing smaller and bounded reaches 8 ms. Workers Free did not cut off any request or run at these levels (2,000 requests, 54 runs, up to 79 ms for a link activation). Options if it ever does: fewer D1 round trips per procedure (one batch for session, membership and report), a session cache per isolate, or the paid plan's CPU limits, which the plan rules out without asking the user. **Open for the user** (plan, stage 10: "the CPU thresholds hold").
+
+### CPU, second pass (13 Nov, after the first measurement)
+
+Goal: make "the CPU thresholds hold" true without the paid plan and without changing the threshold (spike 3: warm p95 under 8 ms, warm = third or later request of that procedure in one isolate). Authorization is still decided on every request, and the domain package stays pure. No new dependencies.
+
+**Profile first.** `apps/api/scripts/cpu-bench.ts` (launcher `cpu-bench.mjs`) serves the real `worker.ts` from Node on a model of D1 (Node's SQLite). It records the CPU of each request minus the time inside SQLite, plus the D1 round trips, and it can run under `--cpu-prof`. `live-run.mjs` drives it. Top costs before the changes:
+
+1. **Building the API on every request:** three RPC servers and their dispose took about half of our own CPU. The RPC server cannot be shared across requests in Workers (I/O context), but only the one the route needs has to be built.
+2. **D1 round trips:** on Cloudflare the CPU grows by about 1 ms per round trip, which is not visible locally. Reading a revision section took 8 trips, saving one 8, sharing one 7 to 10, publishing 20 or more.
+3. **Rebuilt objects:** the repository layers and `wrapRepository` were rebuilt per request and per `yield* store`.
+4. **Redaction folding:** a Unicode regex test and `normalize` on every character, about 0.7 ms per 6 KB section.
+5. **The Effect runtime and Schema encoding:** a fixed cost of each procedure. Not changed.
+
+**Changes** (identical behaviour; each new repository read is checked against the separate reads it replaces by the shared repository contract, on memory and on D1):
+
+- `makeApp` builds only the handler the route needs. The layers are kept per isolate and rebuilt if `env.DB` or the configuration changes. `store` memoizes the wrapped repository.
+- Batched reads, each one D1 round trip: `readReportParts` (report, members, rounds, reviews, revisions), `getDraftWithSections`, `getDraftOutline` (section sizes and "not applicable" computed in SQL), `getWorkingCopyWithSection`, `inboxPage`, and `getPendingReview` as one batch. Round trips now, measured locally: reading a revision section 3, saving one 0 to 4, reading a draft section 3, sharing one 4, the outlines 4, publishing 9 to 11.
+- An ASCII fast path in the redaction fold. A test compares it with the old fold over every ASCII character in context and by a property test. 6 KB section: 0.7 to 0.24 ms.
+- Measurement only: on a test stage with invocation logs (`REQUEST_SEQUENCE=1`, never set on the pilot, checked by a test), answers carry `x-isolate` and `x-seq` and the pass summary carries both, so warm and cold can be told apart.
+
+Locally, our own CPU per request is now 0.6 to 0.8 ms at p50 and 1.5 to 2 ms at p95 for the section reads and saves, and 1.6 / 5.5 ms for sharing a section.
+
+**Measured on Cloudflare**, on test environment `test_s10c` (pilot stack, `--fast --invocation-logs`), created at 15:02 UTC and destroyed at 15:50 UTC. Afterwards the account lists no test Worker and no test database, and the grants file is gone.
+
+- Run 1 used the first changes (lazy handlers, per-isolate layers, `readReportParts`): live-run pilot plus load with 6 reports, 1,241 requests, 5 isolates.
+- Run 2 used all the changes, after a redeploy: load with 6 reports, 992 requests, 1 isolate.
+
+Every outcome was `ok` and none was `exceededCpu`. All values are in ms. "Warm" means `x-seq` at least 3 and at least the third call of that procedure in the isolate.
+
+| Procedure | before (all requests, p50 / p95) | run 1 warm p50 / p95 / max | run 2 warm p50 / p95 / max (n) |
+| --- | --- | --- | --- |
+| `GetRevisionSection` | 8 / 12 | 3 / 6 / 14 | 5 / 9 / 20 (358) |
+| `SaveSection` | 7 / 12 | 4 / 7 / 27 | 5 / 9 / 23 (237) |
+| `GetDraftSection` | 7 / 10 | 4 / 7 / 9 | 5 / 8 / 18 (118) |
+| `GetWorkingCopySection` | 7 / 10 | 4 / 7 / 8 | 5 / 9 / 39 (57) |
+| `ShareSection` | 11 / 17 | 7 / 13 / 54 | 7 / 15 / 83 (58) |
+| `GetRevisionOutline` | 10 / 14 | 5 / 9 / 10 | 5 / 9 / 18 (34) |
+| `AddComment` | 8 / 12 | 3 / 5 | 5 / 9 / 9 (10) |
+| `GetUnreadCount`, `ListInbox` | 4 / 7 | 3 / 6, 3 / 5 | 4 / 8, 4 / 10 (10 each) |
+| `FinishShare`, `SendReview`, `PublishRevision` | 11 / 19, 14 / 23, 12 / 21 | 7 / 9, 7 / 8, 7 / 8 | 8 / 9, 8 / 13, 9 / 13 (4 each) |
+| `ListNotifications` | not measured | 7 / 10 (cold, seq 1: 23 to 39) | not called |
+| Sign-in, link activation | 30 / 58 | 27 / 36, 33 / 35 | 43 (cold 93) |
+
+The busy notification pass, cron, is always cold. In run 2 every one of the 17 passes ran on a fresh isolate (`seq` 1, a different `isolate` each time). Run 1 had 6 passes at 14 to 26 ms. Run 2 had 17 passes at 12 to 46 ms, with a median of 16 (before: 17 / 28 / 31 with 1 report per run). Locally the pass costs about 7 ms cold and 2 ms warm. So on Cloudflare it pays for the first execution of the bundle's code (Effect, the RPC and pass code) on every run.
+
+**Result: the threshold is still not met.**
+
+- The changes roughly halve the CPU of the hot procedures: section reads went from 7–8 ms to 3–5 ms at p50.
+- Warm p95 is under 8 ms in run 1 for every section read and save. In run 2 it is 8 to 9 ms for the same procedures.
+- `ShareSection` (13 to 15) and the rare write procedures (up to 13) stay above 8 ms in both runs.
+- The two runs differ by 1 to 2 ms on the same procedures with fewer round trips in run 2. That is variation between Cloudflare machines and isolates, and it is as large as the margin to the threshold.
+
+I stopped optimizing at this point, as the stage instructions require.
+
+**Where the remaining cost goes**, for a warm section read at 5 ms on Cloudflare:
+
+- About 0.7 ms is our own code, measured locally: Effect runtime, session check, membership and deadline rules, Schema encoding.
+- Each of the 3 D1 round trips costs about 1 ms.
+- The rest is fixed work of the runtime per request.
+
+For `ShareSection` the extra cost is its 4 round trips and the redaction scan of the shared section. For the pass it is the cold start on every cron run.
+
+What could still reduce the cost, none of it bounded within this stage:
+
+- one round trip for session, membership and report together (an SQL rewrite of the authorization reads);
+- a per-isolate session cache, which the stage rules forbid because it would cache authorization;
+- the pass on a warm isolate, which cron does not offer;
+- the paid plan.
+
+**Open for the user.**
+

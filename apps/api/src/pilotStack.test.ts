@@ -150,6 +150,22 @@ describe('Cron Triggers', () => {
     expect(pilot).not.toMatch(/TICK_SECRET\s*:/)
   })
 
+  // NOTE: D7 and stage 10: the pilot's logs keep what the code writes (errors
+  // included) and never the request URL, headers or body. Only a test stage
+  // may turn invocation logs on, for the CPU measurements.
+  test('the pilot has Workers Logs with no invocation logs or traces; only a test stage can turn them on', () => {
+    expect(pilot).toContain('logs: { enabled: true, invocationLogs, persist: true }')
+    expect(pilot).toContain('traces: { enabled: false }')
+    expect(pilot).toContain(
+      'const invocationLogs = !isPilot && process.env.QUOROOM_INVOCATION_LOGS === "1";',
+    )
+    expect(pilot.match(/observability/g)?.length).toBe(3)
+    expect(pilot).toContain('observability: observabilityFor(invocationLogs),')
+    // NOTE: the request numbering of the CPU measurements comes with them.
+    expect(pilot).toContain('...(invocationLogs ? { REQUEST_SEQUENCE: "1" } : {}),')
+    expect(pilot.match(/REQUEST_SEQUENCE/g)?.length).toBe(1)
+  })
+
   test('the pilot stack has one, every minute on the pilot and on test stages; so has the demo `app`', () => {
     expect(pilot.match(/^\s*crons:/gm)).toHaveLength(1)
     expect(pilot).toContain('crons: ["* * * * *"]')

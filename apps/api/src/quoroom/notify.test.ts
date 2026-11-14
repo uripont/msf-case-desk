@@ -552,7 +552,7 @@ describe('a decision the store keeps refusing', () => {
         if (result.claimed === 0) break
       }
     }
-    expect(MAX_REPORTS_PER_RUN).toBe(2)
+    expect(MAX_REPORTS_PER_RUN).toBe(1)
   })
 })
 
@@ -569,7 +569,7 @@ describe('the pass inside the limits of Workers Free', () => {
     w.clock.advance(10 * DAY)
     const queriesPerPass: Array<number> = []
     let claimedTotal = 0
-    for (let round = 0; round < 12; round += 1) {
+    for (let round = 0; round < 30; round += 1) {
       const before = w.queries()
       const result = await pass(w, channel, { useQueries: true })
       queriesPerPass.push(w.queries() - before)
@@ -611,7 +611,7 @@ describe('the inbox never carries the case (D14, D17)', () => {
     // NOTE: dan is a redacted reviewer who is taken out of the first round.
     await w.call('alice', c => c.RemoveReviewer({ reportId: first.reportId, revision: 1, accountId: 'dan' }))
     for (let index = 0; index < 101; index += 1) await w.published()
-    for (let guard = 0; guard < 60; guard += 1) {
+    for (let guard = 0; guard < 250; guard += 1) {
       if ((await pass(w, channel)).claimed === 0) break
     }
     for (const who of ['alice', 'carol', 'dan'] as const) {
