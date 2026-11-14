@@ -387,7 +387,7 @@ describe.each(SCENARIOS)('$name', scenario => {
     const w = await world()
     const { reportId } = await w.published()
     const downloads = await w.call('alice', c => c.GetDownloads({ reportId }))
-    expect(downloads.versions.filter(version => version.kind === 'draft').map(version => version.number)).toEqual([1])
+    expect(downloads.versions.filter(version => version.kind === 'draft').map(version => `${version.number}:${version.view}`).sort()).toEqual(['1:original', '1:redacted'])
     expect(downloads.versions.filter(version => version.kind === 'revision').map(version => version.view).sort()).toEqual(['original', 'redacted'])
     expect(downloads.approvalRecord).toBe(false)
 

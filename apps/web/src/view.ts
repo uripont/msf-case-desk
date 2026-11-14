@@ -41,6 +41,7 @@ import * as Admin from './quoroom/admin'
 import { actionButton } from './quoroom/entryViews'
 import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
+import * as Downloads from './quoroom/downloads'
 import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
@@ -840,6 +841,7 @@ const deskPageView = (
         Comments: () => loadedDesk(model, h),
         Grid: () => loadedDesk(model, h),
         Audit: () => loadedDesk(model, h),
+        Downloads: () => loadedDesk(model, h),
         Revision: () => loadedDesk(model, h),
         NotFound: () => loadedDesk(model, h),
       }),
@@ -1119,6 +1121,15 @@ const pageView = (
             model: model.audit,
             view: Audit.view,
             toParentMessage: message => Message.GotAuditMessage({ message }),
+          }),
+        ],
+        Downloads: ({ reportId }) => [
+          h.submodel({
+            slotId: `downloads-${reportId}`,
+            model: model.downloads,
+            view: Downloads.view,
+            toParentMessage: message =>
+              Message.GotDownloadsMessage({ message }),
           }),
         ],
         Revision: ({ reportId, revision }) => [

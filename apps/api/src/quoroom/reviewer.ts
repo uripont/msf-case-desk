@@ -421,6 +421,7 @@ export const reviewerHandlers: Pick<
         round: summary,
         ...(decision === undefined ? {} : { myDecision: decision }),
         closing: entry.round.closing,
+        publishedAt: published.publishedAt,
         sections: sectionRefsOf(rows),
       }
     }),

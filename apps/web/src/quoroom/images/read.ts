@@ -22,7 +22,7 @@ export type LoadedImage = Readonly<{ blob: Blob; mime: string }>
 
 const decodeChunk = Schema.decodeUnknownOption(ImageChunkRead)
 
-const base64ToBytes = (text: string): Uint8Array<ArrayBuffer> => {
+export const base64ToBytes = (text: string): Uint8Array<ArrayBuffer> => {
   // NOTE: the native decoder where the browser has it (fast), `atob` if not.
   const native: unknown = Reflect.get(Uint8Array, 'fromBase64')
   if (typeof native === 'function') {

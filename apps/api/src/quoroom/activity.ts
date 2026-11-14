@@ -670,14 +670,16 @@ export const activityHandlers: Pick<
         versions: [
           ...drafts
             .filter(draft => draft.number >= 1)
-            .map(draft => ({
-              kind: 'draft' as const,
-              number: draft.number,
-              label: draftLabel(draft.number),
-              view: 'original' as const,
-              closing: false,
-              at: draft.sharedAt,
-            })),
+            .flatMap(draft =>
+              (['original', 'redacted'] as const).map(view => ({
+                kind: 'draft' as const,
+                number: draft.number,
+                label: draftLabel(draft.number),
+                view,
+                closing: false,
+                at: draft.sharedAt,
+              })),
+            ),
           ...loaded.revisions.flatMap(revision =>
             (['original', 'redacted'] as const).map(view => ({
               kind: 'revision' as const,

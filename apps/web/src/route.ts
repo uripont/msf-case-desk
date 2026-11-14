@@ -32,6 +32,7 @@ export const AppRoute = defineRouteUnion({
   Comments: { reportId: Schema.String },
   Grid: { reportId: Schema.String },
   Audit: { reportId: Schema.String },
+  Downloads: { reportId: Schema.String },
   Revision: { reportId: Schema.String, revision: Schema.Int },
   NotFound: { path: Schema.String },
 })
@@ -113,6 +114,12 @@ const auditRouter = pipe(
   Route.slash(Route.literal('audit')),
   Route.mapTo(AppRoute.Audit),
 )
+const downloadsRouter = pipe(
+  Route.literal('r'),
+  Route.slash(Route.string('reportId')),
+  Route.slash(Route.literal('downloads')),
+  Route.mapTo(AppRoute.Downloads),
+)
 const revisionRouter = pipe(
   Route.literal('r'),
   Route.slash(Route.string('reportId')),
@@ -137,6 +144,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     commentsRouter,
     gridRouter,
     auditRouter,
+    downloadsRouter,
     draftRouter,
     draftsRouter,
     shareRouter,
@@ -168,6 +176,7 @@ export const pathOf = (route: AppRoute): string =>
     Comments: ({ reportId }) => commentsRouter({ reportId }),
     Grid: ({ reportId }) => gridRouter({ reportId }),
     Audit: ({ reportId }) => auditRouter({ reportId }),
+    Downloads: ({ reportId }) => downloadsRouter({ reportId }),
     Revision: ({ reportId, revision }) =>
       revisionRouter({ reportId, revision }),
     NotFound: ({ path }) => path,
@@ -197,6 +206,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Comments: () => true,
     Grid: () => true,
     Audit: () => true,
+    Downloads: () => true,
     Revision: () => true,
     NotFound: () => false,
   })
@@ -224,6 +234,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Comments: () => false,
     Grid: () => false,
     Audit: () => false,
+    Downloads: () => false,
     Revision: () => false,
     NotFound: () => false,
   })

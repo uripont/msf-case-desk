@@ -12,12 +12,13 @@
 // repository. Everything is synthetic.
 import { strict as assert } from 'node:assert'
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 
+import { extractPages } from '@case-desk/pdf/testing'
 import { type Browser, type Locator, type Page, chromium } from 'playwright-core'
 
 const root = join(import.meta.dirname, '../../..')
@@ -1112,6 +1113,8 @@ const main = async (): Promise<void> => {
     const fixture = (name: string): Json =>
       JSON.parse(readFileSync(join(import.meta.dirname, '../fixtures', `${name}.content.json`), 'utf8'))
     const reportIdOf = (page: Page): string => new URL(page.url()).pathname.split('/').pop() ?? ''
+    // NOTE: the report of a reference, for the steps that come back to it.
+    const reportsByReference: Record<string, string> = {}
     const openIn = async (page: Page, name: RegExp): Promise<void> => {
       const row = page.getByRole('button', { name })
       if (!(await row.first().isVisible())) {
@@ -1943,6 +1946,7 @@ const main = async (): Promise<void> => {
       await pia.getByRole('link', { name: 'Open report PIL-0007' }).click()
       await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
       const reportId = reportIdOf(pia)
+      reportsByReference['PIL-0007'] = reportId
       const PHRASE = 'delay in the supply'
       const copy = await rpc(pia, 'StartWorkingCopy', { reportId })
       await rpc(pia, 'SaveSection', {
@@ -2116,6 +2120,7 @@ const main = async (): Promise<void> => {
       await pia.getByRole('link', { name: 'Open report PIL-0008' }).click()
       await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
       const reportId = reportIdOf(pia)
+      reportsByReference['PIL-0008'] = reportId
       // Bea is a co-author who never opens the report until it is archived.
       await pia.locator('#co-author-choice').selectOption({ label: 'Bea Second' })
       await pia.getByRole('button', { name: 'Add co-author' }).click()
@@ -2382,6 +2387,160 @@ const main = async (): Promise<void> => {
       await pia.getByRole('link', { name: 'Notifications', exact: true }).waitFor()
       await pia.reload()
       await pia.getByText('You have read everything.').waitFor()
+    })
+
+    await step('downloads on a phone: an author gets a revision PDF and the zip of every version, a redacted reviewer gets only the redacted PDF, the browser and Node make the same text, the approval record', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      const openReport = async (reference: string): Promise<string> => {
+        const id = reportsByReference[reference]
+        assert.ok(id !== undefined, `no report ${reference}`)
+        await pia.goto(`${pilotUrl}/r/${id}`)
+        await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+        return id
+      }
+      // NOTE: a click that starts a download, the file saved in its own folder.
+      let downloads = 0
+      const saved = async (page: Page, button: string | RegExp): Promise<{ name: string; path: string; bytes: Buffer }> => {
+        downloads += 1
+        const folder = join(local, `download-${downloads}`)
+        mkdirSync(folder, { recursive: true })
+        const [file] = await Promise.all([
+          page.waitForEvent('download', { timeout: 180_000 }),
+          page.getByRole('button', { name: button }).click(),
+        ])
+        const path = join(folder, file.suggestedFilename())
+        await file.saveAs(path)
+        return { name: file.suggestedFilename(), path, bytes: readFileSync(path) }
+      }
+      const textOf = async (bytes: Buffer): Promise<string> =>
+        (await extractPages(new Uint8Array(bytes))).join('\n').replace(/\s+/g, ' ')
+
+      const reportId = await openReport('PIL-0007')
+      await pia.getByRole('link', { name: 'Downloads', exact: true }).click()
+      await pia.getByRole('heading', { name: 'Downloads' }).waitFor()
+      await pia.locator('[data-download-version="revision:1"]').waitFor()
+      assert.equal(await pia.locator('[data-download-version="revision:1"] button').count(), 2, 'a revision is not offered in both views')
+      assert.equal(await pia.locator('[data-download-version^="draft:"] button').first().isVisible(), true)
+      await shot(pia, 'downloads-1-list-375')
+
+      // An author downloads Revision 1 as written.
+      const revision = await saved(pia, 'Download PDF of Revision 1, original')
+      assert.equal(revision.name, 'PIL-0007_intake_Revision-1.pdf')
+      assert.equal(revision.bytes.subarray(0, 5).toString('latin1'), '%PDF-')
+      const revisionText = await textOf(revision.bytes)
+      for (const part of ['Intake and initial assessment', 'PIL-0007', 'Revision 1', 'delay in the supply']) {
+        assert.ok(revisionText.includes(part), `the revision PDF lacks "${part}"`)
+      }
+      assert.ok(!revisionText.includes('Redacted'), 'the original PDF is marked redacted')
+      await pia.getByRole('button', { name: 'Download PDF of Revision 1, original' }).waitFor()
+
+      // The same version made in Node from the same data gives the same text.
+      const summary = (await rpc(pia, 'GetReport', { reportId })).summary
+      const history = await rpc(pia, 'GetHistory', { reportId })
+      const list = await rpc(pia, 'GetDownloads', { reportId })
+      const version = list.versions.find((item: Json) => item.kind === 'revision' && item.number === 1 && item.view === 'original')
+      assert.ok(version !== undefined, 'Revision 1 is not in the downloads')
+      const draft = history.revisions.find((item: Json) => item.number === 1).draft
+      const { people } = await rpc(pia, 'GetPeople', { reportId, draft })
+      const template = (
+        await rpc(pia, 'GetTemplateVersion', {
+          templateId: summary.templateId,
+          version: summary.templateVersion,
+          reportId,
+        })
+      ).template
+      const theme = (await rpc(pia, 'GetTheme', null as unknown as Json)).theme
+      const sections: Json = {}
+      for (const section of [...template.sections, ...(template.conclusion === undefined ? [] : [template.conclusion])]) {
+        try {
+          sections[section.id] = (
+            await rpc(pia, 'GetDraftSection', { reportId, draft, sectionId: section.id, view: 'original' })
+          ).content
+        } catch {
+          assert.equal(section.id, template.conclusion?.id, `section ${section.id} could not be read`)
+        }
+      }
+      const job = {
+        document: {
+          template,
+          content: { schemaVersion: 1, templateId: template.id, templateVersion: template.version, sections },
+          view: { kind: 'original', people },
+          caseFile: { reference: summary.caseFile.reference, unit: '', title: summary.caseFile.title },
+          theme,
+          version: {
+            reportName: summary.templateName,
+            versionLabel: version.label,
+            date: new Date(version.at).toISOString().slice(0, 10),
+          },
+          includeConclusion: template.conclusion !== undefined && sections[template.conclusion.id] !== undefined,
+        },
+      }
+      writeFileSync(join(local, 'node-job.json'), JSON.stringify(job))
+      const rendered = spawnSync(
+        'node',
+        [join(root, 'packages/pdf/scripts/render.mjs'), join(local, 'node-job.json'), join(local, 'node.pdf')],
+        { encoding: 'utf8' },
+      )
+      assert.equal(rendered.status, 0, rendered.stderr)
+      const inBrowser = await extractPages(new Uint8Array(revision.bytes))
+      const inNode = await extractPages(new Uint8Array(readFileSync(join(local, 'node.pdf'))))
+      assert.deepEqual(inBrowser, inNode, 'the browser and Node PDFs read differently')
+
+      // Download all: one zip of every draft and revision, original and redacted.
+      const zip = await saved(pia, 'Download all drafts, revisions and approval records as one zip')
+      assert.equal(zip.name, 'PIL-0007_intake_all-versions.zip')
+      const tested = spawnSync('unzip', ['-tq', zip.path], { encoding: 'utf8' })
+      assert.equal(tested.status, 0, tested.stdout + tested.stderr)
+      const entries = spawnSync('unzip', ['-Z1', zip.path], { encoding: 'utf8' }).stdout.split('\n').filter(line => line !== '')
+      for (const name of [
+        'PIL-0007_intake_Draft-1.pdf',
+        'PIL-0007_intake_Draft-1_redacted.pdf',
+        'PIL-0007_intake_Revision-1.pdf',
+        'PIL-0007_intake_Revision-1_redacted.pdf',
+      ]) {
+        assert.ok(entries.includes(name), `the zip lacks ${name}: ${entries.join(', ')}`)
+      }
+      assert.ok(entries.every(name => name.endsWith('.pdf')), `the zip holds something else: ${entries.join(', ')}`)
+      assert.equal(new Set(entries).size, entries.length, 'the zip repeats a name')
+      for (const name of entries) {
+        const file = spawnSync('unzip', ['-p', zip.path, name], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 })
+        assert.equal(file.stdout.subarray(0, 5).toString('latin1'), '%PDF-', `${name} is not a PDF`)
+      }
+      const redactedInZip = spawnSync('unzip', ['-p', zip.path, 'PIL-0007_intake_Revision-1_redacted.pdf'], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }).stdout
+      assert.ok((await textOf(redactedInZip)).includes('Redacted'), 'the redacted PDF in the zip is not marked')
+      await noSideScroll(pia)
+
+      // A redacted reviewer gets the redacted PDF and nothing else.
+      const rhea = await person(launched)
+      await rhea.goto(`${pilotUrl}/r/${reportId}/rev/1`)
+      await rhea.getByRole('heading', { name: 'Sign in' }).waitFor()
+      await rhea.getByLabel('E-mail').fill('rhea.reviewer@case-desk.test')
+      await rhea.getByLabel('Password', { exact: true }).fill(PASSWORD)
+      await rhea.getByRole('button', { name: 'Sign in' }).click()
+      await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      assert.equal(await rhea.getByRole('button', { name: /^Download PDF/ }).count(), 1, 'a reviewer is offered more than one PDF')
+      await shot(rhea, 'downloads-2-reviewer-375')
+      const redacted = await saved(rhea, 'Download PDF of Revision 1')
+      assert.equal(redacted.name, 'PIL-0007_intake_Revision-1_redacted.pdf')
+      const redactedText = await textOf(redacted.bytes)
+      assert.ok(redactedText.includes('Redacted'), 'the reviewer PDF is not marked redacted')
+      assert.ok(redactedText.includes('delay in the supply'), 'the reviewer PDF lacks the text')
+      await assert.rejects(
+        rpc(rhea, 'GetDraftSection', { reportId, draft, sectionId: 'case-details', view: 'original' }),
+        'a reviewer read the original',
+      )
+      await assert.rejects(rpc(rhea, 'GetDownloads', { reportId }), 'a reviewer listed the downloads')
+      await rhea.context().close()
+
+      // The approval record of a decided round.
+      await openReport('PIL-0008')
+      await pia.getByRole('link', { name: 'Downloads', exact: true }).click()
+      await pia.getByRole('heading', { name: 'Downloads' }).waitFor()
+      const record = await saved(pia, 'Download the approval record PDF')
+      assert.equal(record.name, 'PIL-0008_intake_approval-record.pdf')
+      assert.ok((await textOf(record.bytes)).includes('Approval record'), 'the approval record PDF has no title')
+      await shot(pia, 'downloads-3-approval-record-375')
     })
   } finally {
     await browser?.close()

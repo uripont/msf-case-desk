@@ -127,6 +127,8 @@ export const RevisionOutline = Schema.Struct({
   round: RoundSummary,
   myDecision: Schema.optionalKey(ReviewDecisionSchema),
   closing: Schema.Boolean,
+  // NOTE: When the revision was published; it is the date of the PDF.
+  publishedAt: Schema.optionalKey(EpochMs),
   sections: Schema.Array(SectionRef),
 })
 export type RevisionOutline = typeof RevisionOutline.Type

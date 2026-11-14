@@ -25,6 +25,8 @@ import { findItem, findSection, momentText, topLevelSections } from './draftText
 import { actionButton } from './entryViews'
 import { Failure, failureOf, failureText } from './failure'
 import { imageContextToken } from './images/spec'
+import { renderBuilt, saveFile } from './pdf/make'
+import { reviewerVersion } from './pdf/source'
 import { decisionText, zoneNote } from './rounds'
 import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { CommentSelection, readCommentSelection } from './selection'
@@ -87,6 +89,7 @@ export const Model = Schema.Struct({
   dialog: Dialog,
   maybeSent: Schema.Option(ReviewResult),
   maybeNotice: Schema.Option(Schema.String),
+  isMakingPdf: Schema.Boolean,
   zone: Schema.String,
 })
 export type Model = typeof Model.Type
@@ -112,6 +115,7 @@ export const initialModel = Model.make({
   dialog: Dialog.Closed(),
   maybeSent: Option.none(),
   maybeNotice: Option.none(),
+  isMakingPdf: false,
   zone: 'UTC',
 })
 
@@ -173,6 +177,9 @@ export const Message = defineMessageUnion({
     comments: Schema.Array(ReviewerCommentView),
   },
   FailedRefreshReview: { scope: PageScope, failure: Failure },
+  ClickedDownloadPdf: {},
+  SucceededMakePdf: { scope: PageScope },
+  FailedMakePdf: { scope: PageScope, failure: Failure },
 })
 export type Message = typeof Message.Type
 
@@ -413,6 +420,30 @@ export const RefreshReview = Command.define('RefreshReview', {
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedRefreshReview({ scope, failure: failureOf(error) }),
+        ),
+      ),
+    ),
+})
+
+export const MakeReviewPdf = Command.define('MakeReviewPdf', {
+  args: { scope: PageScope, revision: Schema.Int },
+  messages: [Message.SucceededMakePdf, Message.FailedMakePdf],
+  execute: ({ scope, scope: { reportId }, revision }) =>
+    withQuoroom(client =>
+      Effect.gen(function* () {
+        const built = yield* reviewerVersion(client, reportId, revision)
+        const made = yield* renderBuilt(reportId, built)
+        yield* saveFile(
+          made.name,
+          Uint8Array.from(made.bytes),
+          'application/pdf',
+        )
+      }),
+    ).pipe(
+      Effect.map(() => Message.SucceededMakePdf({ scope })),
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedMakePdf({ scope, failure: failureOf(error) }),
         ),
       ),
     ),
@@ -804,6 +835,29 @@ const updateCurrent = (model: Model, message: Message) =>
     }),
     FailedRefreshReview: ({ failure }) => ({
       model: failedWith(model, failure),
+    }),
+    ClickedDownloadPdf: () =>
+      model.isMakingPdf
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              isMakingPdf: () => true,
+              maybeNotice: () => Option.none(),
+            }),
+            commands: [
+              MakeReviewPdf({
+                scope: pageScopeOf(model),
+                revision: model.revision,
+              }),
+            ],
+          },
+    SucceededMakePdf: () => ({
+      model: modifyFields(model, { isMakingPdf: () => false }),
+    }),
+    FailedMakePdf: ({ failure }) => ({
+      model: modifyFields(failedWith(model, failure), {
+        isMakingPdf: () => false,
+      }),
     }),
   })
 
@@ -1727,6 +1781,13 @@ const readingView = (
       [`${outline.caseReference} · ${outline.caseTitle}`],
     ),
     banner(h, model, outline),
+    actionButton(
+      h,
+      model.isMakingPdf ? 'Making the PDF.' : 'Download PDF',
+      `Download PDF of ${outline.label}`,
+      Message.ClickedDownloadPdf(),
+      model.isMakingPdf,
+    ),
     sectionNav(h, model, template, outline),
     h.div(
       [

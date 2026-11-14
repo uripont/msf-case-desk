@@ -1,0 +1,38 @@
+{
+  "name": "@case-desk/pdf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
+    "./node": "./src/node.ts",
+    "./testing": "./src/testing/extract.ts",
+    "./testing/documents": "./src/testing/documents.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint src",
+    "format": "oxfmt"
+  },
+  "dependencies": {
+    "@case-desk/domain": "workspace:*",
+    "@fontsource/hanken-grotesk": "5.3.0",
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/noto-sans": "5.3.0",
+    "@fontsource/source-serif-4": "5.3.1",
+    "pdfmake": "0.3.14"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "effect": "4.0.0",
+    "esbuild": "0.28.2",
+    "fast-check": "^4.10.2",
+    "oxfmt": "^0.66.0",
+    "oxlint": "1.85.0",
+    "pdfjs-dist": "6.5.438",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}
