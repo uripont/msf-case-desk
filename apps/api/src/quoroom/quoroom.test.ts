@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
 import { SCENARIOS, PEOPLE, SECRET, TEXT, type World, makeWorld, richContent, withFigure } from './testkit'
-import { INTAKE_TEMPLATE } from '@case-desk/domain'
+import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@case-desk/domain'
 import { sha256Hex } from './content'
 import { cleanupStale } from './core'
 import { makePng } from './imageFixtures'
@@ -274,6 +274,26 @@ describe.each(SCENARIOS)('$name', scenario => {
     w.clock.advance(25 * 3_600_000)
     expect((await run()).images).toBe(1)
     expect((await w.raw('alice', '/api/images/img-stray/0?context=working_copy')).status).toBe(404)
+  })
+
+  test('a replaced theme logo is cleaned up after a day, the current one never', async () => {
+    const w = await world()
+    const png = makePng()
+    const upload = async (id: string) => {
+      const query = `uploadId=${id}&owner=theme&index=0&chunks=1&mime=image%2Fpng&width=1&height=1&size=${png.length}`
+      expect((await w.raw('adam', `/api/images?${query}`, { method: 'POST', body: png })).status).toBe(200)
+    }
+    await upload('logo-old')
+    await w.call('adam', c => c.UpdateTheme({ theme: { ...DEFAULT_THEME, logo: 'logo-old' } }))
+    await upload('logo-new')
+    await w.call('adam', c => c.UpdateTheme({ theme: { ...DEFAULT_THEME, logo: 'logo-new' } }))
+    w.clock.advance(25 * 3_600_000)
+    const cleaned = await Effect.runPromise(
+      cleanupStale().pipe(Effect.provide(w.deps)) as Effect.Effect<{ images: number; staged: number }>,
+    )
+    expect(cleaned.images).toBe(1)
+    expect((await w.raw('alice', '/api/images/logo-old/0?context=theme')).status).toBe(404)
+    expect((await w.raw('alice', '/api/images/logo-new/0?context=theme')).status).toBe(200)
   })
 
   test('a malformed percent-encoding in an image path is a bad request, and a retried chunk upload is idempotent', async () => {
@@ -805,7 +825,7 @@ describe.each(SCENARIOS)('$name', scenario => {
         ListInbox: () => w.call('carol', c => c.ListInbox({})),
         ListPendingReviews: () => w.call('carol', c => c.ListPendingReviews()),
         ListPublishedTemplates: () => w.call('alice', c => c.ListPublishedTemplates()),
-        ListTemplates: () => w.call('tess', c => c.ListTemplates()),
+        ListTemplates: () => w.call('tess', c => c.ListTemplates({})),
         ListReviewers: () => w.call('alice', c => c.ListReviewers({ unit: 'unit-1' })),
         ListUnitMembers: () => w.call('alice', c => c.ListUnitMembers({ unit: 'unit-1' })),
         ListCommittees: () => w.call('alice', c => c.ListCommittees({ unit: 'unit-1' })),

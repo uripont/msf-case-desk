@@ -51,6 +51,9 @@ export const Model = Schema.Struct({
   copyForm: FormState,
   maybeCreated: Schema.Option(CreatedDraft),
   maybeConfirmRetire: Schema.Option(Schema.String),
+  maybeConfirmDiscard: Schema.Option(Schema.String),
+  maybeNext: Schema.Option(Schema.Int),
+  isLoadingMore: Schema.Boolean,
   maybeBusy: Schema.Option(Schema.String),
   maybeNotice: Schema.Option(Schema.String),
   maybeActionFailure: Schema.Option(Failure),
@@ -68,6 +71,9 @@ export const initialModel = Model.make({
   copyForm: FormState.Editing(),
   maybeCreated: Option.none(),
   maybeConfirmRetire: Option.none(),
+  maybeConfirmDiscard: Option.none(),
+  maybeNext: Option.none(),
+  isLoadingMore: false,
   maybeBusy: Option.none(),
   maybeNotice: Option.none(),
   maybeActionFailure: Option.none(),
@@ -76,9 +82,14 @@ export const initialModel = Model.make({
 // MESSAGE
 
 export const Message = defineMessageUnion({
-  SucceededLoadTemplates: { templates: Schema.Array(TemplateSummary) },
+  SucceededLoadTemplates: {
+    templates: Schema.Array(TemplateSummary),
+    offset: Schema.Int,
+    maybeNext: Schema.Option(Schema.Int),
+  },
   FailedLoadTemplates: { failure: Failure },
   ClickedRetryLoad: {},
+  ClickedLoadMore: {},
   UpdatedNewName: { value: Schema.String },
   SubmittedNew: {},
   SelectedCopySource: { value: Schema.String },
@@ -92,6 +103,14 @@ export const Message = defineMessageUnion({
   ConfirmedRetire: { templateId: Schema.String },
   SucceededRetire: { summary: TemplateSummary },
   FailedRetire: { failure: Failure },
+  ClickedRestore: { templateId: Schema.String },
+  SucceededRestore: { summary: TemplateSummary },
+  FailedRestore: { failure: Failure },
+  AskedDiscard: { templateId: Schema.String },
+  CancelledDiscard: {},
+  ConfirmedDiscard: { templateId: Schema.String, version: Schema.Int },
+  SucceededDiscard: { templateId: Schema.String },
+  FailedDiscard: { failure: Failure },
 })
 export type Message = typeof Message.Type
 
@@ -102,13 +121,49 @@ const VERSION_FORM = 'version'
 // COMMAND
 
 export const LoadTemplates = Command.define('LoadTemplates', {
+  args: { offset: Schema.Int },
   messages: [Message.SucceededLoadTemplates, Message.FailedLoadTemplates],
-  execute: withQuoroom(client => client.ListTemplates()).pipe(
-    Effect.map(templates => Message.SucceededLoadTemplates({ templates })),
-    Effect.catch(error =>
-      Effect.succeed(Message.FailedLoadTemplates({ failure: failureOf(error) })),
+  execute: ({ offset }) =>
+    withQuoroom(client => client.ListTemplates({ offset })).pipe(
+      Effect.map(page =>
+        Message.SucceededLoadTemplates({
+          templates: page.templates,
+          offset,
+          maybeNext: Option.fromUndefinedOr(page.next),
+        }),
+      ),
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedLoadTemplates({ failure: failureOf(error) }),
+        ),
+      ),
     ),
-  ),
+})
+
+export const RestoreTemplate = Command.define('RestoreTemplate', {
+  args: { templateId: Schema.String },
+  messages: [Message.SucceededRestore, Message.FailedRestore],
+  execute: ({ templateId }) =>
+    withQuoroom(client => client.RestoreTemplate({ templateId })).pipe(
+      Effect.map(summary => Message.SucceededRestore({ summary })),
+      Effect.catch(error =>
+        Effect.succeed(Message.FailedRestore({ failure: failureOf(error) })),
+      ),
+    ),
+})
+
+export const DiscardTemplateDraft = Command.define('DiscardTemplateDraft', {
+  args: { templateId: Schema.String, version: Schema.Int },
+  messages: [Message.SucceededDiscard, Message.FailedDiscard],
+  execute: ({ templateId, version }) =>
+    withQuoroom(client =>
+      client.DiscardTemplateDraft({ templateId, version }),
+    ).pipe(
+      Effect.map(() => Message.SucceededDiscard({ templateId })),
+      Effect.catch(error =>
+        Effect.succeed(Message.FailedDiscard({ failure: failureOf(error) })),
+      ),
+    ),
 })
 
 export const CreateTemplateDraft = Command.define('CreateTemplateDraft', {
@@ -160,18 +215,27 @@ export const enter = (
     load: () => LoadState.Loading(),
     maybeCreated: () => Option.none(),
     maybeConfirmRetire: () => Option.none(),
+    maybeConfirmDiscard: () => Option.none(),
+    maybeNext: () => Option.none(),
+    isLoadingMore: () => false,
     maybeNotice: () => Option.none(),
     maybeActionFailure: () => Option.none(),
   }),
-  commands: [LoadTemplates()],
+  commands: [LoadTemplates({ offset: 0 })],
 })
 
-export const loadedTemplates = (templates: ReadonlyArray<TemplateSummary>): Message =>
-  Message.SucceededLoadTemplates({ templates })
+export const loadedTemplates = (
+  templates: ReadonlyArray<TemplateSummary>,
+  maybeNext: Option.Option<number> = Option.none(),
+): Message =>
+  Message.SucceededLoadTemplates({ templates, offset: 0, maybeNext })
 
 // NOTE: the version a copy starts from: the published one, else the latest.
 export const sourceVersionOf = (summary: TemplateSummary): number =>
   summary.publishedVersion ?? summary.latestVersion
+
+export const draftVersionOf = (summary: TemplateSummary): number =>
+  summary.draftVersion ?? summary.latestVersion
 
 export const stateText = (summary: TemplateSummary): string => {
   if (summary.retired) return `Retired, last version ${summary.latestVersion}`
@@ -180,7 +244,7 @@ export const stateText = (summary: TemplateSummary): string => {
       ? 'Not published yet'
       : `Published, version ${summary.publishedVersion}`
   return summary.hasDraft
-    ? `${published}. Draft of version ${summary.latestVersion} in progress`
+    ? `${published}. Draft of version ${draftVersionOf(summary)} in progress`
     : published
 }
 
@@ -197,22 +261,50 @@ export const update = (
   message: Message,
 ): Update.Return<Model, Message> =>
   Message.match<Update.Return<Model, Message>>(message, {
-    SucceededLoadTemplates: ({ templates }) => ({
-      model: modifyFields(model, {
-        load: () => LoadState.Loaded(),
-        templates: () => templates,
-        copySource: current =>
-          Array.some(templates, entry => entry.id === current)
-            ? current
-            : (templates[0]?.id ?? ''),
+    SucceededLoadTemplates: ({ templates, offset, maybeNext }) => {
+      const all =
+        offset === 0
+          ? templates
+          : Array.appendAll(
+              Array.filter(
+                model.templates,
+                entry => !Array.some(templates, next => next.id === entry.id),
+              ),
+              templates,
+            )
+      return {
+        model: modifyFields(model, {
+          load: () => LoadState.Loaded(),
+          templates: () => all,
+          maybeNext: () => maybeNext,
+          isLoadingMore: () => false,
+          copySource: current =>
+            Array.some(all, entry => entry.id === current)
+              ? current
+              : (all[0]?.id ?? ''),
+        }),
+      }
+    },
+    ClickedLoadMore: () =>
+      Option.match(model.maybeNext, {
+        onNone: () => ({ model }),
+        onSome: next => ({
+          model: modifyFields(model, { isLoadingMore: () => true }),
+          commands: [LoadTemplates({ offset: next })],
+        }),
       }),
-    }),
     FailedLoadTemplates: ({ failure }) => ({
-      model: modifyFields(model, { load: () => LoadState.Failed({ failure }) }),
+      model: modifyFields(model, {
+        load: current =>
+          model.isLoadingMore ? current : LoadState.Failed({ failure }),
+        isLoadingMore: () => false,
+        maybeActionFailure: current =>
+          model.isLoadingMore ? Option.some(failure) : current,
+      }),
     }),
     ClickedRetryLoad: () => ({
       model: modifyFields(model, { load: () => LoadState.Loading() }),
-      commands: [LoadTemplates()],
+      commands: [LoadTemplates({ offset: 0 })],
     }),
     UpdatedNewName: ({ value }) => ({
       model: modifyFields(model, {
@@ -320,7 +412,7 @@ export const update = (
             name: record.template.name,
           }),
       }),
-      commands: [LoadTemplates()],
+      commands: [LoadTemplates({ offset: 0 })],
     }),
     FailedCreateDraft: ({ failure, form }) => ({
       model: modifyFields(model, {
@@ -365,6 +457,59 @@ export const update = (
         maybeActionFailure: () => Option.some(failure),
       }),
     }),
+    ClickedRestore: ({ templateId }) =>
+      Option.isSome(model.maybeBusy)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              maybeBusy: () => Option.some(templateId),
+              maybeActionFailure: () => Option.none(),
+            }),
+            commands: [RestoreTemplate({ templateId })],
+          },
+    SucceededRestore: ({ summary }) => ({
+      model: modifyFields(model, {
+        templates: templates => upsert(templates, summary),
+        maybeBusy: () => Option.none(),
+        maybeNotice: () =>
+          Option.some(`${summary.name} is restored. New reports can start on it again.`),
+      }),
+    }),
+    FailedRestore: ({ failure }) => ({
+      model: modifyFields(model, {
+        maybeBusy: () => Option.none(),
+        maybeActionFailure: () => Option.some(failure),
+      }),
+    }),
+    AskedDiscard: ({ templateId }) => ({
+      model: modifyFields(model, {
+        maybeConfirmDiscard: () => Option.some(templateId),
+      }),
+    }),
+    CancelledDiscard: () => ({
+      model: modifyFields(model, { maybeConfirmDiscard: () => Option.none() }),
+    }),
+    ConfirmedDiscard: ({ templateId, version }) => ({
+      model: modifyFields(model, {
+        maybeConfirmDiscard: () => Option.none(),
+        maybeBusy: () => Option.some(templateId),
+        maybeActionFailure: () => Option.none(),
+      }),
+      commands: [DiscardTemplateDraft({ templateId, version })],
+    }),
+    SucceededDiscard: () => ({
+      model: modifyFields(model, {
+        maybeBusy: () => Option.none(),
+        maybeNotice: () => Option.some('The draft was discarded.'),
+      }),
+      commands: [LoadTemplates({ offset: 0 })],
+    }),
+    FailedDiscard: ({ failure }) => ({
+      model: modifyFields(model, {
+        maybeBusy: () => Option.none(),
+        maybeActionFailure: () => Option.some(failure),
+      }),
+    }),
   })
 
 // VIEW
@@ -383,6 +528,11 @@ const rowView = (
     id => id === summary.id,
   )
   const published = summary.publishedVersion
+  const discarding = Option.exists(
+    model.maybeConfirmDiscard,
+    id => id === summary.id,
+  )
+  const draftVersion = draftVersionOf(summary)
   return h.keyed('li')(
     summary.id,
     [
@@ -398,6 +548,12 @@ const rowView = (
             [summary.builtIn ? `${summary.name} (built in)` : summary.name],
           ),
           h.p([h.Class('text-base text-msf-grey')], [stateText(summary)]),
+          summary.draftName === undefined || summary.draftName === summary.name
+            ? h.empty
+            : h.p(
+                [h.Class('text-base text-msf-grey')],
+                [`The draft is named ${summary.draftName}.`],
+              ),
         ],
       ),
       h.div(
@@ -407,7 +563,7 @@ const rowView = (
             ? [
                 h.a(
                   [
-                    h.Href(editorPath(summary.id, summary.latestVersion)),
+                    h.Href(editorPath(summary.id, draftVersion)),
                     h.AriaLabel(`Edit the draft of ${summary.name}`),
                     h.Class(
                       clsx(
@@ -439,7 +595,7 @@ const rowView = (
                   [`Open version ${published}`],
                 ),
               ]),
-          ...(published !== undefined && !summary.hasDraft
+          ...(published !== undefined && !summary.hasDraft && !summary.builtIn
             ? [
                 smallButton(
                   h,
@@ -449,6 +605,26 @@ const rowView = (
                     version: published,
                   }),
                   Option.some(`Start a new version of ${summary.name}`),
+                ),
+              ]
+            : []),
+          ...(summary.hasDraft && !discarding
+            ? [
+                smallButton(
+                  h,
+                  'Discard the draft',
+                  Message.AskedDiscard({ templateId: summary.id }),
+                  Option.some(`Discard the draft of ${summary.name}`),
+                ),
+              ]
+            : []),
+          ...(summary.retired
+            ? [
+                smallButton(
+                  h,
+                  busy ? 'Working.' : 'Restore',
+                  Message.ClickedRestore({ templateId: summary.id }),
+                  Option.some(`Restore ${summary.name}`),
                 ),
               ]
             : []),
@@ -464,6 +640,36 @@ const rowView = (
             : []),
         ],
       ),
+      discarding
+        ? h.div(
+            [
+              h.Role('alertdialog'),
+              h.AriaLabel(`Discard the draft of ${summary.name}?`),
+              h.Class('flex flex-col gap-3 border border-msf-alert p-4'),
+            ],
+            [
+              h.p(
+                [h.Class('text-base text-msf-ink')],
+                ['Discard this draft? Its changes are lost. Published versions are not affected.'],
+              ),
+              h.div(
+                [h.Class('flex flex-wrap gap-3')],
+                [
+                  smallButton(
+                    h,
+                    'Discard it',
+                    Message.ConfirmedDiscard({
+                      templateId: summary.id,
+                      version: draftVersion,
+                    }),
+                    Option.some(`Confirm discarding the draft of ${summary.name}`),
+                  ),
+                  smallButton(h, 'Keep the draft', Message.CancelledDiscard()),
+                ],
+              ),
+            ],
+          )
+        : h.empty,
       confirming
         ? h.div(
             [
@@ -544,6 +750,15 @@ const loaded = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => [
               ),
             ],
             Array.map(templates, summary => rowView(h, model, summary)),
+          ),
+      }),
+      Option.match(model.maybeNext, {
+        onNone: () => h.empty,
+        onSome: () =>
+          smallButton(
+            h,
+            model.isLoadingMore ? 'Loading.' : 'Show more templates',
+            Message.ClickedLoadMore(),
           ),
       }),
     ],

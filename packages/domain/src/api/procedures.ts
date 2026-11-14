@@ -94,6 +94,8 @@ export const PROCEDURES = {
   SaveTemplateDraft: p('templates', 'template_editor', ['edit_template']),
   PublishTemplateVersion: p('templates', 'template_editor', ['publish_template']),
   RetireTemplate: p('templates', 'template_editor', ['retire_template']),
+  RestoreTemplate: p('templates', 'template_editor', ['retire_template'], 'Un-retires: the newest retired version is published again. Publishing is refused while a template is retired.'),
+  DiscardTemplateDraft: p('templates', 'template_editor', ['edit_template'], 'Only a draft; also one that cannot be opened.'),
   // -- theme
   GetTheme: p('theme', 'signed_in'),
   UpdateTheme: p('theme', 'admin', ['set_theme']),

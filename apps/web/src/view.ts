@@ -38,23 +38,24 @@ import {
 } from './main'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
-import * as TemplateEditor from './quoroom/templateEditor'
-import * as Templates from './quoroom/templates'
-import { actionButton } from './quoroom/entryViews'
 import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
 import * as Downloads from './quoroom/downloads'
+import { actionButton } from './quoroom/entryViews'
 import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
-import * as Notifications from './quoroom/notifications'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
+import * as Notifications from './quoroom/notifications'
 import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
-import * as Review from './quoroom/review'
 import * as Reports from './quoroom/reports'
+import * as Review from './quoroom/review'
 import * as Share from './quoroom/share'
+import * as TemplateEditor from './quoroom/templateEditor'
+import * as Templates from './quoroom/templates'
+import * as ThemeScreen from './quoroom/themeScreen'
 import * as Unit from './quoroom/unit'
 import { AppRoute, isTriageRoute, pathOf } from './route'
 import { rulesPage } from './rulesView'
@@ -216,7 +217,10 @@ const pageLinksFor = (
       ]
     : []),
   ...(hasCapability(me, 'admin')
-    ? [{ route: AppRoute.Admin(), label: 'Administration' }]
+    ? [
+        { route: AppRoute.Admin(), label: 'Administration' },
+        { route: AppRoute.Theme(), label: 'Theme' },
+      ]
     : []),
   ...(hasCapability(me, 'template_editor')
     ? [{ route: AppRoute.Templates(), label: 'Templates' }]
@@ -267,8 +271,9 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
         [
           h.nav(
             [h.AriaLabel('Pages'), h.Class('flex flex-wrap gap-x-6 gap-y-2')],
-            Array.map(pageLinksFor(me, modeOf(model), model.notifications.unread), link =>
-              pageLink(model, link, h),
+            Array.map(
+              pageLinksFor(me, modeOf(model), model.notifications.unread),
+              link => pageLink(model, link, h),
             ),
           ),
           h.div(
@@ -834,6 +839,7 @@ const deskPageView = (
         Unit: () => loadedDesk(model, h),
         Reports: () => loadedDesk(model, h),
         Admin: () => loadedDesk(model, h),
+        Theme: () => loadedDesk(model, h),
         Templates: () => loadedDesk(model, h),
         TemplateEditor: () => loadedDesk(model, h),
         Link: () => loadedDesk(model, h),
@@ -892,14 +898,26 @@ const LEAVE_REASONS: Readonly<
 
 // NOTE: Asks before the report is left with edits that are not saved (stage
 // 4 review): stay, wait for the save and then go, or go without it.
+const TEMPLATE_LEAVE_REASONS = {
+  stale:
+    'The draft was changed by someone else, so what you typed here is not saved.',
+  unsaved: 'The draft has changes that are not saved.',
+} as const
+
 const leaveDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
   Option.match(model.maybeLeaving, {
     onNone: () => h.empty,
     onSome: leaving => {
-      const reason = Report.unsavedReason(model.report)
+      const isTemplate = AppRoute.guards.TemplateEditor(model.route)
+      const reason = isTemplate
+        ? TemplateEditor.SaveState.guards.Stale(model.templateEditor.save)
+          ? 'stale'
+          : 'failed'
+        : Report.unsavedReason(model.report)
+      const what = isTemplate ? 'template' : 'report'
       return h.section(
         [
-          h.AriaLabel('Leave the report?'),
+          h.AriaLabel(`Leave the ${what}?`),
           h.Role('alertdialog'),
           h.Class(
             'mb-6 mt-6 flex max-w-4xl flex-col gap-3 border-2 border-msf-ink px-4 py-4',
@@ -912,11 +930,13 @@ const leaveDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
               h.Tabindex(-1),
               h.Class('text-xl font-black'),
             ],
-            ['This report has changes that are not saved'],
+            [`This ${what} has changes that are not saved`],
           ),
           h.p(
             [h.Class('text-pretty text-base text-msf-ink')],
-            [`${LEAVE_REASONS[reason]} If you leave now, they are lost.`],
+            [
+              `${isTemplate ? TEMPLATE_LEAVE_REASONS[reason === 'stale' ? 'stale' : 'unsaved'] : LEAVE_REASONS[reason]} If you leave now, they are lost.`,
+            ],
           ),
           leaving.isWaiting
             ? h.p(
@@ -929,8 +949,8 @@ const leaveDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
             [
               actionButton(
                 h,
-                'Stay on this report',
-                'Stay on this report',
+                `Stay on this ${what}`,
+                `Stay on this ${what}`,
                 Message.ClickedStayOnReport(),
               ),
               reason === 'stale' || leaving.isWaiting
@@ -1031,12 +1051,22 @@ const pageView = (
             toParentMessage: message => Message.GotAdminMessage({ message }),
           }),
         ],
+        Theme: () => [
+          h.submodel({
+            slotId: 'theme',
+            model: model.themeScreen,
+            view: ThemeScreen.view,
+            toParentMessage: message =>
+              Message.GotThemeScreenMessage({ message }),
+          }),
+        ],
         Templates: () => [
           h.submodel({
             slotId: 'templates',
             model: model.templates,
             view: Templates.view,
-            toParentMessage: message => Message.GotTemplatesMessage({ message }),
+            toParentMessage: message =>
+              Message.GotTemplatesMessage({ message }),
           }),
         ],
         TemplateEditor: ({ templateId, version }) => [

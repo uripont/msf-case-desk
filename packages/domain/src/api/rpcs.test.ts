@@ -177,6 +177,7 @@ describe('Schema round trips with domain generators', () => {
           templateId: template.id,
           version: template.version,
           state: 'draft',
+          draftRevision: 0,
           template,
           createdBy: 'a1',
           createdAt: 1,

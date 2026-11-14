@@ -5,7 +5,33 @@
 // few megabytes). Names are UTF-8. The time stamp is a parameter, so the same
 // input gives the same bytes.
 
-export type ZipEntry = Readonly<{ name: string; data: Uint8Array }>
+export type ZipEntry<B extends ArrayBufferLike = ArrayBufferLike> = Readonly<{
+  name: string
+  data: Uint8Array<B>
+}>
+
+// NOTE: Far above what a report can hold (20 MB of images per report), well
+// under the 4 GiB a zip without zip64 can address. Past it, a zip is refused
+// with a clear error instead of writing offsets that wrap.
+export const MAX_ZIP_BYTES = 1_500_000_000
+export const MAX_ZIP_ENTRIES = 60_000
+
+export class ZipTooLarge extends Error {
+  readonly _tag = 'ZipTooLarge'
+  constructor() {
+    super('The files are too large to put in one zip.')
+  }
+}
+
+// NOTE: `sizes` are the sizes of the entries' data, in bytes.
+export const checkZipSize = (sizes: ReadonlyArray<number>): void => {
+  if (
+    sizes.length > MAX_ZIP_ENTRIES ||
+    sizes.reduce((sum, size) => sum + size, 0) > MAX_ZIP_BYTES
+  ) {
+    throw new ZipTooLarge()
+  }
+}
 
 const TABLE: ReadonlyArray<number> = Array.from({ length: 256 }, (_, n) => {
   let value = n
@@ -33,16 +59,20 @@ const dosTime = (date: Date): readonly [number, number] => {
   ]
 }
 
-export const zipStore = (
-  entries: ReadonlyArray<ZipEntry>,
+// NOTE: The zip as a list of parts: small header pieces and the entries' own
+// data, not copied. A `Blob` can be made from the parts directly, so the file
+// is never held twice.
+export const zipParts = <B extends ArrayBufferLike>(
+  entries: ReadonlyArray<ZipEntry<B>>,
   modified: Date,
-): Uint8Array => {
+): ReadonlyArray<Uint8Array<ArrayBuffer | B>> => {
+  checkZipSize(entries.map(entry => entry.data.length))
   const encoder = new TextEncoder()
   const [time, day] = dosTime(modified)
-  const chunks: Array<Uint8Array> = []
-  const central: Array<Uint8Array> = []
+  const chunks: Array<Uint8Array<ArrayBuffer | B>> = []
+  const central: Array<Uint8Array<ArrayBuffer | B>> = []
   let offset = 0
-  const push = (bytes: Uint8Array): void => {
+  const push = (bytes: Uint8Array<ArrayBuffer | B>): void => {
     chunks.push(bytes)
     offset += bytes.length
   }
@@ -88,11 +118,19 @@ export const zipStore = (
   end.setUint32(12, offset - start, true)
   end.setUint32(16, start, true)
   push(new Uint8Array(end.buffer))
-  const out = new Uint8Array(offset)
+  return chunks
+}
+
+export const zipStore = (
+  entries: ReadonlyArray<ZipEntry>,
+  modified: Date,
+): Uint8Array => {
+  const parts = zipParts(entries, modified)
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
   let at = 0
-  for (const chunk of chunks) {
-    out.set(chunk, at)
-    at += chunk.length
+  for (const part of parts) {
+    out.set(part, at)
+    at += part.length
   }
   return out
 }

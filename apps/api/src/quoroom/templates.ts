@@ -46,6 +46,7 @@ const decodeTemplate = Schema.decodeUnknownSync(TemplateSchema)
 const decodeTheme = Schema.decodeUnknownSync(ThemeSchema)
 
 const MAX_TEMPLATES = 60
+const DEFAULT_PAGE = 50
 
 const readTemplate = (stored: StoreTemplateVersionRecord): Template => {
   try {
@@ -62,6 +63,7 @@ const recordOf = (stored: StoreTemplateVersionRecord) =>
       version: stored.version,
       state: stored.state,
       template: readTemplate(stored),
+      draftRevision: stored.draftRevision,
       createdBy: stored.createdBy ?? 'system',
       createdAt: stored.createdAt,
       ...(stored.publishedAt === null ? {} : { publishedAt: stored.publishedAt }),
@@ -81,9 +83,7 @@ const problemsOf = (
     .slice(0, 200)
     .map(entry => problem(source, entry.code.slice(0, 64), entry.path.slice(0, 32), entry.message.slice(0, 500)))
 
-const summariesOf = (
-  versions: ReadonlyArray<StoreTemplateSummary>,
-): ReadonlyArray<{
+type Summary = {
   id: string
   name: string
   shortName: string
@@ -91,30 +91,42 @@ const summariesOf = (
   latestVersion: number
   publishedVersion?: number
   hasDraft: boolean
+  draftVersion?: number
+  draftName?: string
   retired: boolean
-}> => {
+}
+
+// NOTE: `name` is the published version's (the newest retired one when the
+// template is retired, the draft's only when nothing else exists); the draft
+// is described apart.
+const summariesOf = (
+  versions: ReadonlyArray<StoreTemplateSummary>,
+): ReadonlyArray<Summary> => {
   const byId = new Map<string, Array<StoreTemplateSummary>>()
   for (const version of versions) {
     byId.set(version.templateId, [...(byId.get(version.templateId) ?? []), version])
   }
+  const newest = (list: ReadonlyArray<StoreTemplateSummary>) =>
+    list.reduce<StoreTemplateSummary | undefined>(
+      (a, b) => (a === undefined || b.version > a.version ? b : a),
+      undefined,
+    )
   return [...byId.entries()].map(([id, list]) => {
-    const latest = list.reduce((a, b) => (b.version > a.version ? b : a))
-    const published = list
-      .filter(entry => entry.state === 'published')
-      .reduce<StoreTemplateSummary | undefined>(
-        (a, b) => (a === undefined || b.version > a.version ? b : a),
-        undefined,
-      )
+    const latest = newest(list) as StoreTemplateSummary
+    const published = newest(list.filter(entry => entry.state === 'published'))
+    const draft = newest(list.filter(entry => entry.state === 'draft'))
+    const shown =
+      published ?? newest(list.filter(entry => entry.state !== 'draft')) ?? latest
     return {
       id,
-      name: latest.name,
-      shortName: latest.shortName,
+      name: shown.name,
+      shortName: shown.shortName,
       builtIn: latest.builtin,
       latestVersion: latest.version,
       ...(published === undefined ? {} : { publishedVersion: published.version }),
-      hasDraft: list.some(entry => entry.state === 'draft'),
-      retired:
-        published === undefined && list.some(entry => entry.state === 'retired'),
+      hasDraft: draft !== undefined,
+      ...(draft === undefined ? {} : { draftVersion: draft.version, draftName: draft.name }),
+      retired: published === undefined && list.some(entry => entry.state === 'retired'),
     }
   })
 }
@@ -128,14 +140,25 @@ export const templateHandlers: Pick<
   | 'SaveTemplateDraft'
   | 'PublishTemplateVersion'
   | 'RetireTemplate'
+  | 'RestoreTemplate'
+  | 'DiscardTemplateDraft'
   | 'GetTheme'
   | 'UpdateTheme'
 > = {
-  ListTemplates: () =>
+  ListTemplates: ({ offset, limit }) =>
     Effect.gen(function* () {
       const db = yield* store
       yield* allowCapability(db, { type: 'edit_template' })
-      return summariesOf(yield* db.listTemplates()).slice(0, MAX_TEMPLATES)
+      const all = [...summariesOf(yield* db.listTemplates())].sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, 'en') || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      )
+      const from = offset ?? 0
+      const size = limit ?? DEFAULT_PAGE
+      return {
+        templates: all.slice(from, from + size),
+        ...(from + size < all.length ? { next: from + size } : {}),
+      }
     }),
 
   // NOTE: what an author chooses from when starting a report: the newest
@@ -232,6 +255,11 @@ export const templateHandlers: Pick<
           catch: () => new StorageUnavailable({ message: 'template invalid' }),
         })
         if (name === undefined) {
+          if (source.builtin) {
+            return yield* Effect.fail(
+              validation('input', 'builtin_copy_only', ['copyOf']),
+            )
+          }
           templateId = copyOf.templateId
           version =
             Math.max(
@@ -244,6 +272,10 @@ export const templateHandlers: Pick<
           templateId = yield* idOf('tpl')
           template = { ...original, id: templateId, version, name, shortName: slug(name) }
         }
+      }
+      const checked = validateTemplate(JSON.parse(JSON.stringify(template)))
+      if (Result.isFailure(checked)) {
+        return yield* Effect.fail(validationOf(problemsOf(checked.failure, 'template')))
       }
       const created = yield* db.createTemplateDraft({
         templateId,
@@ -273,7 +305,7 @@ export const templateHandlers: Pick<
       return yield* recordOf(stored)
     }),
 
-  SaveTemplateDraft: ({ templateId, version, template }) =>
+  SaveTemplateDraft: ({ templateId, version, draftRevision, template }) =>
     Effect.gen(function* () {
       const db = yield* store
       yield* allowCapability(db, { type: 'edit_template' })
@@ -286,11 +318,16 @@ export const templateHandlers: Pick<
         name: template.name,
         shortName: template.shortName,
         definition: JSON.stringify(template),
+        expectedRevision: draftRevision,
       })
       if (saved._tag === 'Refused') {
         const exists = yield* db.getTemplateVersion(templateId, version)
         return yield* Effect.fail(
-          exists === null ? new NotFound() : new Conflict({ reason: 'changed_meanwhile' }),
+          exists === null
+            ? new NotFound()
+            : new Conflict({
+                reason: saved.reason === 'stale' ? 'stale_save' : 'changed_meanwhile',
+              }),
         )
       }
       const stored = yield* db.getTemplateVersion(templateId, version)
@@ -303,7 +340,7 @@ export const templateHandlers: Pick<
 
   // NOTE: refused while the draft has problems. The version becomes immutable
   // and the audit event holds the difference from the previous version.
-  PublishTemplateVersion: ({ templateId, version }) =>
+  PublishTemplateVersion: ({ templateId, version, draftRevision }) =>
     Effect.gen(function* () {
       const db = yield* store
       const { user } = yield* allowCapability(db, { type: 'publish_template' })
@@ -313,6 +350,9 @@ export const templateHandlers: Pick<
       if (stored === null) return yield* Effect.fail(new NotFound())
       if (stored.state !== 'draft') {
         return yield* Effect.fail(new Conflict({ reason: 'changed_meanwhile' }))
+      }
+      if (stored.draftRevision !== draftRevision) {
+        return yield* Effect.fail(new Conflict({ reason: 'stale_save' }))
       }
       const checked = validateTemplate(JSON.parse(stored.definition))
       if (Result.isFailure(checked)) {
@@ -347,6 +387,7 @@ export const templateHandlers: Pick<
         changes: JSON.stringify(changes),
         publishedBy: user.id,
         now,
+        expectedRevision: draftRevision,
         audit: {
           at: now,
           actorId: user.id,
@@ -366,7 +407,13 @@ export const templateHandlers: Pick<
         },
       })
       if (published._tag === 'Refused') {
-        return yield* Effect.fail(new Conflict({ reason: 'changed_meanwhile' }))
+        return yield* Effect.fail(
+          published.reason === 'retired'
+            ? validation('input', 'template_retired')
+            : new Conflict({
+                reason: published.reason === 'stale' ? 'stale_save' : 'changed_meanwhile',
+              }),
+        )
       }
       const after = yield* db.getTemplateVersion(templateId, version)
       if (after === null) return yield* Effect.fail(new NotFound())
@@ -393,6 +440,46 @@ export const templateHandlers: Pick<
       )
       if (summary === undefined) return yield* Effect.fail(new NotFound())
       return summary
+    }),
+
+  RestoreTemplate: ({ templateId }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const { user } = yield* allowCapability(db, { type: 'retire_template' })
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const restored = yield* db.restoreTemplate(templateId, {
+        at: now,
+        actorId: user.id,
+        action: 'template.restored',
+        templateId,
+      })
+      if (restored._tag === 'Refused') {
+        return yield* Effect.fail(validation('input', 'not_retired'))
+      }
+      const summary = summariesOf(yield* db.listTemplates()).find(
+        entry => entry.id === templateId,
+      )
+      if (summary === undefined) return yield* Effect.fail(new NotFound())
+      return summary
+    }),
+
+  // NOTE: works on a draft that cannot be read too: that is how a broken
+  // draft is recovered.
+  DiscardTemplateDraft: ({ templateId, version }) =>
+    Effect.gen(function* () {
+      const db = yield* store
+      const { user } = yield* allowCapability(db, { type: 'edit_template' })
+      const clock = yield* QuoroomClock
+      const now = yield* clock.now
+      const discarded = yield* db.discardTemplateDraft(templateId, version, {
+        at: now,
+        actorId: user.id,
+        action: 'template.draft_discarded',
+        templateId,
+        meta: JSON.stringify({ version }),
+      })
+      if (discarded._tag === 'Refused') return yield* Effect.fail(new NotFound())
     }),
 
   GetTheme: () =>

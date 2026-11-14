@@ -36,6 +36,7 @@ export const recordOf = (
   version: template.version,
   state,
   template,
+  draftRevision: 0,
   createdBy: 'tess',
   createdAt: NOW,
   ...(state === 'draft' ? {} : { publishedAt: NOW }),

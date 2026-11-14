@@ -70,24 +70,26 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | `CreateCommittee` | unit_author | `manage_committees` |  |
 | `UpdateCommittee` | unit_author | `manage_committees` | Member changes as `addMemberIds` and `removeMemberIds` on the stored list. |
 
-### templates (7)
+### templates (9)
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListTemplates` | template_editor | `edit_template` |  |
+| `ListTemplates` | template_editor | `edit_template` | One page per call: payload `{offset?, limit?}` (at most 100), answer `TemplatesPage` with `next`. `name` is the published version's name; `draftName` and `draftVersion` describe the draft. |
 | `ListPublishedTemplates` | unit_author | `create_report` | Any author capability. |
 | `GetTemplateVersion` | template_editor | `preview_template`, `read_template_version` | Template editors read any version (`preview_template`). Authors of a report that uses the version, and reviewers for the version of a revision sent to them, read it with `read_template_version` on that report (`reportId`, and `revision` for a reviewer); anyone else gets NotFound. |
-| `CreateTemplateDraft` | template_editor | `create_template`, `copy_template` |  |
-| `SaveTemplateDraft` | template_editor | `edit_template` |  |
-| `PublishTemplateVersion` | template_editor | `publish_template` |  |
+| `CreateTemplateDraft` | template_editor | `create_template`, `copy_template` | The new draft is validated before it is stored (`Validation` otherwise). A built-in template can only be copied under a new name, never given a new version. |
+| `SaveTemplateDraft` | template_editor | `edit_template` | Guarded by `draftRevision` (the number the editor last read): a different number is `Conflict` `stale_save`. Each save increases it. |
+| `PublishTemplateVersion` | template_editor | `publish_template` | Takes the `draftRevision` the editor showed the diff for; refused (`Conflict` `stale_save`) if the draft changed. Refused with `template_retired` while the template is retired. |
 | `RetireTemplate` | template_editor | `retire_template` |  |
+| `RestoreTemplate` | template_editor | `retire_template` | Un-retires: the newest retired version is published again. Reports are unaffected by retiring and restoring. |
+| `DiscardTemplateDraft` | template_editor | `edit_template` | Deletes a draft that was never published, also one that cannot be opened. |
 
 ### theme (2)
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
 | `GetTheme` | signed_in | - |  |
-| `UpdateTheme` | admin | `set_theme` |  |
+| `UpdateTheme` | admin | `set_theme` | Refuses unreadable contrast, unknown tokens and an incomplete logo. The logo is read with `context=theme` by any signed-in account. |
 
 ### reports (7)
 

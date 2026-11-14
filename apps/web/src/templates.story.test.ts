@@ -10,6 +10,7 @@ import { PANEL_EDITS } from '@case-desk/domain/testing/template-edits'
 import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
 
 import { Message, update } from './main'
+import { clickedLinkTo } from './fixtures'
 import * as TemplateEditor from './quoroom/templateEditor'
 import * as Templates from './quoroom/templates'
 import {
@@ -241,3 +242,162 @@ describe('the template list', () => {
 
 import { listModel } from './templates.fixtures'
 const openList = () => listModel
+
+describe('leaving the template editor with unsaved edits', () => {
+  const dirty = () =>
+    send(
+      openEditor(BLANK_RECORD),
+      TemplateEditor.Message.Edited({
+        edit: { _tag: 'SetText', field: 'name', value: 'A new name' },
+      }),
+    ).model
+
+  test('a link to another page asks first and keeps the draft', () => {
+    const asked = update(dirty(), clickedLinkTo('/templates'))
+    expect(Option.isSome(asked.model.maybeLeaving)).toBe(true)
+    expect(asked.model.route._tag).toBe('TemplateEditor')
+    expect(asked.model.templateEditor.form.name).toBe('A new name')
+  })
+
+  test('staying keeps the edits; leaving without saving gives them up', () => {
+    const asked = update(dirty(), clickedLinkTo('/templates'))
+    const stayed = update(asked.model, Message.ClickedStayOnReport())
+    expect(Option.isNone(stayed.model.maybeLeaving)).toBe(true)
+    expect(TemplateEditor.hasUnsavedEdits(stayed.model.templateEditor)).toBe(true)
+    const left = update(asked.model, Message.ClickedLeaveReportUnsaved())
+    expect(left.model.route._tag).toBe('Templates')
+    expect(TemplateEditor.hasUnsavedEdits(left.model.templateEditor)).toBe(false)
+  })
+
+  test('waiting saves the draft and leaves by itself when it is saved', () => {
+    const asked = update(dirty(), clickedLinkTo('/templates'))
+    const waiting = update(asked.model, Message.ClickedWaitToLeaveReport())
+    expect(names(waiting)).toEqual([TemplateEditor.SaveTemplateDraft.name])
+    expect(waiting.model.route._tag).toBe('TemplateEditor')
+    const done = update(
+      waiting.model,
+      editorMessage(
+        TemplateEditor.Message.SucceededSave({
+          scope: scopeOf(BLANK_RECORD),
+          record: { ...BLANK_RECORD, draftRevision: 1 },
+          edits: 1,
+        }),
+      ),
+    )
+    expect(done.model.route._tag).toBe('Templates')
+    expect(Option.isNone(done.model.maybeLeaving)).toBe(true)
+  })
+
+  test('a clean draft is left without asking', () => {
+    const left = update(openEditor(BLANK_RECORD), clickedLinkTo('/templates'))
+    expect(Option.isNone(left.model.maybeLeaving)).toBe(true)
+    expect(left.model.route._tag).toBe('Templates')
+  })
+
+  test('the tab warning is on while the draft has unsaved edits', () => {
+    expect(TemplateEditor.hasUnsavedEdits(dirty().templateEditor)).toBe(true)
+    expect(TemplateEditor.hasUnsavedEdits(openEditor(BLANK_RECORD).templateEditor)).toBe(false)
+  })
+})
+
+describe('a draft changed by someone else', () => {
+  const dirtyModel = () =>
+    send(
+      openEditor(BLANK_RECORD),
+      TemplateEditor.Message.Edited({
+        edit: { _tag: 'SetText', field: 'name', value: 'A new name' },
+      }),
+    ).model
+
+  test('the save carries the draft revision the editor read', () => {
+    const saving = send(dirtyModel(), TemplateEditor.Message.ClickedSave())
+    const command = (saving.commands ?? [])[0]
+    expect(command?.args).toMatchObject({ draftRevision: 0 })
+  })
+
+  test('a refused save says so and offers a reload that fetches the current draft', () => {
+    const saving = send(dirtyModel(), TemplateEditor.Message.ClickedSave())
+    const failed = send(
+      saving.model,
+      TemplateEditor.Message.FailedSave({
+        scope: scopeOf(BLANK_RECORD),
+        failure: { _tag: 'Unavailable' },
+        isStale: true,
+      }),
+    )
+    expect(SaveStateOf(failed.model)).toBe('Stale')
+    expect(TemplateEditor.hasUnsavedEdits(failed.model.templateEditor)).toBe(true)
+    const reload = send(failed.model, TemplateEditor.Message.ClickedReload())
+    expect(names(reload)).toEqual([TemplateEditor.LoadTemplateVersion.name])
+    expect(SaveStateOf(reload.model)).toBe('Clean')
+  })
+
+  test('publishing names the revision the differences were shown for', () => {
+    const asked = send(dirtyModel(), TemplateEditor.Message.ClickedPublish())
+    const reviewing = send(
+      asked.model,
+      TemplateEditor.Message.SucceededPrepare({
+        scope: scopeOf(BLANK_RECORD),
+        record: { ...BLANK_RECORD, draftRevision: 4 },
+        edits: 1,
+        changes: [],
+      }),
+    )
+    const confirmed = send(reviewing.model, TemplateEditor.Message.ClickedConfirmPublish())
+    expect((confirmed.commands ?? [])[0]?.args).toMatchObject({ draftRevision: 4 })
+  })
+
+  test('a refused publish goes back to editing and asks for a reload', () => {
+    const asked = send(dirtyModel(), TemplateEditor.Message.ClickedPublish())
+    const failed = send(
+      asked.model,
+      TemplateEditor.Message.FailedPublish({
+        scope: scopeOf(BLANK_RECORD),
+        failure: { _tag: 'Unavailable' },
+        isStale: true,
+      }),
+    )
+    expect(failed.model.templateEditor.publish._tag).toBe('Idle')
+    expect(SaveStateOf(failed.model)).toBe('Stale')
+  })
+})
+
+describe('the template list pages, restores and discards', () => {
+  const list = () => listModel
+
+  test('more templates are asked for from the next offset and appended', () => {
+    const first = update(
+      list(),
+      Message.GotTemplatesMessage({
+        message: Templates.loadedTemplates(SUMMARIES.slice(0, 2), Option.some(2)),
+      }),
+    )
+    expect(Option.isSome(first.model.templates.maybeNext)).toBe(true)
+    const more = update(first.model, Message.GotTemplatesMessage({ message: Templates.Message.ClickedLoadMore() }))
+    expect((more.commands ?? [])[0]?.args).toMatchObject({ offset: 2 })
+    const done = update(
+      more.model,
+      Message.GotTemplatesMessage({
+        message: Templates.Message.SucceededLoadTemplates({
+          templates: SUMMARIES.slice(2),
+          offset: 2,
+          maybeNext: Option.none(),
+        }),
+      }),
+    )
+    expect(done.model.templates.templates.map(entry => entry.id)).toEqual(SUMMARIES.map(entry => entry.id))
+    expect(Option.isNone(done.model.templates.maybeNext)).toBe(true)
+  })
+
+  test('a retired template can be restored; a draft is discarded only after a confirmation', () => {
+    const restore = update(list(), Message.GotTemplatesMessage({ message: Templates.Message.ClickedRestore({ templateId: 'tpl-old' }) }))
+    expect(names(restore)).toEqual([Templates.RestoreTemplate.name])
+    const asked = update(list(), Message.GotTemplatesMessage({ message: Templates.Message.AskedDiscard({ templateId: 'tpl-draft' }) }))
+    expect(names(asked)).toEqual([])
+    const confirmed = update(
+      asked.model,
+      Message.GotTemplatesMessage({ message: Templates.Message.ConfirmedDiscard({ templateId: 'tpl-draft', version: 1 }) }),
+    )
+    expect(names(confirmed)).toEqual([Templates.DiscardTemplateDraft.name])
+  })
+})

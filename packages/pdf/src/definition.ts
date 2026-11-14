@@ -9,7 +9,7 @@ import type {
   Segment,
   TableCell,
 } from '@case-desk/domain'
-import { toRoman } from '@case-desk/domain'
+import { MIN_TEXT_CONTRAST, contrastRatio, toRoman } from '@case-desk/domain'
 
 import { type FontDefinition, definitionOf, fontName } from './fonts'
 import { type Script, splitByScript } from './scripts'
@@ -79,6 +79,56 @@ const mix = (hex: string, other: string, share: number): string => {
   return `#${part(1)}${part(3)}${part(5)}`
 }
 
+// NOTE: Colours derived from the theme must stay readable on what they sit
+// on, for any theme that passes `themeProblems` (text, primary and accent each
+// at least 4.5:1 on the background). A derived colour is a mix toward the
+// background; the share is raised (fills) or lowered (text) until every pair
+// passes, and the end of the search is a colour the theme itself guarantees:
+// the background for a fill, the text colour for text.
+const readableOn = (
+  colour: string,
+  against: ReadonlyArray<string>,
+): boolean =>
+  against.every(other => contrastRatio(colour, other) >= MIN_TEXT_CONTRAST)
+
+const steps = (from: number, to: number, by: number): ReadonlyArray<number> =>
+  Array.from(
+    { length: Math.floor(Math.abs(to - from) / by + 1e-9) + 1 },
+    (_, index) => from + Math.sign(to - from) * by * index,
+  )
+
+const fillFor = (
+  base: string,
+  background: string,
+  startShare: number,
+  texts: ReadonlyArray<string>,
+): string =>
+  steps(startShare, 1, 0.02)
+    .map(share => mix(base, background, Math.min(1, share)))
+    .concat(background)
+    .find(candidate => readableOn(candidate, texts)) ?? background
+
+const textFor = (
+  text: string,
+  background: string,
+  startShare: number,
+): string =>
+  steps(startShare, 0, 0.05)
+    .map(share => mix(text, background, Math.max(0, share)))
+    .find(candidate => readableOn(candidate, [background])) ?? text
+
+export const derivedColours = (
+  look: DocumentDescription['style'],
+): Readonly<{ tableHeaderFill: string; furniture: string; rule: string }> => ({
+  tableHeaderFill: fillFor(look.primary, look.background, 0.88, [
+    look.text,
+    look.primary,
+    look.accent,
+  ]),
+  furniture: textFor(look.text, look.background, 0.25),
+  rule: mix(look.text, look.background, 0.75),
+})
+
 // ---- The build ------------------------------------------------------------------------------
 
 type TextStyle = Readonly<{
@@ -136,7 +186,7 @@ export const buildPdf = (
   registerFont(look.bodyFont, 'latin')
   registerFont(look.headingFont, 'latin')
 
-  const tint = mix(look.primary, '#ffffff', 0.88)
+  const derived = derivedColours(look)
 
   const inlines = (text: string, style: TextStyle): ReadonlyArray<PdfNode> =>
     splitByScript(text).map((piece): PdfNode => ({
@@ -271,7 +321,7 @@ export const buildPdf = (
       const stack = blocksNodes(cell.blocks, inner * colspan)
       const target: PdfNode = {
         stack: stack.length === 0 ? [{ text: '' }] : stack,
-        ...(cell.header ? { fillColor: tint } : {}),
+        ...(cell.header ? { fillColor: derived.tableHeaderFill } : {}),
         ...(colspan > 1 ? { colSpan: colspan } : {}),
         ...(rowspan > 1 ? { rowSpan: rowspan } : {}),
       }
@@ -291,8 +341,8 @@ export const buildPdf = (
       layout: {
         hLineWidth: () => 0.5,
         vLineWidth: () => 0.5,
-        hLineColor: () => '#bdbdbd',
-        vLineColor: () => '#bdbdbd',
+        hLineColor: () => derived.rule,
+        vLineColor: () => derived.rule,
         paddingLeft: () => CELL_PADDING,
         paddingRight: () => CELL_PADDING,
         paddingTop: () => 3,
@@ -625,7 +675,7 @@ export const buildPdf = (
     )
 
   const redactionLabel = description.redactionLabel
-  const furnitureColor = mix(look.text, '#ffffff', 0.25)
+  const furnitureColor = derived.furniture
 
   const header = (currentPage: number): PdfNode | null => {
     const now = geometryNow()

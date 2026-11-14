@@ -20,6 +20,7 @@ export const AppRoute = defineRouteUnion({
   Unit: {},
   Reports: {},
   Admin: {},
+  Theme: {},
   Templates: {},
   TemplateEditor: { templateId: Schema.String, version: Schema.Int },
   Inbox: {},
@@ -56,6 +57,7 @@ const reportsRouter = pipe(
   Route.mapTo(AppRoute.Reports),
 )
 const adminRouter = pipe(Route.literal('admin'), Route.mapTo(AppRoute.Admin))
+const themeRouter = pipe(Route.literal('theme'), Route.mapTo(AppRoute.Theme))
 const templatesRouter = pipe(
   Route.literal('templates'),
   Route.mapTo(AppRoute.Templates),
@@ -150,6 +152,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     unitRouter,
     reportsRouter,
     adminRouter,
+    themeRouter,
     templateEditorRouter,
     templatesRouter,
     inboxRouter,
@@ -179,6 +182,7 @@ export const pathOf = (route: AppRoute): string =>
     Unit: () => unitRouter(),
     Reports: () => reportsRouter(),
     Admin: () => adminRouter(),
+    Theme: () => themeRouter(),
     Templates: () => templatesRouter(),
     TemplateEditor: ({ templateId, version }) =>
       templateEditorRouter({ templateId, version }),
@@ -212,6 +216,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Unit: () => true,
     Reports: () => true,
     Admin: () => true,
+    Theme: () => true,
     Templates: () => true,
     TemplateEditor: () => true,
     Inbox: () => true,
@@ -242,6 +247,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Unit: () => false,
     Reports: () => false,
     Admin: () => false,
+    Theme: () => false,
     Templates: () => false,
     TemplateEditor: () => false,
     Inbox: () => false,

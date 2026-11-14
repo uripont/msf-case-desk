@@ -1,15 +1,19 @@
 import { Effect } from 'effect'
 
-import { type Built, imagesOf } from './source'
+import { type Built, type ImageCache, imagesOf } from './source'
 
 // NOTE: Making a file from a described document and handing it to the
 // browser (stage 8). The PDF library is imported here, when first needed.
 
-export type Made = Readonly<{ name: string; bytes: Uint8Array }>
+export type Made = Readonly<{ name: string; bytes: Uint8Array<ArrayBuffer> }>
 
-export const renderBuilt = (reportId: string, built: Built) =>
+export const renderBuilt = (
+  reportId: string,
+  built: Built,
+  cache?: ImageCache,
+) =>
   Effect.gen(function* () {
-    const images = yield* imagesOf(reportId, built)
+    const images = yield* imagesOf(reportId, built, cache)
     const { renderDocument } = yield* Effect.tryPromise(
       () => import('./render'),
     )
@@ -19,13 +23,15 @@ export const renderBuilt = (reportId: string, built: Built) =>
     return { name: built.fileName, bytes } satisfies Made
   })
 
+// NOTE: The file is made from its parts, so a zip is never copied into one
+// big array first.
 export const saveFile = (
   name: string,
-  bytes: Uint8Array<ArrayBuffer>,
+  parts: ReadonlyArray<Uint8Array<ArrayBuffer>>,
   mime: string,
 ) =>
   Effect.sync(() => {
-    const url = URL.createObjectURL(new Blob([bytes], { type: mime }))
+    const url = URL.createObjectURL(new Blob([...parts], { type: mime }))
     const link = document.createElement('a')
     link.href = url
     link.download = name

@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
-import { Array, Effect, Option, Result, Schema } from 'effect'
-import { Command, Submodel, Update } from 'foldkit'
+import { Array, Effect, Option, Result, Schema, Stream } from 'effect'
+import { Command, Dom, Submodel, Subscription, Update } from 'foldkit'
 import { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { defineTaggedUnion } from 'foldkit/schema'
@@ -34,10 +34,15 @@ import {
 } from '@case-desk/domain'
 
 import { AppRoute, pathOf } from '../route'
-import { fieldClassName, focusRing, labelClassName, textAreaClassName } from '../style'
+import {
+  fieldClassName,
+  focusRing,
+  labelClassName,
+  textAreaClassName,
+} from '../style'
 import { withQuoroom } from './api'
 import { readOnlySection } from './contentView'
-import { Failure, failureOf, failureText } from './failure'
+import { Failure, failureOf, failureText, isStaleSave } from './failure'
 import {
   alertText,
   checkboxField,
@@ -70,6 +75,7 @@ export const SaveState = defineTaggedUnion({
   Saving: {},
   Saved: {},
   Failed: { failure: Failure },
+  Stale: {},
 })
 export type SaveState = typeof SaveState.Type
 
@@ -106,6 +112,7 @@ export const Model = Schema.Struct({
   idCounter: Schema.Int,
   edits: Schema.Int,
   newItemType: Schema.Literals(ITEM_TYPES),
+  expanded: Schema.Array(Schema.String),
   save: SaveState,
   publish: PublishState,
   mode: Mode,
@@ -114,6 +121,12 @@ export const Model = Schema.Struct({
   maybeNewDraft: Schema.Option(Schema.Int),
 })
 export type Model = typeof Model.Type
+
+// NOTE: Panels and section cards fold away (stage 9d): the long form is
+// usable only if most of it is closed. Closed by default, except the sections
+// panel, and what is opened stays open. A panel or a section with a problem
+// is always shown open, so an error is never hidden.
+export const SECTIONS_PANEL = 'panel:sections'
 
 export const BLANK_FORM: TemplateForm = templateToForm(
   blankTemplate('template', 'Template'),
@@ -130,6 +143,7 @@ export const initialModel = Model.make({
   idCounter: 1,
   edits: 0,
   newItemType: 'text',
+  expanded: [SECTIONS_PANEL],
   save: SaveState.Clean(),
   publish: PublishState.Idle(),
   mode: 'edit',
@@ -158,6 +172,7 @@ export const Message = defineMessageUnion({
   Edited: { edit: FormEdit },
   ClickedAdd: { kind: AddKind, parentId: Schema.String },
   SelectedNewItemType: { value: Schema.String },
+  ToggledOpen: { key: Schema.String },
   AskedRemove: { kind: RemoveKind, id: Schema.String },
   CancelledRemove: {},
   ConfirmedRemove: {},
@@ -167,7 +182,9 @@ export const Message = defineMessageUnion({
     record: TemplateVersionRecord,
     edits: Schema.Int,
   },
-  FailedSave: { scope: EditorScope, failure: Failure },
+  FailedSave: { scope: EditorScope, failure: Failure, isStale: Schema.Boolean },
+  ClickedReload: {},
+  WarnedBeforeLeaving: {},
   ClickedMode: { mode: Mode },
   ClickedPublish: {},
   SucceededPrepare: {
@@ -176,7 +193,7 @@ export const Message = defineMessageUnion({
     edits: Schema.Int,
     changes: Schema.Array(TemplateChange),
   },
-  FailedPrepare: { scope: EditorScope, failure: Failure },
+  FailedPrepare: { scope: EditorScope, failure: Failure, isStale: Schema.Boolean },
   ClickedBackToEditing: {},
   ClickedConfirmPublish: {},
   SucceededPublish: {
@@ -184,7 +201,7 @@ export const Message = defineMessageUnion({
     record: TemplateVersionRecord,
     changes: Schema.Array(TemplateChange),
   },
-  FailedPublish: { scope: EditorScope, failure: Failure },
+  FailedPublish: { scope: EditorScope, failure: Failure, isStale: Schema.Boolean },
   ClickedNewVersion: {},
   SucceededNewVersion: { scope: EditorScope, record: TemplateVersionRecord },
   FailedNewVersion: { scope: EditorScope, failure: Failure },
@@ -213,19 +230,33 @@ export const LoadTemplateVersion = Command.define('LoadTemplateVersion', {
 })
 
 export const SaveTemplateDraft = Command.define('SaveTemplateDraft', {
-  args: { scope: EditorScope, template: Template, edits: Schema.Int },
+  args: {
+    scope: EditorScope,
+    template: Template,
+    edits: Schema.Int,
+    draftRevision: Schema.Int,
+  },
   messages: [Message.SucceededSave, Message.FailedSave],
-  execute: ({ scope, template, edits }) =>
+  execute: ({ scope, template, edits, draftRevision }) =>
     withQuoroom(client =>
       client.SaveTemplateDraft({
         templateId: scope.templateId,
         version: scope.version,
+        draftRevision,
         template,
       }),
     ).pipe(
-      Effect.map(({ record }) => Message.SucceededSave({ scope, record, edits })),
+      Effect.map(({ record }) =>
+        Message.SucceededSave({ scope, record, edits }),
+      ),
       Effect.catch(error =>
-        Effect.succeed(Message.FailedSave({ scope, failure: failureOf(error) })),
+        Effect.succeed(
+          Message.FailedSave({
+            scope,
+            failure: failureOf(error),
+            isStale: isStaleSave(error),
+          }),
+        ),
       ),
     ),
 })
@@ -233,14 +264,20 @@ export const SaveTemplateDraft = Command.define('SaveTemplateDraft', {
 // NOTE: saves the draft, then reads the version before it and works out what
 // changed, which the person confirms before publishing.
 export const PrepareTemplateDiff = Command.define('PrepareTemplateDiff', {
-  args: { scope: EditorScope, template: Template, edits: Schema.Int },
+  args: {
+    scope: EditorScope,
+    template: Template,
+    edits: Schema.Int,
+    draftRevision: Schema.Int,
+  },
   messages: [Message.SucceededPrepare, Message.FailedPrepare],
-  execute: ({ scope, template, edits }) =>
+  execute: ({ scope, template, edits, draftRevision }) =>
     withQuoroom(client =>
       Effect.gen(function* () {
         const { record } = yield* client.SaveTemplateDraft({
           templateId: scope.templateId,
           version: scope.version,
+          draftRevision,
           template,
         })
         const previous =
@@ -260,20 +297,25 @@ export const PrepareTemplateDiff = Command.define('PrepareTemplateDiff', {
       ),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedPrepare({ scope, failure: failureOf(error) }),
+          Message.FailedPrepare({
+            scope,
+            failure: failureOf(error),
+            isStale: isStaleSave(error),
+          }),
         ),
       ),
     ),
 })
 
 export const PublishTemplateVersion = Command.define('PublishTemplateVersion', {
-  args: { scope: EditorScope },
+  args: { scope: EditorScope, draftRevision: Schema.Int },
   messages: [Message.SucceededPublish, Message.FailedPublish],
-  execute: ({ scope }) =>
+  execute: ({ scope, draftRevision }) =>
     withQuoroom(client =>
       client.PublishTemplateVersion({
         templateId: scope.templateId,
         version: scope.version,
+        draftRevision,
       }),
     ).pipe(
       Effect.map(({ record, changes }) =>
@@ -281,34 +323,43 @@ export const PublishTemplateVersion = Command.define('PublishTemplateVersion', {
       ),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedPublish({ scope, failure: failureOf(error) }),
+          Message.FailedPublish({
+            scope,
+            failure: failureOf(error),
+            isStale: isStaleSave(error),
+          }),
         ),
       ),
     ),
 })
 
-export const CreateNextTemplateVersion = Command.define('CreateNextTemplateVersion', {
-  args: { scope: EditorScope },
-  messages: [Message.SucceededNewVersion, Message.FailedNewVersion],
-  execute: ({ scope }) =>
-    withQuoroom(client =>
-      client.CreateTemplateDraft({
-        copyOf: { templateId: scope.templateId, version: scope.version },
-      }),
-    ).pipe(
-      Effect.map(record => Message.SucceededNewVersion({ scope, record })),
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedNewVersion({ scope, failure: failureOf(error) }),
+export const CreateNextTemplateVersion = Command.define(
+  'CreateNextTemplateVersion',
+  {
+    args: { scope: EditorScope },
+    messages: [Message.SucceededNewVersion, Message.FailedNewVersion],
+    execute: ({ scope }) =>
+      withQuoroom(client =>
+        client.CreateTemplateDraft({
+          copyOf: { templateId: scope.templateId, version: scope.version },
+        }),
+      ).pipe(
+        Effect.map(record => Message.SucceededNewVersion({ scope, record })),
+        Effect.catch(error =>
+          Effect.succeed(
+            Message.FailedNewVersion({ scope, failure: failureOf(error) }),
+          ),
         ),
       ),
-    ),
-})
+  },
+)
 
 // UPDATE
 
-export const loadedVersion = (scope: EditorScope, record: TemplateVersionRecord): Message =>
-  Message.SucceededLoadVersion({ scope, record })
+export const loadedVersion = (
+  scope: EditorScope,
+  record: TemplateVersionRecord,
+): Message => Message.SucceededLoadVersion({ scope, record })
 
 export const scopeOf = (model: Model): EditorScope => ({
   templateId: model.templateId,
@@ -336,7 +387,10 @@ export const enter = (
     version: () => version,
     generation: () => generation,
   })
-  return { model: fresh, commands: [LoadTemplateVersion({ scope: scopeOf(fresh) })] }
+  return {
+    model: fresh,
+    commands: [LoadTemplateVersion({ scope: scopeOf(fresh) })],
+  }
 }
 
 export const cleared = (model: Model): Model =>
@@ -344,7 +398,16 @@ export const cleared = (model: Model): Model =>
 
 export const hasUnsavedEdits = (model: Model): boolean =>
   isDraft(model) &&
-  (SaveState.guards.Dirty(model.save) || SaveState.guards.Failed(model.save))
+  (SaveState.guards.Dirty(model.save) ||
+    SaveState.guards.Saving(model.save) ||
+    SaveState.guards.Failed(model.save) ||
+    SaveState.guards.Stale(model.save))
+
+const draftRevisionOf = (model: Model): number =>
+  Option.match(model.maybeRecord, {
+    onNone: () => 0,
+    onSome: record => record.draftRevision,
+  })
 
 const prefixOf = (kind: AddKind): string =>
   kind === 'section' || kind === 'subsection' || kind === 'conclusion'
@@ -415,7 +478,28 @@ const updateCurrent = (
       commands: [LoadTemplateVersion({ scope: scopeOf(model) })],
     }),
     Edited: ({ edit }) =>
-      isDraft(model) ? { model: edited(model, applyEdit(model.form, edit)) } : { model },
+      isDraft(model)
+        ? {
+            model: modifyFields(edited(model, applyEdit(model.form, edit)), {
+              expanded: keys =>
+                edit._tag === 'Rename' && edit.scope === 'section'
+                  ? Array.map(keys, key =>
+                      key === `section:${edit.id}`
+                        ? `section:${edit.newId}`
+                        : key,
+                    )
+                  : keys,
+            }),
+          }
+        : { model },
+    ToggledOpen: ({ key }) => ({
+      model: modifyFields(model, {
+        expanded: keys =>
+          Array.contains(keys, key)
+            ? Array.filter(keys, entry => entry !== key)
+            : [...keys, key],
+      }),
+    }),
     ClickedAdd: ({ kind, parentId }) => {
       if (!isDraft(model)) return { model }
       const id = freshId(model.form, prefixOf(kind), model.idCounter)
@@ -423,8 +507,23 @@ const updateCurrent = (
         model,
         applyEdit(model.form, addEditOf(kind, id, parentId, model.newItemType)),
       )
+      const opened =
+        kind === 'section' || kind === 'conclusion' || kind === 'subsection'
+          ? [
+              `section:${id}`,
+              ...(parentId === '' ? [] : [`section:${parentId}`]),
+            ]
+          : parentId === ''
+            ? []
+            : [`section:${parentId}`]
       return {
-        model: modifyFields(next, { idCounter: count => count + 1 }),
+        model: modifyFields(next, {
+          idCounter: count => count + 1,
+          expanded: keys => [
+            ...keys,
+            ...Array.filter(opened, key => !Array.contains(keys, key)),
+          ],
+        }),
       }
     },
     SelectedNewItemType: ({ value }) => ({
@@ -482,6 +581,7 @@ const updateCurrent = (
               scope: scopeOf(model),
               template: found,
               edits: model.edits,
+              draftRevision: draftRevisionOf(model),
             }),
           ],
         }),
@@ -493,10 +593,28 @@ const updateCurrent = (
           edits === model.edits ? SaveState.Saved() : SaveState.Dirty(),
       }),
     }),
-    FailedSave: ({ failure }) => ({
-      model: modifyFields(model, { save: () => SaveState.Failed({ failure }) }),
+    FailedSave: ({ failure, isStale }) => ({
+      model: modifyFields(model, {
+        save: () => (isStale ? SaveState.Stale() : SaveState.Failed({ failure })),
+      }),
     }),
-    ClickedMode: ({ mode }) => ({ model: modifyFields(model, { mode: () => mode }) }),
+    ClickedReload: () => ({
+      model: modifyFields(model, {
+        load: () => LoadState.Loading(),
+        save: () => SaveState.Clean(),
+        publish: () => PublishState.Idle(),
+        generation: generation => generation + 1,
+      }),
+      commands: [
+        LoadTemplateVersion({
+          scope: { ...scopeOf(model), generation: model.generation + 1 },
+        }),
+      ],
+    }),
+    WarnedBeforeLeaving: () => ({ model }),
+    ClickedMode: ({ mode }) => ({
+      model: modifyFields(model, { mode: () => mode }),
+    }),
     ClickedPublish: () => {
       if (!isDraft(model)) return { model }
       if (PublishState.guards.Preparing(model.publish)) return { model }
@@ -518,6 +636,7 @@ const updateCurrent = (
               scope: scopeOf(model),
               template,
               edits: model.edits,
+              draftRevision: draftRevisionOf(model),
             }),
           ],
         }),
@@ -541,10 +660,11 @@ const updateCurrent = (
                 ),
             }),
           },
-    FailedPrepare: ({ failure }) => ({
+    FailedPrepare: ({ failure, isStale }) => ({
       model: modifyFields(model, {
-        save: () => SaveState.Failed({ failure }),
-        publish: () => PublishState.Failed({ failure }),
+        save: () => (isStale ? SaveState.Stale() : SaveState.Failed({ failure })),
+        publish: () =>
+          isStale ? PublishState.Idle() : PublishState.Failed({ failure }),
       }),
     }),
     ClickedBackToEditing: () => ({
@@ -553,8 +673,15 @@ const updateCurrent = (
     ClickedConfirmPublish: () =>
       PublishState.guards.Reviewing(model.publish)
         ? {
-            model: modifyFields(model, { publish: () => PublishState.Publishing() }),
-            commands: [PublishTemplateVersion({ scope: scopeOf(model) })],
+            model: modifyFields(model, {
+              publish: () => PublishState.Publishing(),
+            }),
+            commands: [
+              PublishTemplateVersion({
+                scope: scopeOf(model),
+                draftRevision: draftRevisionOf(model),
+              }),
+            ],
           }
         : { model },
     SucceededPublish: ({ record, changes }) => ({
@@ -565,9 +692,11 @@ const updateCurrent = (
         maybeConfirmRemove: () => Option.none(),
       }),
     }),
-    FailedPublish: ({ failure }) => ({
+    FailedPublish: ({ failure, isStale }) => ({
       model: modifyFields(model, {
-        publish: () => PublishState.Failed({ failure }),
+        publish: () =>
+          isStale ? PublishState.Idle() : PublishState.Failed({ failure }),
+        save: current => (isStale ? SaveState.Stale() : current),
       }),
     }),
     ClickedNewVersion: () => ({
@@ -583,7 +712,7 @@ const updateCurrent = (
       model: modifyFields(model, {
         maybeNotice: () =>
           Option.some(
-            'A new version could not be made. There may be a draft already: open the template list.',
+            'A new version could not be made. There may be a draft already, or this is a built-in template, which can only be copied: open the template list.',
           ),
       }),
     }),
@@ -596,6 +725,11 @@ export const update = (
   'scope' in message && !isCurrent(model, message.scope)
     ? { model }
     : updateCurrent(model, message)
+
+// NOTE: Saves the draft again, for the question asked before the editor is
+// left.
+export const retrySave = (model: Model): Update.Return<Model, Message> =>
+  update(model, Message.ClickedSave())
 
 // VIEW
 
@@ -623,19 +757,23 @@ const pick = <A extends string>(
 const REQUIREMENTS = [
   { value: 'required', label: 'Required' },
   { value: 'optional', label: 'Optional' },
-  { value: 'optional_with_reason', label: 'Optional, with a reason when left out' },
+  {
+    value: 'optional_with_reason',
+    label: 'Optional, with a reason when left out',
+  },
 ] as const
 
-const ITEM_TYPE_LABELS: Readonly<Record<(typeof ITEM_TYPES)[number], string>> = {
-  text: 'Short text',
-  rich_text: 'Rich text',
-  date: 'Date',
-  select: 'Choice',
-  people: 'People',
-  case_value: 'Case value',
-  signature: 'Signature',
-  repeated: 'Repeated entries',
-}
+const ITEM_TYPE_LABELS: Readonly<Record<(typeof ITEM_TYPES)[number], string>> =
+  {
+    text: 'Short text',
+    rich_text: 'Rich text',
+    date: 'Date',
+    select: 'Choice',
+    people: 'People',
+    case_value: 'Case value',
+    signature: 'Signature',
+    repeated: 'Repeated entries',
+  }
 
 const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   edit: 'Edit working copies',
@@ -664,7 +802,79 @@ type Context = Readonly<{
   sectionsByParent: ReadonlyMap<string | null, ReadonlyArray<FormSection>>
   itemsByParent: ReadonlyMap<string, ReadonlyArray<FormItem>>
   optionsByItem: ReadonlyMap<string, ReadonlyArray<FormOption>>
+  open: ReadonlySet<string>
 }>
+
+// NOTE: the panel a problem is shown in, and the sections that hold it (the
+// section itself and the ones above it), so both are shown open.
+const panelKeyOf = (problem: FormProblem): string => {
+  const { scope, field } = problem.target
+  if (scope === 'role') return 'panel:roles'
+  if (scope === 'numbering') return 'panel:numbering'
+  if (scope === 'section' || scope === 'item' || scope === 'option') {
+    return SECTIONS_PANEL
+  }
+  if (scope === 'ending') return 'panel:ending'
+  if (scope === 'cover') return 'panel:cover'
+  if (scope === 'furniture') return 'panel:pages'
+  if (field === 'roles') return 'panel:roles'
+  if (field === 'numbering') return 'panel:numbering'
+  if (field === 'sections') return SECTIONS_PANEL
+  if (field === 'contentsDepth' || field === 'pageNumbering') {
+    return 'panel:pages'
+  }
+  return 'panel:about'
+}
+
+const sectionKeysAbove = (
+  form: TemplateForm,
+  scope: FormProblem['target']['scope'],
+  id: string,
+): ReadonlyArray<string> => {
+  const up = (
+    kind: 'section' | 'item' | 'option',
+    at: string,
+    depth: number,
+  ): ReadonlyArray<string> => {
+    if (depth > 60) return []
+    if (kind === 'option') {
+      const option = form.options.find(entry => entry.id === at)
+      return option === undefined ? [] : up('item', option.itemId, depth + 1)
+    }
+    if (kind === 'item') {
+      const item = form.items.find(entry => entry.id === at)
+      if (item === undefined) return []
+      const parentIsSection = form.sections.some(
+        entry => entry.id === item.parentId,
+      )
+      return up(parentIsSection ? 'section' : 'item', item.parentId, depth + 1)
+    }
+    const section = form.sections.find(entry => entry.id === at)
+    if (section === undefined) return []
+    return [
+      `section:${section.id}`,
+      ...(section.parentId === null
+        ? []
+        : up('section', section.parentId, depth + 1)),
+    ]
+  }
+  return scope === 'section' || scope === 'item' || scope === 'option'
+    ? up(scope, id, 0)
+    : []
+}
+
+const openKeysOf = (
+  model: Model,
+  form: TemplateForm,
+  problems: ReadonlyArray<FormProblem>,
+): ReadonlySet<string> =>
+  new Set([
+    ...model.expanded,
+    ...problems.flatMap(problem => [
+      panelKeyOf(problem),
+      ...sectionKeysAbove(form, problem.target.scope, problem.target.id),
+    ]),
+  ])
 
 const groupBy = <A, K>(
   rows: ReadonlyArray<A>,
@@ -677,14 +887,18 @@ const groupBy = <A, K>(
   return groups
 }
 
-const contextOf = (model: Model): Context => ({
-  form: model.form,
-  problems: formProblems(model.form),
-  model,
-  sectionsByParent: groupBy(model.form.sections, row => row.parentId),
-  itemsByParent: groupBy(model.form.items, row => row.parentId),
-  optionsByItem: groupBy(model.form.options, row => row.itemId),
-})
+const contextOf = (model: Model): Context => {
+  const problems = formProblems(model.form)
+  return {
+    form: model.form,
+    problems,
+    open: openKeysOf(model, model.form, problems),
+    model,
+    sectionsByParent: groupBy(model.form.sections, row => row.parentId),
+    itemsByParent: groupBy(model.form.items, row => row.parentId),
+    optionsByItem: groupBy(model.form.options, row => row.itemId),
+  }
+}
 
 const problemsAt = (
   context: Context,
@@ -734,7 +948,11 @@ const input = (
   }>,
 ): Html =>
   h.div(
-    [h.Class(clsx('flex min-w-0 flex-col gap-1', config.narrow ? 'w-28' : 'flex-1'))],
+    [
+      h.Class(
+        clsx('flex min-w-0 flex-col gap-1', config.narrow ? 'w-28' : 'flex-1'),
+      ),
+    ],
     [
       controlLabel(h, config.id, config.label),
       config.hint === undefined
@@ -766,7 +984,9 @@ const area = (
     [h.Class('flex min-w-0 flex-col gap-1')],
     [
       controlLabel(h, id, label),
-      hint === undefined ? h.empty : h.p([h.Class('text-sm text-msf-grey')], [hint]),
+      hint === undefined
+        ? h.empty
+        : h.p([h.Class('text-sm text-msf-grey')], [hint]),
       h.textarea([
         h.Id(id),
         h.Value(value),
@@ -800,38 +1020,84 @@ const row = (h: H, children: ReadonlyArray<Html>): Html =>
 
 const card = (h: H, children: ReadonlyArray<Html>): Html =>
   h.div(
-    [h.Class('flex min-w-0 flex-col gap-3 border border-msf-line bg-white p-3 md:p-4')],
+    [
+      h.Class(
+        'flex min-w-0 flex-col gap-3 border border-msf-line bg-white p-3 md:p-4',
+      ),
+    ],
     children,
+  )
+
+const toggleButton = (
+  h: H,
+  key: string,
+  label: string,
+  isOpen: boolean,
+  locked: boolean,
+  className: string,
+): Html =>
+  h.button(
+    [
+      h.Type('button'),
+      h.AriaExpanded(isOpen),
+      h.DataAttribute('toggle', key),
+      h.Class(clsx(className, 'cursor-pointer text-left', focusRing)),
+      ...(locked
+        ? [h.Disabled(true)]
+        : [h.OnClick(Message.ToggledOpen({ key }))]),
+    ],
+    [`${isOpen ? '\u25BE' : '\u25B8'} ${label}`],
   )
 
 const panelOf = (
   h: H,
+  context: Context,
+  key: string,
   heading: string,
   note: string,
   children: ReadonlyArray<Html>,
-): Html =>
-  h.section(
+): Html => {
+  const isOpen = context.open.has(key)
+  const locked = isOpen && !Array.contains(context.model.expanded, key)
+  return h.section(
     [
       h.AriaLabel(heading),
+      h.DataAttribute('panel', key),
       h.Class('flex flex-col gap-4 border-t-2 border-msf-ink pt-5'),
     ],
     [
-      h.h2([h.Class('text-2xl font-black tracking-tight')], [heading]),
-      note === ''
-        ? h.empty
-        : h.p([h.Class('-mt-2 text-pretty text-base text-msf-grey')], [note]),
-      ...children,
+      h.h2(
+        [h.Class('text-2xl font-black tracking-tight')],
+        [toggleButton(h, key, heading, isOpen, locked, 'w-full')],
+      ),
+      ...(isOpen
+        ? [
+            locked
+              ? h.p(
+                  [h.Class('text-sm font-medium text-msf-alert')],
+                  ['Something here needs fixing, so it stays open.'],
+                )
+              : h.empty,
+            note === ''
+              ? h.empty
+              : h.p(
+                  [h.Class('-mt-2 text-pretty text-base text-msf-grey')],
+                  [note],
+                ),
+            ...children,
+          ]
+        : []),
     ],
   )
+}
 
 // ---- About --------------------------------------------------------------------
 
 const aboutPanel = (h: H, context: Context): Html => {
   const { form } = context
   const here = problemsAt(context, 'template')
-  const on = (field: string) =>
-    here.some(entry => entry.target.field === field)
-  return panelOf(h, 'About this template', '', [
+  const on = (field: string) => here.some(entry => entry.target.field === field)
+  return panelOf(h, context, 'panel:about', 'About this template', '', [
     row(h, [
       input(h, {
         id: 'template-name',
@@ -857,12 +1123,8 @@ const aboutPanel = (h: H, context: Context): Html => {
       onInput: value =>
         send({ _tag: 'SetText', field: 'caseReferenceLabel', value }),
     }),
-    area(
-      h,
-      'template-description',
-      'Description',
-      form.description,
-      value => send({ _tag: 'SetText', field: 'description', value }),
+    area(h, 'template-description', 'Description', form.description, value =>
+      send({ _tag: 'SetText', field: 'description', value }),
     ),
     problemList(
       h,
@@ -871,8 +1133,11 @@ const aboutPanel = (h: H, context: Context): Html => {
         entry =>
           !['name', 'shortName', 'caseReferenceLabel', 'description'].includes(
             entry.target.field,
-          ) && entry.target.field !== 'roles' && entry.target.field !== 'sections' &&
-          entry.target.field !== 'contentsDepth' && entry.target.field !== 'pageNumbering',
+          ) &&
+          entry.target.field !== 'roles' &&
+          entry.target.field !== 'sections' &&
+          entry.target.field !== 'contentsDepth' &&
+          entry.target.field !== 'pageNumbering',
       ),
     ),
   ])
@@ -894,7 +1159,10 @@ const rolePermissionBoxes = (h: H, role: FormRole): ReadonlyArray<Html> => {
       [h.Class('flex items-center gap-2')],
       [
         h.label(
-          [h.Class('flex cursor-pointer items-center gap-2 text-base'), h.For(id)],
+          [
+            h.Class('flex cursor-pointer items-center gap-2 text-base'),
+            h.For(id),
+          ],
           [
             h.input([
               h.Id(id),
@@ -921,10 +1189,7 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
   const votes = role.permissions.includes('vote')
   return h.keyed('li')(
     role.id,
-    [
-      h.Class('list-none'),
-      h.DataAttribute('role-id', role.id),
-    ],
+    [h.Class('list-none'), h.DataAttribute('role-id', role.id)],
     [
       card(h, [
         row(h, [
@@ -933,8 +1198,7 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
             label: 'Role name',
             value: role.name,
             invalid: found.some(entry => entry.target.field === 'name'),
-            onInput: value =>
-              send({ _tag: 'SetRoleName', id: role.id, value }),
+            onInput: value => send({ _tag: 'SetRoleName', id: role.id, value }),
           }),
           input(h, {
             id: `role-${role.id}-id`,
@@ -943,7 +1207,12 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
             onChange: true,
             narrow: true,
             onInput: value =>
-              send({ _tag: 'Rename', scope: 'role', id: role.id, newId: value }),
+              send({
+                _tag: 'Rename',
+                scope: 'role',
+                id: role.id,
+                newId: value,
+              }),
           }),
           choice(
             h,
@@ -956,7 +1225,8 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
             ],
             value =>
               Option.match(pick(['drafting', 'reviewing'] as const, value), {
-                onNone: () => send({ _tag: 'SetRoleName', id: role.id, value: role.name }),
+                onNone: () =>
+                  send({ _tag: 'SetRoleName', id: role.id, value: role.name }),
                 onSome: kind =>
                   send({ _tag: 'SetRoleKind', id: role.id, value: kind }),
               }),
@@ -978,7 +1248,11 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
                 value =>
                   Option.match(pick(['full', 'redacted'] as const, value), {
                     onNone: () =>
-                      send({ _tag: 'SetRoleName', id: role.id, value: role.name }),
+                      send({
+                        _tag: 'SetRoleName',
+                        id: role.id,
+                        value: role.name,
+                      }),
                     onSome: view =>
                       send({ _tag: 'SetRoleView', id: role.id, value: view }),
                   }),
@@ -1008,7 +1282,11 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
                     pick(['all', 'at_least', 'majority'] as const, value),
                     {
                       onNone: () =>
-                        send({ _tag: 'SetRoleName', id: role.id, value: role.name }),
+                        send({
+                          _tag: 'SetRoleName',
+                          id: role.id,
+                          value: role.name,
+                        }),
                       onSome: kind =>
                         send({
                           _tag: 'SetApproval',
@@ -1025,8 +1303,13 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
                     label: 'How many',
                     type: 'number',
                     narrow: true,
-                    value: role.approvalCount === null ? '' : String(role.approvalCount),
-                    invalid: found.some(entry => entry.target.field === 'approval'),
+                    value:
+                      role.approvalCount === null
+                        ? ''
+                        : String(role.approvalCount),
+                    invalid: found.some(
+                      entry => entry.target.field === 'approval',
+                    ),
                     onInput: value =>
                       send({
                         _tag: 'SetApproval',
@@ -1061,6 +1344,8 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
 const rolesPanel = (h: H, context: Context): Html =>
   panelOf(
     h,
+    context,
+    'panel:roles',
     'Roles and approval',
     'A report has one drafting role, which writes it, and any number of reviewing roles. A reviewing role that votes needs an approval rule; a round is decided when every voting role has met its rule.',
     [
@@ -1076,8 +1361,16 @@ const rolesPanel = (h: H, context: Context): Html =>
         Array.map(context.form.roles, role => roleCard(h, context, role)),
       ),
       row(h, [
-        smallButton(h, 'Add a reviewing role', Message.ClickedAdd({ kind: 'reviewing_role', parentId: '' })),
-        smallButton(h, 'Add a drafting role', Message.ClickedAdd({ kind: 'drafting_role', parentId: '' })),
+        smallButton(
+          h,
+          'Add a reviewing role',
+          Message.ClickedAdd({ kind: 'reviewing_role', parentId: '' }),
+        ),
+        smallButton(
+          h,
+          'Add a drafting role',
+          Message.ClickedAdd({ kind: 'drafting_role', parentId: '' }),
+        ),
       ]),
     ],
   )
@@ -1088,6 +1381,8 @@ const numberingPanel = (h: H, context: Context): Html => {
   const levels = context.form.numbering
   return panelOf(
     h,
+    context,
+    'panel:numbering',
     'Numbering',
     'How sections are numbered, level by level. The first level numbers the top-level sections, the second their subsections, and so on. A section can also be left unnumbered.',
     [
@@ -1102,9 +1397,18 @@ const numberingPanel = (h: H, context: Context): Html => {
               suffix: string
             }>,
           ): Message => {
-            const style = pick(['arabic', 'roman', 'letters'] as const, patch.style ?? level.style)
-            const letterCase = pick(['', 'upper', 'lower'] as const, patch.letterCase ?? level.letterCase)
-            const suffix = pick(['.', ')', ''] as const, patch.suffix ?? level.suffix)
+            const style = pick(
+              ['arabic', 'roman', 'letters'] as const,
+              patch.style ?? level.style,
+            )
+            const letterCase = pick(
+              ['', 'upper', 'lower'] as const,
+              patch.letterCase ?? level.letterCase,
+            )
+            const suffix = pick(
+              ['.', ')', ''] as const,
+              patch.suffix ?? level.suffix,
+            )
             return send({
               _tag: 'SetNumberingLevel',
               level: index,
@@ -1114,7 +1418,10 @@ const numberingPanel = (h: H, context: Context): Html => {
             })
           }
           return h.li(
-            [h.Class('list-none'), h.DataAttribute('numbering-level', String(index + 1))],
+            [
+              h.Class('list-none'),
+              h.DataAttribute('numbering-level', String(index + 1)),
+            ],
             [
               card(h, [
                 row(h, [
@@ -1122,22 +1429,43 @@ const numberingPanel = (h: H, context: Context): Html => {
                     [h.Class('pb-2 text-base font-medium text-msf-ink')],
                     [`Level ${index + 1}`],
                   ),
-                  choice(h, `numbering-${index}-style`, 'Style', level.style, [
-                    { value: 'arabic', label: '1, 2, 3' },
-                    { value: 'roman', label: 'I, II, III' },
-                    { value: 'letters', label: 'A, B, C' },
-                  ], value => change({ style: value })),
+                  choice(
+                    h,
+                    `numbering-${index}-style`,
+                    'Style',
+                    level.style,
+                    [
+                      { value: 'arabic', label: '1, 2, 3' },
+                      { value: 'roman', label: 'I, II, III' },
+                      { value: 'letters', label: 'A, B, C' },
+                    ],
+                    value => change({ style: value }),
+                  ),
                   level.style === 'arabic'
                     ? h.empty
-                    : choice(h, `numbering-${index}-case`, 'Case', level.letterCase === '' ? 'upper' : level.letterCase, [
-                        { value: 'upper', label: 'Upper case' },
-                        { value: 'lower', label: 'Lower case' },
-                      ], value => change({ letterCase: value })),
-                  choice(h, `numbering-${index}-suffix`, 'After the number', level.suffix, [
-                    { value: '.', label: 'A full stop' },
-                    { value: ')', label: 'A bracket' },
-                    { value: '', label: 'Nothing' },
-                  ], value => change({ suffix: value })),
+                    : choice(
+                        h,
+                        `numbering-${index}-case`,
+                        'Case',
+                        level.letterCase === '' ? 'upper' : level.letterCase,
+                        [
+                          { value: 'upper', label: 'Upper case' },
+                          { value: 'lower', label: 'Lower case' },
+                        ],
+                        value => change({ letterCase: value }),
+                      ),
+                  choice(
+                    h,
+                    `numbering-${index}-suffix`,
+                    'After the number',
+                    level.suffix,
+                    [
+                      { value: '.', label: 'A full stop' },
+                      { value: ')', label: 'A bracket' },
+                      { value: '', label: 'Nothing' },
+                    ],
+                    value => change({ suffix: value }),
+                  ),
                 ]),
                 problemList(h, found),
               ]),
@@ -1146,11 +1474,7 @@ const numberingPanel = (h: H, context: Context): Html => {
         }),
       ),
       row(h, [
-        smallButton(
-          h,
-          'Add a level',
-          send({ _tag: 'AddNumberingLevel' }),
-        ),
+        smallButton(h, 'Add a level', send({ _tag: 'AddNumberingLevel' })),
         levels.length > 0
           ? smallButton(
               h,
@@ -1193,7 +1517,12 @@ const optionRow = (
               value: option.label,
               invalid: found.some(entry => entry.target.field === 'label'),
               onInput: value =>
-                send({ _tag: 'SetOptionText', id: option.id, field: 'label', value }),
+                send({
+                  _tag: 'SetOptionText',
+                  id: option.id,
+                  field: 'label',
+                  value,
+                }),
             }),
             input(h, {
               id: `option-${option.id}-code`,
@@ -1202,7 +1531,12 @@ const optionRow = (
               narrow: true,
               invalid: found.some(entry => entry.target.field === 'code'),
               onInput: value =>
-                send({ _tag: 'SetOptionText', id: option.id, field: 'code', value }),
+                send({
+                  _tag: 'SetOptionText',
+                  id: option.id,
+                  field: 'code',
+                  value,
+                }),
             }),
             input(h, {
               id: `option-${option.id}-id`,
@@ -1211,7 +1545,12 @@ const optionRow = (
               narrow: true,
               onChange: true,
               onInput: value =>
-                send({ _tag: 'Rename', scope: 'option', id: option.id, newId: value }),
+                send({
+                  _tag: 'Rename',
+                  scope: 'option',
+                  id: option.id,
+                  newId: value,
+                }),
             }),
           ]),
           checkboxField(
@@ -1246,14 +1585,22 @@ const optionRow = (
   )
 }
 
-const addItemRow = (h: H, context: Context, parentId: string, name: string): Html =>
+const addItemRow = (
+  h: H,
+  context: Context,
+  parentId: string,
+  name: string,
+): Html =>
   row(h, [
     choice(
       h,
       `new-item-type-${parentId}`,
       'Kind of item to add',
       context.model.newItemType,
-      Array.map(ITEM_TYPES, type => ({ value: type, label: ITEM_TYPE_LABELS[type] })),
+      Array.map(ITEM_TYPES, type => ({
+        value: type,
+        label: ITEM_TYPE_LABELS[type],
+      })),
       value => Message.SelectedNewItemType({ value }),
     ),
     smallButton(
@@ -1291,7 +1638,12 @@ const confirmRemove = (
             ],
           ),
           row(h, [
-            smallButton(h, 'Remove it', Message.ConfirmedRemove(), Option.some(`Confirm removing ${name}`)),
+            smallButton(
+              h,
+              'Remove it',
+              Message.ConfirmedRemove(),
+              Option.some(`Confirm removing ${name}`),
+            ),
             smallButton(h, 'Keep it', Message.CancelledRemove()),
           ]),
         ],
@@ -1322,11 +1674,21 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
             `item-${item.id}-type`,
             'Kind',
             item.type,
-            Array.map(ITEM_TYPES, type => ({ value: type, label: ITEM_TYPE_LABELS[type] })),
+            Array.map(ITEM_TYPES, type => ({
+              value: type,
+              label: ITEM_TYPE_LABELS[type],
+            })),
             value =>
               Option.match(pick(ITEM_TYPES, value), {
-                onNone: () => send({ _tag: 'SetItemText', id: item.id, field: 'label', value: item.label }),
-                onSome: type => send({ _tag: 'SetItemType', id: item.id, type }),
+                onNone: () =>
+                  send({
+                    _tag: 'SetItemText',
+                    id: item.id,
+                    field: 'label',
+                    value: item.label,
+                  }),
+                onSome: type =>
+                  send({ _tag: 'SetItemType', id: item.id, type }),
               }),
           ),
           choice(
@@ -1337,11 +1699,24 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
             REQUIREMENTS,
             value =>
               Option.match(
-                pick(['required', 'optional', 'optional_with_reason'] as const, value),
+                pick(
+                  ['required', 'optional', 'optional_with_reason'] as const,
+                  value,
+                ),
                 {
-                  onNone: () => send({ _tag: 'SetItemText', id: item.id, field: 'label', value: item.label }),
+                  onNone: () =>
+                    send({
+                      _tag: 'SetItemText',
+                      id: item.id,
+                      field: 'label',
+                      value: item.label,
+                    }),
                   onSome: requirement =>
-                    send({ _tag: 'SetItemRequirement', id: item.id, value: requirement }),
+                    send({
+                      _tag: 'SetItemRequirement',
+                      id: item.id,
+                      value: requirement,
+                    }),
                 },
               ),
           ),
@@ -1352,7 +1727,12 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
             narrow: true,
             onChange: true,
             onInput: value =>
-              send({ _tag: 'Rename', scope: 'item', id: item.id, newId: value }),
+              send({
+                _tag: 'Rename',
+                scope: 'item',
+                id: item.id,
+                newId: value,
+              }),
           }),
         ]),
         area(
@@ -1360,31 +1740,54 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
           `item-${item.id}-instruction`,
           'Instruction for the author (never part of the report)',
           item.instruction,
-          value => send({ _tag: 'SetItemText', id: item.id, field: 'instruction', value }),
+          value =>
+            send({
+              _tag: 'SetItemText',
+              id: item.id,
+              field: 'instruction',
+              value,
+            }),
         ),
         item.type === 'date'
-          ? choice(h, `item-${item.id}-precision`, 'Date to the', item.precision === '' ? 'day' : item.precision, [
-              { value: 'day', label: 'Day' },
-              { value: 'month', label: 'Month' },
-            ], value =>
-              send({
-                _tag: 'SetItemPrecision',
-                id: item.id,
-                value: value === 'month' ? 'month' : 'day',
-              }),
+          ? choice(
+              h,
+              `item-${item.id}-precision`,
+              'Date to the',
+              item.precision === '' ? 'day' : item.precision,
+              [
+                { value: 'day', label: 'Day' },
+                { value: 'month', label: 'Month' },
+              ],
+              value =>
+                send({
+                  _tag: 'SetItemPrecision',
+                  id: item.id,
+                  value: value === 'month' ? 'month' : 'day',
+                }),
             )
           : h.empty,
         item.type === 'case_value'
-          ? choice(h, `item-${item.id}-field`, 'Shows the case', item.field === '' ? 'reference' : item.field, [
-              { value: 'reference', label: 'Reference' },
-              { value: 'unit', label: 'Unit' },
-              { value: 'title', label: 'Title' },
-            ], value =>
-              send({
-                _tag: 'SetItemField',
-                id: item.id,
-                value: value === 'unit' ? 'unit' : value === 'title' ? 'title' : 'reference',
-              }),
+          ? choice(
+              h,
+              `item-${item.id}-field`,
+              'Shows the case',
+              item.field === '' ? 'reference' : item.field,
+              [
+                { value: 'reference', label: 'Reference' },
+                { value: 'unit', label: 'Unit' },
+                { value: 'title', label: 'Title' },
+              ],
+              value =>
+                send({
+                  _tag: 'SetItemField',
+                  id: item.id,
+                  value:
+                    value === 'unit'
+                      ? 'unit'
+                      : value === 'title'
+                        ? 'title'
+                        : 'reference',
+                }),
             )
           : h.empty,
         item.type === 'people'
@@ -1393,7 +1796,11 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
               `item-${item.id}-multiple`,
               'More than one person can be named',
               item.multiple,
-              send({ _tag: 'SetItemMultiple', id: item.id, value: !item.multiple }),
+              send({
+                _tag: 'SetItemMultiple',
+                id: item.id,
+                value: !item.multiple,
+              }),
             )
           : h.empty,
         item.type === 'select'
@@ -1405,11 +1812,20 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
                   `item-${item.id}-multiple`,
                   'More than one option can be chosen',
                   item.multiple,
-                  send({ _tag: 'SetItemMultiple', id: item.id, value: !item.multiple }),
+                  send({
+                    _tag: 'SetItemMultiple',
+                    id: item.id,
+                    value: !item.multiple,
+                  }),
                 ),
                 h.ul(
-                  [h.AriaLabel(`Options of ${name}`), h.Class('flex flex-col gap-3')],
-                  Array.map(options, option => optionRow(h, context, item, option)),
+                  [
+                    h.AriaLabel(`Options of ${name}`),
+                    h.Class('flex flex-col gap-3'),
+                  ],
+                  Array.map(options, option =>
+                    optionRow(h, context, item, option),
+                  ),
                 ),
                 row(h, [
                   smallButton(
@@ -1431,9 +1847,16 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
                     id: `item-${item.id}-entry-label`,
                     label: 'Each entry is called',
                     value: item.entryLabel,
-                    invalid: found.some(entry => entry.target.field === 'entryLabel'),
+                    invalid: found.some(
+                      entry => entry.target.field === 'entryLabel',
+                    ),
                     onInput: value =>
-                      send({ _tag: 'SetItemText', id: item.id, field: 'entryLabel', value }),
+                      send({
+                        _tag: 'SetItemText',
+                        id: item.id,
+                        field: 'entryLabel',
+                        value,
+                      }),
                   }),
                   input(h, {
                     id: `item-${item.id}-min`,
@@ -1454,7 +1877,8 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
                     label: 'At most (empty: no limit)',
                     type: 'number',
                     narrow: true,
-                    value: item.repeatMax === null ? '' : String(item.repeatMax),
+                    value:
+                      item.repeatMax === null ? '' : String(item.repeatMax),
                     onInput: value =>
                       send({
                         _tag: 'SetItemRepeat',
@@ -1465,7 +1889,10 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
                   }),
                 ]),
                 h.ul(
-                  [h.AriaLabel(`Items inside ${name}`), h.Class('flex flex-col gap-3')],
+                  [
+                    h.AriaLabel(`Items inside ${name}`),
+                    h.Class('flex flex-col gap-3'),
+                  ],
                   Array.map(children, child => itemCard(h, context, child)),
                 ),
                 addItemRow(h, context, item.id, name),
@@ -1510,170 +1937,288 @@ const sectionCard = (
     : depth === 1
       ? 'Section'
       : 'Subsection'
+  const sectionKey = `section:${section.id}`
+  const isOpen = context.open.has(sectionKey)
+  const locked = isOpen && !Array.contains(context.model.expanded, sectionKey)
   return h.keyed('li')(
     section.id,
     [h.Class('list-none'), h.DataAttribute('section-id', section.id)],
     [
       card(h, [
-        h.p([h.Class('text-sm font-bold uppercase tracking-wide text-msf-grey')], [kind]),
-        row(h, [
-          input(h, {
-            id: `section-${section.id}-title`,
-            label: 'Title',
-            value: section.title,
-            invalid: found.some(entry => entry.target.field === 'title'),
-            onInput: value =>
-              send({ _tag: 'SetSectionText', id: section.id, field: 'title', value }),
-          }),
-          choice(
-            h,
-            `section-${section.id}-requirement`,
-            'Filling it in is',
-            section.requirement,
-            REQUIREMENTS,
-            value =>
-              Option.match(
-                pick(['required', 'optional', 'optional_with_reason'] as const, value),
-                {
-                  onNone: () =>
-                    send({ _tag: 'SetSectionText', id: section.id, field: 'title', value: section.title }),
-                  onSome: requirement =>
-                    send({ _tag: 'SetSectionRequirement', id: section.id, value: requirement }),
-                },
-              ),
-          ),
-          input(h, {
-            id: `section-${section.id}-id`,
-            label: 'ID',
-            value: section.id,
-            narrow: true,
-            onChange: true,
-            onInput: value =>
-              send({ _tag: 'Rename', scope: 'section', id: section.id, newId: value }),
-          }),
-        ]),
         h.div(
-          [h.Class('flex flex-wrap gap-x-6 gap-y-2')],
+          [h.Class('flex flex-wrap items-baseline gap-x-3')],
           [
-            checkboxField(
-              h,
-              `section-${section.id}-numbered`,
-              'Numbered',
-              section.numbered,
-              send({ _tag: 'SetSectionFlag', id: section.id, flag: 'numbered', value: !section.numbered }),
+            h.p(
+              [
+                h.Class(
+                  'text-sm font-bold uppercase tracking-wide text-msf-grey',
+                ),
+              ],
+              [kind],
             ),
-            depth === 1 && !section.isConclusion
-              ? checkboxField(
-                  h,
-                  `section-${section.id}-front`,
-                  'Front matter (cover, contents, summary)',
-                  section.frontMatter,
-                  send({ _tag: 'SetSectionFlag', id: section.id, flag: 'frontMatter', value: !section.frontMatter }),
-                )
-              : h.empty,
-            depth > 1
-              ? checkboxField(
-                  h,
-                  `section-${section.id}-repeatable`,
-                  'Repeated: one subsection for each entry',
-                  section.repeatable,
-                  send({ _tag: 'SetSectionFlag', id: section.id, flag: 'repeatable', value: !section.repeatable }),
+            toggleButton(
+              h,
+              sectionKey,
+              isOpen ? `Close ${name}` : `Open ${name}`,
+              isOpen,
+              locked,
+              'text-lg font-bold text-msf-black',
+            ),
+            locked
+              ? h.span(
+                  [h.Class('text-sm font-medium text-msf-alert')],
+                  ['needs fixing'],
                 )
               : h.empty,
           ],
         ),
-        section.repeatable
-          ? row(h, [
-              input(h, {
-                id: `section-${section.id}-min`,
-                label: 'At least',
-                type: 'number',
-                narrow: true,
-                value: String(section.repeatMin),
-                onInput: value =>
-                  send({ _tag: 'SetSectionRepeat', id: section.id, min: intOf(value, 0), max: section.repeatMax }),
-              }),
-              input(h, {
-                id: `section-${section.id}-max`,
-                label: 'At most (empty: no limit)',
-                type: 'number',
-                narrow: true,
-                value: section.repeatMax === null ? '' : String(section.repeatMax),
-                onInput: value =>
-                  send({ _tag: 'SetSectionRepeat', id: section.id, min: section.repeatMin, max: maybeIntOf(value) }),
-              }),
-            ])
-          : h.empty,
-        area(
-          h,
-          `section-${section.id}-instruction`,
-          'Instruction for the author (never part of the report)',
-          section.instruction,
-          value =>
-            send({ _tag: 'SetSectionText', id: section.id, field: 'instruction', value }),
-        ),
-        problemList(h, found),
-        h.ul(
-          [h.AriaLabel(`Items of ${name}`), h.Class('flex flex-col gap-3')],
-          Array.map(items, item => itemCard(h, context, item)),
-        ),
-        addItemRow(h, context, section.id, name),
-        Array.match(children, {
-          onEmpty: () => h.empty,
-          onNonEmpty: list =>
-            h.ul(
-              [
-                h.AriaLabel(`Subsections of ${name}`),
-                h.Class('flex flex-col gap-3 border-l-2 border-msf-ink pl-3'),
-              ],
-              Array.map(list, child => sectionCard(h, context, child, depth + 1)),
-            ),
-        }),
-        depth < MAX_SECTION_DEPTH
-          ? row(h, [
-              smallButton(
-                h,
-                'Add subsection',
-                Message.ClickedAdd({ kind: 'subsection', parentId: section.id }),
-                Option.some(`Add a subsection to ${name}`),
-              ),
-            ])
-          : h.empty,
-        confirmRemove(h, context, 'section', section.id, name),
-        row(h, [
-          ...(section.isConclusion
-            ? []
-            : [
-                ...moveButtons(
+        ...(isOpen
+          ? [
+              row(h, [
+                input(h, {
+                  id: `section-${section.id}-title`,
+                  label: 'Title',
+                  value: section.title,
+                  invalid: found.some(entry => entry.target.field === 'title'),
+                  onInput: value =>
+                    send({
+                      _tag: 'SetSectionText',
+                      id: section.id,
+                      field: 'title',
+                      value,
+                    }),
+                }),
+                choice(
                   h,
-                  `${kind.toLowerCase()} ${name}`,
-                  send({ _tag: 'MoveSection', id: section.id, direction: 'up' }),
-                  send({ _tag: 'MoveSection', id: section.id, direction: 'down' }),
+                  `section-${section.id}-requirement`,
+                  'Filling it in is',
+                  section.requirement,
+                  REQUIREMENTS,
+                  value =>
+                    Option.match(
+                      pick(
+                        [
+                          'required',
+                          'optional',
+                          'optional_with_reason',
+                        ] as const,
+                        value,
+                      ),
+                      {
+                        onNone: () =>
+                          send({
+                            _tag: 'SetSectionText',
+                            id: section.id,
+                            field: 'title',
+                            value: section.title,
+                          }),
+                        onSome: requirement =>
+                          send({
+                            _tag: 'SetSectionRequirement',
+                            id: section.id,
+                            value: requirement,
+                          }),
+                      },
+                    ),
                 ),
-                ...(section.parentId === null
+                input(h, {
+                  id: `section-${section.id}-id`,
+                  label: 'ID',
+                  value: section.id,
+                  narrow: true,
+                  onChange: true,
+                  onInput: value =>
+                    send({
+                      _tag: 'Rename',
+                      scope: 'section',
+                      id: section.id,
+                      newId: value,
+                    }),
+                }),
+              ]),
+              h.div(
+                [h.Class('flex flex-wrap gap-x-6 gap-y-2')],
+                [
+                  checkboxField(
+                    h,
+                    `section-${section.id}-numbered`,
+                    'Numbered',
+                    section.numbered,
+                    send({
+                      _tag: 'SetSectionFlag',
+                      id: section.id,
+                      flag: 'numbered',
+                      value: !section.numbered,
+                    }),
+                  ),
+                  depth === 1 && !section.isConclusion
+                    ? checkboxField(
+                        h,
+                        `section-${section.id}-front`,
+                        'Front matter (cover, contents, summary)',
+                        section.frontMatter,
+                        send({
+                          _tag: 'SetSectionFlag',
+                          id: section.id,
+                          flag: 'frontMatter',
+                          value: !section.frontMatter,
+                        }),
+                      )
+                    : h.empty,
+                  depth > 1
+                    ? checkboxField(
+                        h,
+                        `section-${section.id}-repeatable`,
+                        'Repeated: one subsection for each entry',
+                        section.repeatable,
+                        send({
+                          _tag: 'SetSectionFlag',
+                          id: section.id,
+                          flag: 'repeatable',
+                          value: !section.repeatable,
+                        }),
+                      )
+                    : h.empty,
+                ],
+              ),
+              section.repeatable
+                ? row(h, [
+                    input(h, {
+                      id: `section-${section.id}-min`,
+                      label: 'At least',
+                      type: 'number',
+                      narrow: true,
+                      value: String(section.repeatMin),
+                      onInput: value =>
+                        send({
+                          _tag: 'SetSectionRepeat',
+                          id: section.id,
+                          min: intOf(value, 0),
+                          max: section.repeatMax,
+                        }),
+                    }),
+                    input(h, {
+                      id: `section-${section.id}-max`,
+                      label: 'At most (empty: no limit)',
+                      type: 'number',
+                      narrow: true,
+                      value:
+                        section.repeatMax === null
+                          ? ''
+                          : String(section.repeatMax),
+                      onInput: value =>
+                        send({
+                          _tag: 'SetSectionRepeat',
+                          id: section.id,
+                          min: section.repeatMin,
+                          max: maybeIntOf(value),
+                        }),
+                    }),
+                  ])
+                : h.empty,
+              area(
+                h,
+                `section-${section.id}-instruction`,
+                'Instruction for the author (never part of the report)',
+                section.instruction,
+                value =>
+                  send({
+                    _tag: 'SetSectionText',
+                    id: section.id,
+                    field: 'instruction',
+                    value,
+                  }),
+              ),
+              problemList(h, found),
+              h.ul(
+                [
+                  h.AriaLabel(`Items of ${name}`),
+                  h.Class('flex flex-col gap-3'),
+                ],
+                Array.map(items, item => itemCard(h, context, item)),
+              ),
+              addItemRow(h, context, section.id, name),
+              Array.match(children, {
+                onEmpty: () => h.empty,
+                onNonEmpty: list =>
+                  h.ul(
+                    [
+                      h.AriaLabel(`Subsections of ${name}`),
+                      h.Class(
+                        'flex flex-col gap-3 border-l-2 border-msf-ink pl-3',
+                      ),
+                    ],
+                    Array.map(list, child =>
+                      sectionCard(h, context, child, depth + 1),
+                    ),
+                  ),
+              }),
+              depth < MAX_SECTION_DEPTH
+                ? row(h, [
+                    smallButton(
+                      h,
+                      'Add subsection',
+                      Message.ClickedAdd({
+                        kind: 'subsection',
+                        parentId: section.id,
+                      }),
+                      Option.some(`Add a subsection to ${name}`),
+                    ),
+                  ])
+                : h.empty,
+              confirmRemove(h, context, 'section', section.id, name),
+              row(h, [
+                ...(section.isConclusion
                   ? []
                   : [
+                      ...moveButtons(
+                        h,
+                        `${kind.toLowerCase()} ${name}`,
+                        send({
+                          _tag: 'MoveSection',
+                          id: section.id,
+                          direction: 'up',
+                        }),
+                        send({
+                          _tag: 'MoveSection',
+                          id: section.id,
+                          direction: 'down',
+                        }),
+                      ),
+                      ...(section.parentId === null
+                        ? []
+                        : [
+                            smallButton(
+                              h,
+                              'Move out one level',
+                              send({
+                                _tag: 'MoveSection',
+                                id: section.id,
+                                direction: 'out',
+                              }),
+                              Option.some(`Move ${name} out one level`),
+                            ),
+                          ]),
                       smallButton(
                         h,
-                        'Move out one level',
-                        send({ _tag: 'MoveSection', id: section.id, direction: 'out' }),
-                        Option.some(`Move ${name} out one level`),
+                        'Nest under the one above',
+                        send({
+                          _tag: 'MoveSection',
+                          id: section.id,
+                          direction: 'in',
+                        }),
+                        Option.some(`Nest ${name} under the section above`),
                       ),
                     ]),
                 smallButton(
                   h,
-                  'Nest under the one above',
-                  send({ _tag: 'MoveSection', id: section.id, direction: 'in' }),
-                  Option.some(`Nest ${name} under the section above`),
+                  `Remove ${kind.toLowerCase()}`,
+                  Message.AskedRemove({ kind: 'section', id: section.id }),
+                  Option.some(`Remove ${kind.toLowerCase()} ${name}`),
                 ),
               ]),
-          smallButton(
-            h,
-            `Remove ${kind.toLowerCase()}`,
-            Message.AskedRemove({ kind: 'section', id: section.id }),
-            Option.some(`Remove ${kind.toLowerCase()} ${name}`),
-          ),
-        ]),
+            ]
+          : []),
       ]),
     ],
   )
@@ -1685,6 +2230,8 @@ const sectionsPanel = (h: H, context: Context): Html => {
   const conclusion = Array.filter(roots, entry => entry.isConclusion)
   return panelOf(
     h,
+    context,
+    'panel:sections',
     'Sections',
     'The structure of the report. Sections nest as subsections; items are what the author fills in. The conclusion is the last section, written after the committee has decided.',
     [
@@ -1702,15 +2249,27 @@ const sectionsPanel = (h: H, context: Context): Html => {
       Array.match(conclusion, {
         onEmpty: () =>
           row(h, [
-            smallButton(h, 'Add a section', Message.ClickedAdd({ kind: 'section', parentId: '' })),
-            smallButton(h, 'Add a conclusion', Message.ClickedAdd({ kind: 'conclusion', parentId: '' })),
+            smallButton(
+              h,
+              'Add a section',
+              Message.ClickedAdd({ kind: 'section', parentId: '' }),
+            ),
+            smallButton(
+              h,
+              'Add a conclusion',
+              Message.ClickedAdd({ kind: 'conclusion', parentId: '' }),
+            ),
           ]),
         onNonEmpty: list =>
           h.div(
             [h.Class('flex flex-col gap-4')],
             [
               row(h, [
-                smallButton(h, 'Add a section', Message.ClickedAdd({ kind: 'section', parentId: '' })),
+                smallButton(
+                  h,
+                  'Add a section',
+                  Message.ClickedAdd({ kind: 'section', parentId: '' }),
+                ),
               ]),
               h.ul(
                 [h.AriaLabel('Conclusion'), h.Class('flex flex-col gap-4')],
@@ -1731,6 +2290,8 @@ const endingPanel = (h: H, context: Context): Html => {
   const found = problemsAt(context, 'ending')
   return panelOf(
     h,
+    context,
+    'panel:ending',
     'Ending the report early (branching)',
     'A choice can end the report: the author is told the outcome, and the sections that are not marked below are left out. Mark a choice as ending in its options.',
     [
@@ -1779,31 +2340,53 @@ const coverPanel = (h: H, context: Context): Html => {
   const items = Array.filter(form.items, item => item.type !== 'repeated')
   return panelOf(
     h,
+    context,
+    'panel:cover',
     'Cover page',
     'Lines of the cover. A line is made of parts: fixed text, a value the author filled in, or a value of the case.',
     [
       h.ul(
         [h.AriaLabel('Cover lines'), h.Class('flex flex-col gap-3')],
         Array.map(form.coverLines, (line, lineIndex) => {
-          const parts = Array.filter(form.coverParts, part => part.lineIndex === lineIndex)
+          const parts = Array.filter(
+            form.coverParts,
+            part => part.lineIndex === lineIndex,
+          )
           const found = problemsAt(context, 'cover', String(lineIndex))
           return h.keyed('li')(
             String(lineIndex),
-            [h.Class('list-none'), h.DataAttribute('cover-line', String(lineIndex))],
+            [
+              h.Class('list-none'),
+              h.DataAttribute('cover-line', String(lineIndex)),
+            ],
             [
               card(h, [
                 row(h, [
-                  h.p([h.Class('pb-2 text-base font-medium text-msf-ink')], [`Line ${lineIndex + 1}`]),
-                  choice(h, `cover-${lineIndex}-emphasis`, 'Shown as', line.emphasis, [
-                    { value: 'title', label: 'Title' },
-                    { value: 'subtitle', label: 'Subtitle' },
-                    { value: 'normal', label: 'Normal text' },
-                  ], value =>
-                    send({
-                      _tag: 'SetCoverEmphasis',
-                      index: lineIndex,
-                      value: value === 'title' ? 'title' : value === 'subtitle' ? 'subtitle' : 'normal',
-                    }),
+                  h.p(
+                    [h.Class('pb-2 text-base font-medium text-msf-ink')],
+                    [`Line ${lineIndex + 1}`],
+                  ),
+                  choice(
+                    h,
+                    `cover-${lineIndex}-emphasis`,
+                    'Shown as',
+                    line.emphasis,
+                    [
+                      { value: 'title', label: 'Title' },
+                      { value: 'subtitle', label: 'Subtitle' },
+                      { value: 'normal', label: 'Normal text' },
+                    ],
+                    value =>
+                      send({
+                        _tag: 'SetCoverEmphasis',
+                        index: lineIndex,
+                        value:
+                          value === 'title'
+                            ? 'title'
+                            : value === 'subtitle'
+                              ? 'subtitle'
+                              : 'normal',
+                      }),
                   ),
                 ]),
                 ...Array.map(parts, (part, partIndex) =>
@@ -1814,7 +2397,13 @@ const coverPanel = (h: H, context: Context): Html => {
                           label: 'Text',
                           value: part.text,
                           onInput: value =>
-                            send({ _tag: 'SetCoverPart', lineIndex, partIndex, field: 'text', value }),
+                            send({
+                              _tag: 'SetCoverPart',
+                              lineIndex,
+                              partIndex,
+                              field: 'text',
+                              value,
+                            }),
                         })
                       : part.kind === 'item'
                         ? choice(
@@ -1824,10 +2413,19 @@ const coverPanel = (h: H, context: Context): Html => {
                             part.itemId,
                             [
                               { value: '', label: 'Choose an item' },
-                              ...Array.map(items, item => ({ value: item.id, label: item.label || item.id })),
+                              ...Array.map(items, item => ({
+                                value: item.id,
+                                label: item.label || item.id,
+                              })),
                             ],
                             value =>
-                              send({ _tag: 'SetCoverPart', lineIndex, partIndex, field: 'itemId', value }),
+                              send({
+                                _tag: 'SetCoverPart',
+                                lineIndex,
+                                partIndex,
+                                field: 'itemId',
+                                value,
+                              }),
                           )
                         : choice(
                             h,
@@ -1840,29 +2438,67 @@ const coverPanel = (h: H, context: Context): Html => {
                               { value: 'title', label: 'Title' },
                             ],
                             value =>
-                              send({ _tag: 'SetCoverPart', lineIndex, partIndex, field: 'field', value }),
+                              send({
+                                _tag: 'SetCoverPart',
+                                lineIndex,
+                                partIndex,
+                                field: 'field',
+                                value,
+                              }),
                           ),
                     smallButton(
                       h,
                       'Remove part',
                       send({ _tag: 'RemoveCoverPart', lineIndex, partIndex }),
-                      Option.some(`Remove part ${partIndex + 1} of cover line ${lineIndex + 1}`),
+                      Option.some(
+                        `Remove part ${partIndex + 1} of cover line ${lineIndex + 1}`,
+                      ),
                     ),
                   ]),
                 ),
                 problemList(h, found),
                 row(h, [
-                  smallButton(h, 'Add text', send({ _tag: 'AddCoverPart', lineIndex, kind: 'text' }), Option.some(`Add text to cover line ${lineIndex + 1}`)),
-                  smallButton(h, 'Add an item value', send({ _tag: 'AddCoverPart', lineIndex, kind: 'item' }), Option.some(`Add an item value to cover line ${lineIndex + 1}`)),
-                  smallButton(h, 'Add a case value', send({ _tag: 'AddCoverPart', lineIndex, kind: 'case_value' }), Option.some(`Add a case value to cover line ${lineIndex + 1}`)),
-                  smallButton(h, 'Remove line', send({ _tag: 'RemoveCoverLine', index: lineIndex }), Option.some(`Remove cover line ${lineIndex + 1}`)),
+                  smallButton(
+                    h,
+                    'Add text',
+                    send({ _tag: 'AddCoverPart', lineIndex, kind: 'text' }),
+                    Option.some(`Add text to cover line ${lineIndex + 1}`),
+                  ),
+                  smallButton(
+                    h,
+                    'Add an item value',
+                    send({ _tag: 'AddCoverPart', lineIndex, kind: 'item' }),
+                    Option.some(
+                      `Add an item value to cover line ${lineIndex + 1}`,
+                    ),
+                  ),
+                  smallButton(
+                    h,
+                    'Add a case value',
+                    send({
+                      _tag: 'AddCoverPart',
+                      lineIndex,
+                      kind: 'case_value',
+                    }),
+                    Option.some(
+                      `Add a case value to cover line ${lineIndex + 1}`,
+                    ),
+                  ),
+                  smallButton(
+                    h,
+                    'Remove line',
+                    send({ _tag: 'RemoveCoverLine', index: lineIndex }),
+                    Option.some(`Remove cover line ${lineIndex + 1}`),
+                  ),
                 ]),
               ]),
             ],
           )
         }),
       ),
-      row(h, [smallButton(h, 'Add a cover line', send({ _tag: 'AddCoverLine' }))]),
+      row(h, [
+        smallButton(h, 'Add a cover line', send({ _tag: 'AddCoverLine' })),
+      ]),
     ],
   )
 }
@@ -1873,6 +2509,8 @@ const pagesPanel = (h: H, context: Context): Html => {
   const template = problemsAt(context, 'template')
   return panelOf(
     h,
+    context,
+    'panel:pages',
     'Contents, page numbers, header and footer',
     'Header and footer text can use {page}, {pages}, {case} and {title}.',
     [
@@ -1886,21 +2524,35 @@ const pagesPanel = (h: H, context: Context): Html => {
           onInput: value =>
             send({ _tag: 'SetContentsDepth', value: maybeIntOf(value) }),
         }),
-        choice(h, 'template-page-numbering', 'Page numbers', form.pageNumbering, [
-          { value: 'continuous', label: 'Continuous' },
-          { value: 'restart_after_front_matter', label: 'Restart after the front matter' },
-        ], value =>
-          send({
-            _tag: 'SetPageNumbering',
-            value: value === 'restart_after_front_matter' ? 'restart_after_front_matter' : 'continuous',
-          }),
+        choice(
+          h,
+          'template-page-numbering',
+          'Page numbers',
+          form.pageNumbering,
+          [
+            { value: 'continuous', label: 'Continuous' },
+            {
+              value: 'restart_after_front_matter',
+              label: 'Restart after the front matter',
+            },
+          ],
+          value =>
+            send({
+              _tag: 'SetPageNumbering',
+              value:
+                value === 'restart_after_front_matter'
+                  ? 'restart_after_front_matter'
+                  : 'continuous',
+            }),
         ),
       ]),
       problemList(
         h,
         Array.filter(
           template,
-          entry => entry.target.field === 'contentsDepth' || entry.target.field === 'pageNumbering',
+          entry =>
+            entry.target.field === 'contentsDepth' ||
+            entry.target.field === 'pageNumbering',
         ),
       ),
       input(h, {
@@ -1919,13 +2571,15 @@ const pagesPanel = (h: H, context: Context): Html => {
         id: 'template-cover-header',
         label: 'Header of the cover',
         value: form.coverHeader,
-        onInput: value => send({ _tag: 'SetText', field: 'coverHeader', value }),
+        onInput: value =>
+          send({ _tag: 'SetText', field: 'coverHeader', value }),
       }),
       input(h, {
         id: 'template-cover-footer',
         label: 'Footer of the cover',
         value: form.coverFooter,
-        onInput: value => send({ _tag: 'SetText', field: 'coverFooter', value }),
+        onInput: value =>
+          send({ _tag: 'SetText', field: 'coverFooter', value }),
       }),
       problemList(h, furniture),
     ],
@@ -1957,10 +2611,19 @@ const previewSection = (
   const childCounter: Counter = { position: 0 }
   const own: Section = { ...section, sections: [] }
   return h.div(
-    [h.Class('flex min-w-0 flex-col gap-3'), h.DataAttribute('preview-section', section.id)],
+    [
+      h.Class('flex min-w-0 flex-col gap-3'),
+      h.DataAttribute('preview-section', section.id),
+    ],
     [
       h.h3(
-        [h.Class(depth === 1 ? 'text-2xl font-black tracking-tight' : 'text-xl font-bold')],
+        [
+          h.Class(
+            depth === 1
+              ? 'text-2xl font-black tracking-tight'
+              : 'text-xl font-bold',
+          ),
+        ],
         [`${number}${section.title}`],
       ),
       section.repeat === undefined
@@ -1969,16 +2632,24 @@ const previewSection = (
             [h.Class('text-base text-msf-grey')],
             [
               `Repeated: one for each entry, at least ${section.repeat.min}${
-                section.repeat.max === undefined ? '' : ` and at most ${section.repeat.max}`
+                section.repeat.max === undefined
+                  ? ''
+                  : ` and at most ${section.repeat.max}`
               }.`,
             ],
           ),
       section.requirement === 'required'
         ? h.empty
-        : h.p([h.Class('text-base text-msf-grey')], ['This section can be left out.']),
+        : h.p(
+            [h.Class('text-base text-msf-grey')],
+            ['This section can be left out.'],
+          ),
       section.instruction === undefined
         ? h.empty
-        : h.p([h.Class('text-base italic text-msf-grey')], [section.instruction]),
+        : h.p(
+            [h.Class('text-base italic text-msf-grey')],
+            [section.instruction],
+          ),
       readOnlySection(h, own, undefined, {
         reportId: '',
         people: [],
@@ -2016,7 +2687,10 @@ const previewView = (h: H, model: Model): Html => {
           h.Class('flex flex-col gap-8 border-t-2 border-msf-ink pt-5'),
         ],
         [
-          h.h2([h.Class('text-2xl font-black tracking-tight')], ['Preview of a new report']),
+          h.h2(
+            [h.Class('text-2xl font-black tracking-tight')],
+            ['Preview of a new report'],
+          ),
           h.p(
             [h.Class('text-base text-msf-grey')],
             [
@@ -2043,7 +2717,11 @@ const changeText = (change: {
 const publishPanel = (h: H, model: Model): Html =>
   PublishState.match(model.publish, {
     Idle: () => h.empty,
-    Preparing: () => statusText(h, 'Saving the draft and comparing it with the previous version.'),
+    Preparing: () =>
+      statusText(
+        h,
+        'Saving the draft and comparing it with the previous version.',
+      ),
     Reviewing: ({ changes }) =>
       h.section(
         [
@@ -2052,7 +2730,10 @@ const publishPanel = (h: H, model: Model): Html =>
           h.Class('flex flex-col gap-3 border-2 border-msf-ink p-4'),
         ],
         [
-          h.h2([h.Class('text-2xl font-black tracking-tight')], [`Publish version ${model.version}?`]),
+          h.h2(
+            [h.Class('text-2xl font-black tracking-tight')],
+            [`Publish version ${model.version}?`],
+          ),
           h.p(
             [h.Class('text-base text-msf-ink')],
             [
@@ -2061,17 +2742,35 @@ const publishPanel = (h: H, model: Model): Html =>
           ),
           Array.match(changes, {
             onEmpty: () =>
-              h.p([h.Class('text-base text-msf-grey')], ['Nothing differs from the previous version.']),
+              h.p(
+                [h.Class('text-base text-msf-grey')],
+                ['Nothing differs from the previous version.'],
+              ),
             onNonEmpty: list =>
               h.ul(
-                [h.AriaLabel('Changes since the previous version'), h.Class('flex max-h-72 flex-col gap-1 overflow-y-auto border border-msf-line p-3')],
+                [
+                  h.AriaLabel('Changes since the previous version'),
+                  h.Class(
+                    'flex max-h-72 flex-col gap-1 overflow-y-auto border border-msf-line p-3',
+                  ),
+                ],
                 Array.map(list, change =>
-                  h.li([h.Class('text-base text-msf-ink'), h.DataAttribute('change', change.change)], [changeText(change)]),
+                  h.li(
+                    [
+                      h.Class('text-base text-msf-ink'),
+                      h.DataAttribute('change', change.change),
+                    ],
+                    [changeText(change)],
+                  ),
                 ),
               ),
           }),
           row(h, [
-            smallButton(h, `Publish version ${model.version}`, Message.ClickedConfirmPublish()),
+            smallButton(
+              h,
+              `Publish version ${model.version}`,
+              Message.ClickedConfirmPublish(),
+            ),
             smallButton(h, 'Back to editing', Message.ClickedBackToEditing()),
           ]),
         ],
@@ -2079,7 +2778,10 @@ const publishPanel = (h: H, model: Model): Html =>
     Publishing: () => statusText(h, 'Publishing.'),
     Published: ({ changes }) =>
       h.div(
-        [h.Role('status'), h.Class('flex flex-col gap-2 border-2 border-msf-ink p-4')],
+        [
+          h.Role('status'),
+          h.Class('flex flex-col gap-2 border-2 border-msf-ink p-4'),
+        ],
         [
           h.p(
             [h.Class('text-lg font-bold text-msf-black')],
@@ -2087,7 +2789,9 @@ const publishPanel = (h: H, model: Model): Html =>
           ),
           h.p(
             [h.Class('text-base text-msf-ink')],
-            [`${changes.length} ${changes.length === 1 ? 'change' : 'changes'} since the previous version. New reports use this version.`],
+            [
+              `${changes.length} ${changes.length === 1 ? 'change' : 'changes'} since the previous version. New reports use this version.`,
+            ],
           ),
         ],
       ),
@@ -2103,6 +2807,8 @@ const saveText = (state: SaveState): string =>
     Saving: () => 'Saving.',
     Saved: () => 'Draft saved.',
     Failed: ({ failure }) => failureText(failure),
+    Stale: () =>
+      'This draft was changed by someone else since you opened it, so your changes are not saved. Reload to see their version; your changes here are lost.',
   })
 
 const summaryOf = (record: { state: string; version: number }): string =>
@@ -2144,7 +2850,9 @@ const loaded = (h: H, model: Model): Html => {
           h.h1(
             [
               h.Id('page-heading'),
-              h.Class('text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black'),
+              h.Class(
+                'text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black',
+              ),
             ],
             [draft ? `Edit ${model.form.name}` : model.form.name],
           ),
@@ -2156,27 +2864,63 @@ const loaded = (h: H, model: Model): Html => {
       draft
         ? h.div(
             [
-              h.Class('sticky top-0 z-10 flex flex-col gap-2 border-b border-msf-line bg-white py-3'),
+              h.Class(
+                'sticky top-0 z-10 flex flex-col gap-2 border-b border-msf-line bg-white py-3',
+              ),
               h.DataAttribute('editor-bar', 'draft'),
             ],
             [
               row(h, [
-                smallButton(h, busy ? 'Working.' : 'Save draft', Message.ClickedSave()),
+                smallButton(
+                  h,
+                  busy ? 'Working.' : 'Save draft',
+                  Message.ClickedSave(),
+                ),
+                SaveState.guards.Stale(model.save)
+                  ? smallButton(
+                      h,
+                      'Reload the draft',
+                      Message.ClickedReload(),
+                    )
+                  : h.empty,
                 previewing
-                  ? smallButton(h, 'Back to editing', Message.ClickedMode({ mode: 'edit' }))
-                  : smallButton(h, 'Preview', Message.ClickedMode({ mode: 'preview' })),
-                smallButton(h, `Publish version ${model.version}`, Message.ClickedPublish()),
+                  ? smallButton(
+                      h,
+                      'Back to editing',
+                      Message.ClickedMode({ mode: 'edit' }),
+                    )
+                  : smallButton(
+                      h,
+                      'Preview',
+                      Message.ClickedMode({ mode: 'preview' }),
+                    ),
+                smallButton(
+                  h,
+                  `Publish version ${model.version}`,
+                  Message.ClickedPublish(),
+                ),
               ]),
               h.p(
-                [h.Role('status'), h.Class('text-base font-medium text-msf-ink')],
+                [
+                  h.Role('status'),
+                  h.Class('text-base font-medium text-msf-ink'),
+                ],
                 [saveText(model.save)],
               ),
               unfixed > 0
                 ? h.p(
-                    [h.Class('text-base font-medium text-msf-alert'), h.DataAttribute('problem-count', String(unfixed))],
-                    [`${unfixed} ${unfixed === 1 ? 'thing needs' : 'things need'} fixing before this can be published.`],
+                    [
+                      h.Class('text-base font-medium text-msf-alert'),
+                      h.DataAttribute('problem-count', String(unfixed)),
+                    ],
+                    [
+                      `${unfixed} ${unfixed === 1 ? 'thing needs' : 'things need'} fixing before this can be published.`,
+                    ],
                   )
-                : h.p([h.Class('text-base text-msf-grey')], ['Nothing is marked: this can be published.']),
+                : h.p(
+                    [h.Class('text-base text-msf-grey')],
+                    ['Nothing is marked: this can be published.'],
+                  ),
               Option.match(model.maybeNotice, {
                 onNone: () => h.empty,
                 onSome: notice => alertText(h, notice),
@@ -2187,18 +2931,42 @@ const loaded = (h: H, model: Model): Html => {
             [h.Class('flex flex-col gap-3')],
             [
               row(h, [
-                smallButton(h, 'Start a new version', Message.ClickedNewVersion()),
+                smallButton(
+                  h,
+                  'Start a new version',
+                  Message.ClickedNewVersion(),
+                ),
                 previewing
-                  ? smallButton(h, 'Show the structure', Message.ClickedMode({ mode: 'edit' }))
-                  : smallButton(h, 'Preview', Message.ClickedMode({ mode: 'preview' })),
+                  ? smallButton(
+                      h,
+                      'Show the structure',
+                      Message.ClickedMode({ mode: 'edit' }),
+                    )
+                  : smallButton(
+                      h,
+                      'Preview',
+                      Message.ClickedMode({ mode: 'preview' }),
+                    ),
               ]),
               Option.match(model.maybeNewDraft, {
                 onNone: () => h.empty,
                 onSome: version =>
                   h.a(
                     [
-                      h.Href(pathOf(AppRoute.TemplateEditor({ templateId: model.templateId, version }))),
-                      h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+                      h.Href(
+                        pathOf(
+                          AppRoute.TemplateEditor({
+                            templateId: model.templateId,
+                            version,
+                          }),
+                        ),
+                      ),
+                      h.Class(
+                        clsx(
+                          'self-start text-lg text-msf-ink underline',
+                          focusRing,
+                        ),
+                      ),
                     ],
                     [`Open the draft of version ${version}`],
                   ),
@@ -2218,13 +2986,24 @@ const loaded = (h: H, model: Model): Html => {
               [
                 unfixed > 0
                   ? h.section(
-                      [h.AriaLabel('Problems'), h.Class('flex flex-col gap-2 border border-msf-alert p-4')],
                       [
-                        h.h2([h.Class('text-xl font-bold text-msf-alert')], ['To fix']),
+                        h.AriaLabel('Problems'),
+                        h.Class(
+                          'flex flex-col gap-2 border border-msf-alert p-4',
+                        ),
+                      ],
+                      [
+                        h.h2(
+                          [h.Class('text-xl font-bold text-msf-alert')],
+                          ['To fix'],
+                        ),
                         h.ul(
                           [h.Class('flex flex-col gap-1')],
                           Array.map(context.problems, entry =>
-                            h.li([h.Class('text-base text-msf-ink')], [entry.problem.message]),
+                            h.li(
+                              [h.Class('text-base text-msf-ink')],
+                              [entry.problem.message],
+                            ),
                           ),
                         ),
                       ],
@@ -2241,7 +3020,9 @@ const loaded = (h: H, model: Model): Html => {
             )
           : h.p(
               [h.Class('text-lg text-msf-ink')],
-              ['This version is published, so it cannot be edited. Preview it, or start a new version to change it.'],
+              [
+                'This version is published, so it cannot be edited. Preview it, or start a new version to change it.',
+              ],
             ),
     ],
   )
@@ -2262,3 +3043,24 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
     Loaded: () => loaded(h, model),
   }),
 )
+
+// SUBSCRIPTION
+
+// NOTE: Closing the tab with a draft that is not saved asks first, as the
+// report screen does.
+export const subscriptions = Subscription.make<Model, Message>()(entry => ({
+  unsavedTemplateEdits: entry(
+    { hasUnsavedEdits: Schema.Boolean },
+    {
+      modelToDependencies: model => ({
+        hasUnsavedEdits: hasUnsavedEdits(model),
+      }),
+      dependenciesToStream: ({ hasUnsavedEdits: isUnsaved }) =>
+        Dom.streamFromEventFilterMapPreventDefault({
+          target: window,
+          type: 'beforeunload',
+          filterMapEvent: () => Option.some(Message.WarnedBeforeLeaving()),
+        }).pipe(Stream.when(Effect.sync(() => isUnsaved))),
+    },
+  ),
+}))

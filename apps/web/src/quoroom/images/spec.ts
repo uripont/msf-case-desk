@@ -27,6 +27,7 @@ export type ImageContext =
   | Readonly<{ kind: 'working_copy' }>
   | Readonly<{ kind: 'draft'; draft: number }>
   | Readonly<{ kind: 'revision'; revision: number }>
+  | Readonly<{ kind: 'theme' }>
 
 export const WORKING_COPY_CONTEXT: ImageContext = { kind: 'working_copy' }
 
@@ -35,12 +36,17 @@ export const imageContextToken = (context: ImageContext): string =>
     ? `draft:${context.draft}`
     : context.kind === 'revision'
       ? `revision:${context.revision}`
-      : 'working_copy'
+      : context.kind === 'theme'
+        ? 'theme'
+        : 'working_copy'
 
 // NOTE: An empty or unknown token is the working copy, the drafting screen's
 // context, so a screen that names nothing keeps reading its own working copy.
 export const parseImageContext = (token: string): ImageContext => {
   const [kind, number] = token.split(':')
+  if (kind === 'theme') {
+    return { kind: 'theme' }
+  }
   const n = Number(number)
   if (kind === 'draft' && Number.isInteger(n) && n >= 0) {
     return { kind: 'draft', draft: n }
@@ -56,6 +62,9 @@ export const imageReadQuery = (
   reportId: string,
   context: ImageContext,
 ): string => {
+  if (context.kind === 'theme') {
+    return new URLSearchParams({ context: 'theme' }).toString()
+  }
   const query = new URLSearchParams({ context: context.kind, report: reportId })
   if (context.kind === 'draft') {
     query.set('draft', String(context.draft))

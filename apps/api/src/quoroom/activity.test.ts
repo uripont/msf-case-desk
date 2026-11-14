@@ -53,10 +53,10 @@ describe.each(SCENARIOS)('$name', scenario => {
       for (const error of refusals) expect(tagOf(error)).toBe('NotFound')
     }
     // NOTE: and the other way round: an author has no deployment capability.
-    expect(tagOf(await w.refused('alice', c => c.ListTemplates()))).toBe('NotPermitted')
+    expect(tagOf(await w.refused('alice', c => c.ListTemplates({})))).toBe('NotPermitted')
     expect(tagOf(await w.refused('alice', c => c.GetTheme().pipe(Effect.flatMap(() => c.UpdateTheme({ theme: DEFAULT_THEME })))))).toBe('NotPermitted')
     expect(tagOf(await w.refused('tess', c => c.UpdateTheme({ theme: DEFAULT_THEME })))).toBe('NotPermitted')
-    expect(tagOf(await w.refused('adam', c => c.ListTemplates()))).toBe('NotPermitted')
+    expect(tagOf(await w.refused('adam', c => c.ListTemplates({})))).toBe('NotPermitted')
   })
 
   test('a template is drafted, refused while invalid, published as an immutable version with its diff logged', async () => {
@@ -71,23 +71,23 @@ describe.each(SCENARIOS)('$name', scenario => {
     const first = draft.template.sections[0]
     if (first === undefined) throw new Error('no section')
     const broken = { ...draft.template, sections: [...draft.template.sections, first] }
-    const saved = await w.call('tess', c => c.SaveTemplateDraft({ templateId: id, version: 1, template: broken }))
+    const saved = await w.call('tess', c => c.SaveTemplateDraft({ templateId: id, version: 1, draftRevision: draft.draftRevision, template: broken }))
     expect(saved.problems.some(problem => problem.code === 'duplicate-id')).toBe(true)
-    const refusal = await w.refused('tess', c => c.PublishTemplateVersion({ templateId: id, version: 1 }))
+    const refusal = await w.refused('tess', c => c.PublishTemplateVersion({ templateId: id, version: 1, draftRevision: saved.record.draftRevision }))
     expect(tagOf(refusal)).toBe('Validation')
     expect((await w.call('tess', c => c.GetTemplateVersion({ templateId: id, version: 1 }))).state).toBe('draft')
 
     // NOTE: fixed, it publishes, and the first version's diff is all additions.
-    const fixed = await w.call('tess', c => c.SaveTemplateDraft({ templateId: id, version: 1, template: draft.template }))
+    const fixed = await w.call('tess', c => c.SaveTemplateDraft({ templateId: id, version: 1, draftRevision: saved.record.draftRevision, template: draft.template }))
     expect(fixed.problems).toEqual([])
-    const published = await w.call('tess', c => c.PublishTemplateVersion({ templateId: id, version: 1 }))
+    const published = await w.call('tess', c => c.PublishTemplateVersion({ templateId: id, version: 1, draftRevision: fixed.record.draftRevision }))
     expect(published.record.state).toBe('published')
     expect(published.changes.length).toBeGreaterThan(0)
     expect(published.changes.every(change => change.change === 'added')).toBe(true)
 
     // NOTE: immutable: nothing saves, publishes or retires-and-rewrites it.
-    expect(tagOf(await w.refused('tess', c => c.SaveTemplateDraft({ templateId: id, version: 1, template: { ...draft.template, name: 'Changed' } })))).toBe('Conflict')
-    expect(tagOf(await w.refused('tess', c => c.PublishTemplateVersion({ templateId: id, version: 1 })))).toBe('Conflict')
+    expect(tagOf(await w.refused('tess', c => c.SaveTemplateDraft({ templateId: id, version: 1, draftRevision: fixed.record.draftRevision, template: { ...draft.template, name: 'Changed' } })))).toBe('Conflict')
+    expect(tagOf(await w.refused('tess', c => c.PublishTemplateVersion({ templateId: id, version: 1, draftRevision: fixed.record.draftRevision })))).toBe('Conflict')
 
     // NOTE: the next version is a draft of the same template, one at a time.
     const next = await w.call('tess', c => c.CreateTemplateDraft({ copyOf: { templateId: id, version: 1 } }))
@@ -100,8 +100,8 @@ describe.each(SCENARIOS)('$name', scenario => {
         { id: 'added-section', title: 'An added section', requirement: 'optional' as const, frontMatter: false, numbered: true, items: [{ id: 'added-text', label: 'Added text', requirement: 'optional' as const, type: 'text' as const }], sections: [] },
       ],
     }
-    await w.call('tess', c => c.SaveTemplateDraft({ templateId: id, version: 2, template: extra }))
-    const second = await w.call('tess', c => c.PublishTemplateVersion({ templateId: id, version: 2 }))
+    const savedExtra = await w.call('tess', c => c.SaveTemplateDraft({ templateId: id, version: 2, draftRevision: next.draftRevision, template: extra }))
+    const second = await w.call('tess', c => c.PublishTemplateVersion({ templateId: id, version: 2, draftRevision: savedExtra.record.draftRevision }))
     expect(second.changes.map(change => `${change.change}:${change.id}`)).toContain('added:added-section')
     expect((await w.call('tess', c => c.GetTemplateVersion({ templateId: id, version: 1 }))).template.name).toBe('Copy of a template')
 
@@ -127,11 +127,12 @@ describe.each(SCENARIOS)('$name', scenario => {
   test('a blank template can be created and published', async () => {
     const w = await world()
     const draft = await w.call('tess', c => c.CreateTemplateDraft({ name: 'Blank one' }))
-    expect((await w.call('tess', c => c.SaveTemplateDraft({ templateId: draft.templateId, version: 1, template: draft.template }))).problems).toEqual([])
-    const published = await w.call('tess', c => c.PublishTemplateVersion({ templateId: draft.templateId, version: 1 }))
+    const savedBlank = await w.call('tess', c => c.SaveTemplateDraft({ templateId: draft.templateId, version: 1, draftRevision: draft.draftRevision, template: draft.template }))
+    expect(savedBlank.problems).toEqual([])
+    const published = await w.call('tess', c => c.PublishTemplateVersion({ templateId: draft.templateId, version: 1, draftRevision: savedBlank.record.draftRevision }))
     expect(published.record.state).toBe('published')
     expect(published.record.createdBy).toBeDefined()
-    const listed = await w.call('tess', c => c.ListTemplates())
+    const listed = (await w.call('tess', c => c.ListTemplates({}))).templates
     expect(listed.find(entry => entry.id === draft.templateId)).toMatchObject({ publishedVersion: 1, hasDraft: false })
     expect(listed.find(entry => entry.id === INTAKE_TEMPLATE.id || entry.id === ref.templateId)?.builtIn).toBeDefined()
   })

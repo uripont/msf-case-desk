@@ -2453,13 +2453,9 @@ const main = async (): Promise<void> => {
       const theme = (await rpc(pia, 'GetTheme', null as unknown as Json)).theme
       const sections: Json = {}
       for (const section of [...template.sections, ...(template.conclusion === undefined ? [] : [template.conclusion])]) {
-        try {
-          sections[section.id] = (
-            await rpc(pia, 'GetDraftSection', { reportId, draft, sectionId: section.id, view: 'original' })
-          ).content
-        } catch {
-          assert.equal(section.id, template.conclusion?.id, `section ${section.id} could not be read`)
-        }
+        sections[section.id] = (
+          await rpc(pia, 'GetDraftSection', { reportId, draft, sectionId: section.id, view: 'original' })
+        ).content
       }
       const job = {
         document: {
@@ -2473,7 +2469,8 @@ const main = async (): Promise<void> => {
             versionLabel: version.label,
             date: new Date(version.at).toISOString().slice(0, 10),
           },
-          includeConclusion: template.conclusion !== undefined && sections[template.conclusion.id] !== undefined,
+          // The report is not concluding: the conclusion appears only with content.
+          ...(['concluding', 'archived'].includes(summary.state) ? { includeConclusion: true } : {}),
         },
       }
       writeFileSync(join(local, 'node-job.json'), JSON.stringify(job))
@@ -2486,6 +2483,17 @@ const main = async (): Promise<void> => {
       const inBrowser = await extractPages(new Uint8Array(revision.bytes))
       const inNode = await extractPages(new Uint8Array(readFileSync(join(local, 'node.pdf'))))
       assert.deepEqual(inBrowser, inNode, 'the browser and Node PDFs read differently')
+
+      // A report still being drafted has no conclusion: a PDF of it has none
+      // (an empty section must not print a heading, and the derived colours
+      // of the theme must leave the page readable).
+      assert.equal(summary.state === 'concluding' || summary.state === 'archived', false, 'the report is already concluding')
+      assert.ok(template.conclusion !== undefined, 'the template has no conclusion to leave out')
+      const conclusionContent = await rpc(pia, 'GetDraftSection', { reportId, draft, sectionId: template.conclusion.id, view: 'original' })
+      assert.deepEqual(conclusionContent.content.values, {}, 'the conclusion of a drafting report has content')
+      assert.ok(!revisionText.includes(template.conclusion.title), 'a drafting report\'s PDF prints the empty conclusion')
+      const draftPdf = await saved(pia, `Download PDF of Draft ${draft}, original`)
+      assert.ok(!(await textOf(draftPdf.bytes)).includes(template.conclusion.title), 'a drafting report\'s draft PDF prints the empty conclusion')
 
       // Download all: one zip of every draft and revision, original and redacted.
       const zip = await saved(pia, 'Download all drafts, revisions and approval records as one zip')
@@ -2519,6 +2527,10 @@ const main = async (): Promise<void> => {
       await rhea.getByLabel('Password', { exact: true }).fill(PASSWORD)
       await rhea.getByRole('button', { name: 'Sign in' }).click()
       await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
+      // NOTE: the heading is also shown while the revision is loading, with no
+      // button yet; the button count is only meaningful once it has been read.
+      await rhea.locator('[data-reading="true"]').waitFor()
+      await rhea.getByRole('button', { name: /^Download PDF/ }).first().waitFor()
       assert.equal(await rhea.getByRole('button', { name: /^Download PDF/ }).count(), 1, 'a reviewer is offered more than one PDF')
       await shot(rhea, 'downloads-2-reviewer-375')
       const redacted = await saved(rhea, 'Download PDF of Revision 1')
@@ -2628,6 +2640,161 @@ const main = async (): Promise<void> => {
       await pia.getByRole('heading', { name: 'Templates', level: 1 }).waitFor()
       await pia.getByText('Pilot intake with a screening').first().waitFor()
       await shot(pia, 'templates-8-list-375')
+    })
+
+    // NOTE: Stage 9d: an administrator sets the theme. At 375 px: uploads a
+    // synthetic logo, types a colour that is unreadable and meets the refusal,
+    // fixes it, changes the PDF footer, looks at the sample PDF, saves; the app
+    // shows the new organisation name and colour with no reload. At 1280 px the
+    // saved theme is read back, and an author downloads a PDF whose text has the
+    // new cover texts and which embeds the logo. The intake template sets its own
+    // header and footer, which replace the theme's, but not its cover texts, so
+    // the theme's cover header and footer are the ones printed on its cover.
+    await step('the theme on a phone: a logo, an unreadable colour is refused, the fix and a new footer are saved, the app shows the name and colour, and the next PDF has the footer and the logo', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      await pia.setViewportSize({ width: 375, height: 812 })
+      const hasImage = (bytes: Buffer): boolean => /\/Subtype\s*\/Image/.test(bytes.toString('latin1'))
+      const textOf = async (bytes: Buffer): Promise<string> =>
+        (await extractPages(new Uint8Array(bytes))).join('\n').replace(/\s+/g, ' ')
+      let downloads = 0
+      const downloadRevision = async (): Promise<Buffer> => {
+        const id = reportsByReference['PIL-0007']
+        assert.ok(id !== undefined, 'no report PIL-0007')
+        await pia.goto(`${pilotUrl}/r/${id}/downloads`)
+        await pia.getByRole('heading', { name: 'Downloads' }).waitFor()
+        await pia.locator('[data-download-version="revision:1"]').waitFor()
+        downloads += 1
+        const [file] = await Promise.all([
+          pia.waitForEvent('download', { timeout: 180_000 }),
+          pia.getByRole('button', { name: 'Download PDF of Revision 1, original' }).click(),
+        ])
+        const path = join(local, `theme-download-${downloads}.pdf`)
+        await file.saveAs(path)
+        return readFileSync(path)
+      }
+
+      // A PDF made before the theme is set: default footer, no image.
+      const before = await downloadRevision()
+      assert.ok(!hasImage(before), 'a PDF with no logo embeds an image')
+      assert.ok(!(await textOf(before)).includes('Confidential synthetic footer'), 'the footer is there before it is set')
+
+      await pia.goto(`${pilotUrl}/theme`)
+      await pia.getByRole('heading', { name: 'Theme', level: 1 }).waitFor()
+      await pia.getByLabel('Organisation name', { exact: true }).waitFor()
+      await shot(pia, 'theme-1-open-375')
+
+      // The logo: a synthetic picture, prepared and sent by the browser.
+      const logoPath = join(local, 'synthetic-logo.png')
+      writeFileSync(logoPath, Buffer.from(await syntheticImage(pia, { width: 480, height: 160, kind: 'transparent', quality: 0.9 }), 'base64'))
+      await pia.setInputFiles('#theme-logo-file', logoPath)
+      await pia.locator('[data-theme-logo]').waitFor({ timeout: 60_000 })
+      assert.equal(await pia.getByRole('alert').filter({ hasText: /logo|picture/i }).count(), 0, 'the logo was refused')
+
+      // A low-contrast colour: shown beside the colour, and the save is refused.
+      await pia.getByLabel('Organisation name', { exact: true }).fill('Invented Organisation')
+      await pia.getByLabel('Text colour', { exact: true }).fill('#cccccc')
+      const beside = pia.locator('[data-theme-colour="text"] [data-theme-problem="colors.text"]')
+      await beside.waitFor()
+      assert.match((await beside.textContent()) ?? '', /contrast/)
+      await pia.getByRole('button', { name: 'Save the theme' }).click()
+      await pia.getByText(/The theme was not saved: 1 problem/).waitFor()
+      await shot(pia, 'theme-2-refused-375')
+      const stored = (await rpc(pia, 'GetTheme', null as unknown as Json)).theme
+      assert.notEqual(stored.organisationName, 'Invented Organisation', 'an unreadable theme was stored')
+      assert.notEqual(stored.colors.text, '#cccccc')
+      assert.equal(
+        (await pia.evaluate(() => (document.querySelector('#quoroom-root') as HTMLElement | null)?.style.getPropertyValue('--color-msf-black'))) === '#cccccc',
+        false,
+        'the app applied an unreadable colour',
+      )
+      // The server refuses it too, whatever the page does.
+      await assert.rejects(
+        rpc(pia, 'UpdateTheme', { theme: { ...stored, colors: { ...stored.colors, text: '#cccccc' } } }),
+        'the server accepted an unreadable theme',
+      )
+
+      // The fix, a new primary colour, a font and the PDF texts.
+      await pia.getByLabel('Text colour', { exact: true }).fill('#202020')
+      await beside.waitFor({ state: 'detached' })
+      await pia.getByLabel('Primary colour', { exact: true }).fill('#0b5d3b')
+      await pia.getByLabel('Heading font', { exact: true }).selectOption('Source Serif 4')
+      await pia.getByLabel('Header text', { exact: true }).fill('STRICTLY CONFIDENTIAL (synthetic)')
+      await pia.getByLabel('Footer text', { exact: true }).fill('Confidential synthetic footer {case} page {page} of {pages}')
+      await pia.getByLabel('Cover page header text', { exact: true }).fill('COVER HEADER (synthetic)')
+      await pia.getByLabel('Cover page footer text', { exact: true }).fill('Cover footer {case} (synthetic)')
+      await pia.getByRole('region', { name: 'Preview of an app page' }).getByText('Invented Organisation').waitFor()
+
+      // The sample PDF is made from the theme as typed, lazily.
+      await pia.getByRole('button', { name: 'Show a sample PDF' }).click()
+      const frame = pia.locator('iframe[data-sample-pdf]')
+      await frame.waitFor({ timeout: 120_000 })
+      const sample = async (): Promise<Buffer> =>
+        Buffer.from(
+          await pia.evaluate(async src => Array.from(new Uint8Array(await (await fetch(src)).arrayBuffer())), (await frame.getAttribute('src')) ?? ''),
+        )
+      const preview = await sample()
+      assert.equal(preview.subarray(0, 5).toString('latin1'), '%PDF-')
+      assert.ok(hasImage(preview), 'the sample PDF does not show the logo')
+      const previewText = await textOf(preview)
+      assert.ok(previewText.includes('STRICTLY CONFIDENTIAL (synthetic)'), 'the sample PDF lacks the header')
+      assert.ok(previewText.includes('Confidential synthetic footer SAMPLE-0001'), 'the sample PDF lacks the footer')
+      await shot(pia, 'theme-3-preview-375')
+
+      // Save: the app takes the name and the colour without a reload.
+      await pia.evaluate(() => {
+        ;(window as unknown as { __kept: boolean }).__kept = true
+      })
+      // NOTE: the sample PDF may still be settling and move the button; a click
+      // that did not take is made again (saving twice is harmless).
+      const savedNotice = pia.getByText('The theme is saved. The app and the next PDF use it.')
+      for (let attempt = 0; attempt < 4 && !(await savedNotice.isVisible()); attempt += 1) {
+        await pia.getByRole('button', { name: 'Save the theme' }).click()
+        await savedNotice.waitFor({ timeout: 8000 }).catch(() => undefined)
+      }
+      await savedNotice.waitFor({ timeout: 5000 }).catch(async (error: unknown) => {
+        await shot(pia, 'theme-save-failed')
+        throw error
+      })
+      assert.equal(await pia.evaluate(() => (window as unknown as { __kept?: boolean }).__kept), true, 'the page was reloaded')
+      await pia.getByText('Invented Organisation', { exact: true }).first().waitFor()
+      assert.equal(
+        await pia.evaluate(() => (document.querySelector('#quoroom-root') as HTMLElement | null)?.style.getPropertyValue('--color-msf-red')),
+        '#0b5d3b',
+      )
+      await pia.getByRole('img', { name: 'Invented Organisation logo' }).waitFor()
+      await shot(pia, 'theme-4-saved-375')
+
+      // What the server keeps and serves.
+      const saved = (await rpc(pia, 'GetTheme', null as unknown as Json)).theme
+      assert.equal(saved.organisationName, 'Invented Organisation')
+      assert.equal(saved.pdf.footer, 'Confidential synthetic footer {case} page {page} of {pages}')
+      assert.equal(typeof saved.logo, 'string')
+      const config = (await (await fetch(`${pilotUrl}/api/config`)).json()) as Json
+      assert.equal(config.theme.organisationName, 'Invented Organisation')
+      assert.equal(config.theme.colors.primary, '#0b5d3b')
+      assert.equal(config.theme.pdf, undefined, 'the PDF texts are public')
+      assert.equal(config.logo.id, saved.logo)
+      const anonymous = await fetch(`${pilotUrl}/api/images/${saved.logo}/0?context=theme`)
+      assert.equal(anonymous.status, 404, 'the logo is served without a session')
+      // 1280 px: the saved theme is read back after a reload, with the logo.
+      await pia.setViewportSize({ width: 1280, height: 900 })
+      await pia.goto(`${pilotUrl}/theme`)
+      await pia.getByRole('heading', { name: 'Theme', level: 1 }).waitFor()
+      assert.equal(await pia.getByLabel('Organisation name', { exact: true }).inputValue(), 'Invented Organisation')
+      assert.equal(await pia.getByLabel('Primary colour', { exact: true }).inputValue(), '#0b5d3b')
+      assert.equal(await pia.getByLabel('Footer text', { exact: true }).inputValue(), 'Confidential synthetic footer {case} page {page} of {pages}')
+      // NOTE: /api/config is cached for 30 s, so the wordmark of a fresh load may still be the old one for a moment; the screen reads the theme itself.
+      await pia.locator('[data-theme-logo]').waitFor({ timeout: 60_000 })
+      await shot(pia, 'theme-5-reloaded-1280')
+
+      // The next PDF: the new header and footer in its text, and the logo in it.
+      const after = await downloadRevision()
+      const afterText = await textOf(after)
+      assert.ok(afterText.includes('COVER HEADER (synthetic)'), 'the next PDF lacks the new cover header')
+      assert.ok(afterText.includes('Cover footer PIL-0007 (synthetic)'), 'the next PDF lacks the new cover footer')
+      assert.ok(hasImage(after), 'the next PDF does not embed the logo')
+      await shot(pia, 'theme-6-downloads-1280')
     })
   } finally {
     await browser?.close()

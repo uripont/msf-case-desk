@@ -99,6 +99,7 @@ import {
   SavedTemplateDraft,
   TemplateRef,
   TemplateSummary,
+  TemplatesPage,
   TemplateVersionRecord,
   ThemeRecord,
 } from './templates'
@@ -278,7 +279,13 @@ export class QuoroomRpcs extends RpcGroup.make(
 
   // -- Templates (stage 9)
   Rpc.make('ListTemplates', {
-    success: Schema.Array(TemplateSummary),
+    payload: {
+      offset: Schema.optionalKey(Count),
+      limit: Schema.optionalKey(
+        Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+      ),
+    },
+    success: TemplatesPage,
     error: ReadError,
   }),
   Rpc.make('ListPublishedTemplates', {
@@ -307,18 +314,40 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: WriteError,
   }),
   Rpc.make('SaveTemplateDraft', {
-    payload: { templateId: TemplateId, version: Revision, template: Template },
+    payload: {
+      templateId: TemplateId,
+      version: Revision,
+      // NOTE: The `draftRevision` the editor last read; a different number
+      // means someone saved in between (`Conflict` `stale_save`).
+      draftRevision: Count,
+      template: Template,
+    },
     success: SavedTemplateDraft,
     error: WriteError,
   }),
   Rpc.make('PublishTemplateVersion', {
-    payload: TemplateRef,
+    // NOTE: `draftRevision` is the one the editor showed the diff for.
+    payload: { ...TemplateRef.fields, draftRevision: Count },
     success: PublishedTemplateVersion,
     error: WriteError,
   }),
   Rpc.make('RetireTemplate', {
     payload: { templateId: TemplateId },
     success: TemplateSummary,
+    error: WriteError,
+  }),
+  // NOTE: A retired template gets no new published version until it is
+  // restored: its newest retired version becomes published again.
+  Rpc.make('RestoreTemplate', {
+    payload: { templateId: TemplateId },
+    success: TemplateSummary,
+    error: WriteError,
+  }),
+  // NOTE: Deletes a draft that was never published (also one that cannot be
+  // opened). Published versions are never deleted.
+  Rpc.make('DiscardTemplateDraft', {
+    payload: { templateId: TemplateId, version: Revision },
+    success: Schema.Void,
     error: WriteError,
   }),
 

@@ -5,7 +5,15 @@ import { join } from 'node:path'
 import { crc32 as nodeCrc32 } from 'node:zlib'
 import { expect, test } from 'vitest'
 
-import { crc32, zipStore } from './zip'
+import {
+  MAX_ZIP_BYTES,
+  MAX_ZIP_ENTRIES,
+  ZipTooLarge,
+  checkZipSize,
+  crc32,
+  zipParts,
+  zipStore,
+} from './zip'
 
 const entries = [
   { name: 'case_intake_Draft-1.pdf', data: new TextEncoder().encode('first') },
@@ -39,4 +47,40 @@ test('a standard unzip lists, tests and extracts every entry', () => {
   const extracted = spawnSync('unzip', ['-p', file, 'case_intake_Draft-1.pdf'])
   expect(Buffer.from(extracted.stdout).toString()).toBe('first')
   expect(readFileSync(file).length).toBeGreaterThan(70_000)
+})
+
+test('the parts join to the same bytes and hold the entries without copying them', () => {
+  const when = new Date('2026-11-12T10:20:30Z')
+  const parts = zipParts(entries, when)
+  expect(parts.some(part => part === entries[1]?.data)).toBe(true)
+  const joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+  parts.reduce((at, part) => {
+    joined.set(part, at)
+    return at + part.length
+  }, 0)
+  expect(joined).toEqual(zipStore(entries, when))
+})
+
+test('the time stamp is the one given, so the same files make the same bytes on another day', () => {
+  const first = zipStore(entries, new Date('2026-11-12T00:00:00Z'))
+  const again = zipStore(entries, new Date('2026-11-12T00:00:00Z'))
+  const other = zipStore(entries, new Date('2026-11-13T00:00:00Z'))
+  expect(again).toEqual(first)
+  expect(other).not.toEqual(first)
+})
+
+test('a zip that would be too large is refused with a clear error, never wrapped', () => {
+  expect(() => checkZipSize([MAX_ZIP_BYTES, 1])).toThrow(ZipTooLarge)
+  expect(() => checkZipSize(new Array(MAX_ZIP_ENTRIES + 1).fill(1))).toThrow(ZipTooLarge)
+  expect(() => checkZipSize([MAX_ZIP_BYTES])).not.toThrow()
+  const refused = (() => {
+    try {
+      checkZipSize([MAX_ZIP_BYTES + 1])
+    } catch (error) {
+      return error
+    }
+    return undefined
+  })()
+  expect(refused).toMatchObject({ _tag: 'ZipTooLarge' })
+  expect(String((refused as Error).message)).toMatch(/too large/i)
 })

@@ -810,6 +810,7 @@ export const reportRepositoryContract = (
             name: 'Custom edited',
             shortName: 'C',
             definition: '{"v":1,"edited":true}',
+            expectedRevision: 0,
           }),
         ),
       ).toEqual({ _tag: 'Saved' })
@@ -821,6 +822,7 @@ export const reportRepositoryContract = (
             changes: 'First version',
             publishedBy: ALICE,
             now: 31,
+            expectedRevision: 1,
             audit: audit('template.publish', ALICE, 31),
           }),
         ),
@@ -833,6 +835,7 @@ export const reportRepositoryContract = (
             name: 'Tampered',
             shortName: 'T',
             definition: '{"tampered":true}',
+            expectedRevision: 1,
           }),
         ),
       ).toEqual({ _tag: 'Refused', reason: 'not_a_draft' })
@@ -844,6 +847,7 @@ export const reportRepositoryContract = (
             changes: 'again',
             publishedBy: ALICE,
             now: 32,
+            expectedRevision: 1,
             audit: audit('template.publish', ALICE, 32),
           }),
         ),
@@ -861,6 +865,119 @@ export const reportRepositoryContract = (
         await run(r.createTemplateDraft({ ...draft, version: 2, now: 33 })),
       ).toEqual({
         _tag: 'Created',
+      })
+    })
+
+    test('a template draft counts its saves; a stale save or publish is refused', async () => {
+      const { r } = await setup()
+      const draft = {
+        templateId: 'tpl-rev',
+        version: 1,
+        name: 'Rev',
+        shortName: 'rev',
+        definition: '{"v":1}',
+        createdBy: ALICE,
+        now: 30,
+        audit: audit('template.create', ALICE, 30),
+      }
+      await run(r.createTemplateDraft(draft))
+      const save = (expectedRevision: number, definition: string) =>
+        run(
+          r.saveTemplateDraft({
+            templateId: 'tpl-rev',
+            version: 1,
+            name: 'Rev',
+            shortName: 'rev',
+            definition,
+            expectedRevision,
+          }),
+        )
+      expect(await save(0, '{"v":2}')).toEqual({ _tag: 'Saved' })
+      expect(await save(0, '{"v":3}')).toEqual({ _tag: 'Refused', reason: 'stale' })
+      expect((await run(r.getTemplateVersion('tpl-rev', 1)))?.definition).toBe('{"v":2}')
+      expect((await run(r.getTemplateVersion('tpl-rev', 1)))?.draftRevision).toBe(1)
+      const publish = (expectedRevision: number) =>
+        run(
+          r.publishTemplateVersion({
+            templateId: 'tpl-rev',
+            version: 1,
+            changes: '[]',
+            publishedBy: ALICE,
+            now: 31,
+            expectedRevision,
+            audit: audit('template.publish', ALICE, 31),
+          }),
+        )
+      expect(await publish(0)).toEqual({ _tag: 'Refused', reason: 'stale' })
+      expect(await publish(1)).toEqual({ _tag: 'Published' })
+    })
+
+    test('a retired template cannot be published again until it is restored', async () => {
+      const { r } = await setup()
+      await run(r.retireTemplate(TEMPLATE, 25, audit('template.retire', ALICE, 25)))
+      await run(
+        r.createTemplateDraft({
+          templateId: TEMPLATE,
+          version: 2,
+          name: 'Template A v2',
+          shortName: 'a2',
+          definition: '{"v":2}',
+          createdBy: ALICE,
+          now: 26,
+          audit: audit('template.create', ALICE, 26),
+        }),
+      )
+      const publish = () =>
+        run(
+          r.publishTemplateVersion({
+            templateId: TEMPLATE,
+            version: 2,
+            changes: '[]',
+            publishedBy: ALICE,
+            now: 27,
+            expectedRevision: 0,
+            audit: audit('template.publish', ALICE, 27),
+          }),
+        )
+      expect(await publish()).toEqual({ _tag: 'Refused', reason: 'retired' })
+      expect(await run(r.restoreTemplate(TEMPLATE, audit('template.restore', ALICE, 28)))).toEqual({
+        _tag: 'Restored',
+      })
+      expect(await run(r.getTemplateVersion(TEMPLATE, 1))).toEqual(
+        expect.objectContaining({ state: 'published', retiredAt: null }),
+      )
+      expect(await run(r.restoreTemplate(TEMPLATE, audit('again')))).toEqual({
+        _tag: 'Refused',
+        reason: 'not_retired',
+      })
+      expect(await publish()).toEqual({ _tag: 'Published' })
+    })
+
+    test('a draft can be discarded, a published version cannot', async () => {
+      const { r } = await setup()
+      await run(
+        r.createTemplateDraft({
+          templateId: 'tpl-gone',
+          version: 1,
+          name: 'Gone',
+          shortName: 'gone',
+          definition: 'not json',
+          createdBy: ALICE,
+          now: 30,
+          audit: audit('template.create', ALICE, 30),
+        }),
+      )
+      expect(
+        await run(r.discardTemplateDraft('tpl-gone', 1, audit('template.draft_discarded', ALICE, 31))),
+      ).toEqual({ _tag: 'Discarded' })
+      expect(await run(r.getTemplateVersion('tpl-gone', 1))).toBeNull()
+      expect(await run(r.discardTemplateDraft('tpl-gone', 1, audit('again')))).toEqual({
+        _tag: 'Refused',
+        reason: 'not_a_draft',
+      })
+      expect(await run(r.discardTemplateDraft(TEMPLATE, 1, audit('again')))).toEqual({
+        _tag: 'Refused',
+        reason: 'not_a_draft',
       })
     })
 

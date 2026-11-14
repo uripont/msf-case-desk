@@ -18,7 +18,11 @@ export type ImageSource = Readonly<{
   context: ImageContext
 }>
 
-export type LoadedImage = Readonly<{ blob: Blob; mime: string }>
+export type LoadedImage = Readonly<{
+  blob: Blob
+  mime: ImageChunkRead['mime']
+  chunks: number
+}>
 
 const decodeChunk = Schema.decodeUnknownOption(ImageChunkRead)
 
@@ -77,5 +81,6 @@ export const loadImage = async (
       { type: mime },
     ),
     mime,
+    chunks,
   })
 }

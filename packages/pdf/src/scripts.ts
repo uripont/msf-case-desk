@@ -2,8 +2,10 @@
 // `.woff` subsets per script (fontkit cannot read `.woff2`), and pdfmake has no
 // per-glyph fallback, so each run is given the font file of its own subset.
 // Spaces, digits and punctuation belong to the Latin subset. A character that
-// no subset covers (Arabic, Amharic, Chinese, symbols) is never handed to a
-// font: a run of them is replaced by one clear placeholder (D16).
+// no subset covers (Arabic, Amharic, Chinese, rare symbols) is never handed to
+// a font: a run of them is replaced by one short marker (D16). Common symbols
+// that the subsets lack (comparisons, arrows, ticks) are written with
+// characters they have.
 
 export type Script = 'latin' | 'latin-ext' | 'greek' | 'cyrillic'
 
@@ -14,7 +16,27 @@ export const SCRIPTS: ReadonlyArray<Script> = [
   'cyrillic',
 ]
 
-export const UNSUPPORTED_PLACEHOLDER = '[text in an unsupported script]'
+// NOTE: Plain ASCII on purpose: no bundled font has U+FFFD or a box glyph.
+export const UNSUPPORTED_PLACEHOLDER = '[?]'
+
+// NOTE: Characters of clinical and numeric text that the subsets lack, with
+// what is printed instead. Applied to the NFC form of a text.
+const SYMBOLS: ReadonlyMap<number, string> = new Map([
+  [0x2264, '<='],
+  [0x2265, '>='],
+  [0x2260, '!='],
+  [0x2248, '~'],
+  [0x2190, '<-'],
+  [0x2192, '->'],
+  [0x2194, '<->'],
+  [0x21d2, '=>'],
+  [0x2713, '(yes)'],
+  [0x2714, '(yes)'],
+  [0x2717, '(no)'],
+  [0x2718, '(no)'],
+  [0x2103, '\u00b0C'],
+  [0x2109, '\u00b0F'],
+])
 
 export type Piece = Readonly<{ script: Script; text: string }>
 
@@ -103,8 +125,6 @@ const isControl = (codePoint: number): boolean =>
   (codePoint < 0x20 && codePoint !== 0x0a) ||
   (codePoint >= 0x7f && codePoint <= 0x9f)
 
-const COMBINING = /^\p{Mn}$/u
-
 type Tagged = Readonly<{ script: Script | 'unsupported'; text: string }>
 
 const classify = (character: string): Tagged | undefined => {
@@ -115,7 +135,6 @@ const classify = (character: string): Tagged | undefined => {
   if (isControl(codePoint) || isInvisible(codePoint)) return undefined
   const script = ORDER.find(candidate => coversCodePoint(candidate, codePoint))
   if (script !== undefined) return { script, text: character }
-  if (COMBINING.test(character)) return undefined
   return { script: 'unsupported', text: character }
 }
 
@@ -130,8 +149,11 @@ const isBlank = (piece: Tagged): boolean =>
 export const splitByScript = (text: string): ReadonlyArray<Piece> => {
   const tagged: Array<Tagged> = []
   for (const character of text.normalize('NFC')) {
-    const piece = classify(character)
-    if (piece !== undefined) tagged.push(piece)
+    const mapped = SYMBOLS.get(character.codePointAt(0) ?? 0)
+    for (const part of mapped === undefined ? [character] : mapped) {
+      const piece = classify(part)
+      if (piece !== undefined) tagged.push(piece)
+    }
   }
   const nextScripts: Array<Tagged['script'] | undefined> = []
   let following: Tagged['script'] | undefined

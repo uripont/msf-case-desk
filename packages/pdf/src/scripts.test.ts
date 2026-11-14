@@ -52,6 +52,40 @@ describe('runs by script (D16)', () => {
     expect(printedText('a 你好 b')).toBe(`a ${UNSUPPORTED_PLACEHOLDER} b`)
   })
 
+  test.each([
+    ['BP ≥ 140/90 mmHg', 'BP >= 140/90 mmHg'],
+    ['Temp ≤ 37.5 °C, dose 5 mg ± 0.5', 'Temp <= 37.5 °C, dose 5 mg ± 0.5'],
+    ['plan → referral ← intake', 'plan -> referral <- intake'],
+    ['2 × 5 ÷ 10 ≈ 1, 1 ≠ 2', '2 × 5 ÷ 10 ~ 1, 1 != 2'],
+    ['consent ✓, withdrawn ✗', 'consent (yes), withdrawn (no)'],
+    ['€10 £5 ¥2 • a… – b — “q” ‘r’', '€10 £5 ¥2 • a… – b — “q” ‘r’'],
+    ['℃ and ℉', '°C and °F'],
+    ['=\u0338', '!='],
+  ])('common symbols print as glyphs the fonts have: %j', (input, expected) => {
+    expect(printedText(input)).toBe(expected)
+  })
+
+  test('every printed character of the common symbols is in a bundled subset', () => {
+    const printed = printedText('≥≤→←✓✗×÷±°€£¥•…–—“”‘’')
+    expect(printed).not.toContain(UNSUPPORTED_PLACEHOLDER)
+    for (const character of printed) {
+      const codePoint = character.codePointAt(0) ?? 0
+      expect(SCRIPTS.some(script => coversCodePoint(script, codePoint)), character).toBe(true)
+    }
+  })
+
+  test('the marker for an unsupported run is short', () => {
+    expect(UNSUPPORTED_PLACEHOLDER.length).toBeLessThanOrEqual(4)
+    expect(printedText('a □ b')).toBe(`a ${UNSUPPORTED_PLACEHOLDER} b`)
+  })
+
+  test('a combining mark no font covers is never dropped silently', () => {
+    expect(printedText('x\u0303')).toContain(UNSUPPORTED_PLACEHOLDER)
+    expect(printedText('ا\u064e')).toBe(UNSUPPORTED_PLACEHOLDER)
+    expect(printedText('e\u0301')).toBe('é')
+    expect(printedText('n\u0303')).toBe('ñ')
+  })
+
   test('controls and invisible marks are dropped, a tab is a space', () => {
     expect(printedText('a\u0000b‏c­d\te')).toBe('abcd e')
   })

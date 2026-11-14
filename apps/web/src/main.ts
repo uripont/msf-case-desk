@@ -52,6 +52,7 @@ import {
   type TriagedCase,
   URGENCIES,
   prioritiseByCentre,
+  publicThemeOf,
   rulesFor,
 } from '@case-desk/domain'
 
@@ -74,24 +75,25 @@ import {
 } from './entryForm'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
-import * as TemplateEditor from './quoroom/templateEditor'
-import * as Templates from './quoroom/templates'
 import { withPublic, withQuoroom } from './quoroom/api'
-import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
 import * as Downloads from './quoroom/downloads'
+import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
-import * as Notifications from './quoroom/notifications'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
+import * as Notifications from './quoroom/notifications'
 import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
-import * as Review from './quoroom/review'
 import * as Reports from './quoroom/reports'
+import * as Review from './quoroom/review'
 import * as Share from './quoroom/share'
+import * as TemplateEditor from './quoroom/templateEditor'
+import * as Templates from './quoroom/templates'
+import * as ThemeScreen from './quoroom/themeScreen'
 import * as Unit from './quoroom/unit'
 import {
   AppRoute,
@@ -182,6 +184,7 @@ export const Model = Schema.Struct({
   maybeLink: Schema.Option(Link.Model),
   account: Account.Model,
   admin: Admin.Model,
+  themeScreen: ThemeScreen.Model,
   templates: Templates.Model,
   templateEditor: TemplateEditor.Model,
   unit: Unit.Model,
@@ -256,6 +259,7 @@ export const Message = defineMessageUnion({
   GotLinkMessage: { message: Link.Message },
   GotAccountMessage: { message: Account.Message },
   GotAdminMessage: { message: Admin.Message },
+  GotThemeScreenMessage: { message: ThemeScreen.Message },
   GotTemplatesMessage: { message: Templates.Message },
   GotTemplateEditorMessage: { message: TemplateEditor.Message },
   GotUnitMessage: { message: Unit.Message },
@@ -379,6 +383,7 @@ export const initialModel = Model.make({
   maybeLink: Option.none(),
   account: Account.initialModel,
   admin: Admin.initialModel,
+  themeScreen: ThemeScreen.initialModel,
   templates: Templates.initialModel,
   templateEditor: TemplateEditor.initialModel,
   unit: Unit.initialModel,
@@ -770,6 +775,7 @@ const signedOut = (model: Model): Model =>
     session: () => Session.SignedOut(),
     account: () => Account.initialModel,
     admin: () => Admin.initialModel,
+    themeScreen: () => ThemeScreen.initialModel,
     templates: () => Templates.initialModel,
     templateEditor: () => TemplateEditor.initialModel,
     unit: () => Unit.initialModel,
@@ -825,6 +831,79 @@ const foldLink = Update.foldChild({
               ReplaceUrl({ url: pathOf(AppRoute.Desk()) }),
               ...(resumed.commands ?? []),
             ],
+          }
+        },
+    }),
+})
+
+const foldThemeScreen = Update.foldChild({
+  update: ThemeScreen.update,
+  read: (model: Model) => Option.some(model.themeScreen),
+  write: (model, nextTheme) =>
+    modifyFields(model, { themeScreen: () => nextTheme }),
+  toParentMessage: message => Message.GotThemeScreenMessage({ message }),
+  foldOutMessage: outMessage =>
+    ThemeScreen.OutMessage.match<Update.Step<Model, Message>>(outMessage, {
+      SavedTheme:
+        ({ theme, maybeLogo, maybeSrc }) =>
+        stepModel => {
+          // NOTE: The real configuration is kept: nothing is invented when it
+          // has not loaded (no mode is made up), and the logo is the saved
+          // one whether or not its preview was shown.
+          const maybeConfig = ConfigLoad.match<Option.Option<AppConfig>>(
+            stepModel.config,
+            {
+              Loading: () => Option.none(),
+              Unavailable: () => Option.none(),
+              Loaded: ({ config }) => Option.some(config),
+            },
+          )
+          const maybeKnownLogo = Option.filter(
+            Option.flatMap(maybeConfig, config =>
+              Option.fromNullishOr(config.logo),
+            ),
+            logo => logo.id === theme.logo,
+          )
+          const maybeSavedLogo = Option.orElse(
+            Option.map(maybeLogo, logo => ({
+              id: logo.imageId,
+              mime: logo.mime,
+              chunks: logo.chunks,
+            })),
+            () => maybeKnownLogo,
+          )
+          const needsLogoLoad =
+            Option.isNone(maybeSrc) &&
+            Option.isSome(maybeSavedLogo) &&
+            Option.isNone(maybeKnownLogo)
+          return {
+            model: modifyFields(stepModel, {
+              config: current =>
+                Option.match(maybeConfig, {
+                  onNone: () => current,
+                  onSome: config =>
+                    ConfigLoad.Loaded({
+                      config: AppConfig.make({
+                        mode: config.mode,
+                        theme: publicThemeOf(theme),
+                        ...Option.match(maybeSavedLogo, {
+                          onNone: () => ({}),
+                          onSome: logo => ({ logo }),
+                        }),
+                      }),
+                    }),
+                }),
+              maybeLogoSrc: current =>
+                Option.isSome(maybeSrc)
+                  ? maybeSrc
+                  : Option.isNone(maybeSavedLogo) || needsLogoLoad
+                    ? Option.none()
+                    : current,
+            }),
+            commands: Option.match(maybeSavedLogo, {
+              onNone: () => [],
+              onSome: logo => (needsLogoLoad ? [LoadLogo({ logo })] : []),
+            }),
           }
         },
     }),
@@ -892,6 +971,14 @@ const retryReportSave = Update.foldChildStep({
   toParentMessage: message => Message.GotReportMessage({ message }),
 })
 
+const retryTemplateEditorSave = Update.foldChildStep({
+  update: TemplateEditor.retrySave,
+  read: (model: Model) => Option.some(model.templateEditor),
+  write: (model, nextEditor) =>
+    modifyFields(model, { templateEditor: () => nextEditor }),
+  toParentMessage: message => Message.GotTemplateEditorMessage({ message }),
+})
+
 const enterAccount = Update.foldChildStep({
   update: Account.enter,
   read: (model: Model) => Option.some(model.account),
@@ -908,6 +995,14 @@ const enterAdmin = (origin: string) =>
       modifyFields(model, { admin: () => nextAdmin }),
     toParentMessage: message => Message.GotAdminMessage({ message }),
   })
+
+const enterThemeScreen = Update.foldChildStep({
+  update: ThemeScreen.enter,
+  read: (model: Model) => Option.some(model.themeScreen),
+  write: (model, nextTheme) =>
+    modifyFields(model, { themeScreen: () => nextTheme }),
+  toParentMessage: message => Message.GotThemeScreenMessage({ message }),
+})
 
 const enterTemplates = (origin: string) =>
   Update.foldChildStep({
@@ -987,7 +1082,8 @@ const enterInbox = (origin: string) =>
   Update.foldChildStep({
     update: (child: Inbox.Model) => Inbox.enter(origin, child.generation + 1),
     read: (model: Model) => Option.some(model.inbox),
-    write: (model, nextInbox) => modifyFields(model, { inbox: () => nextInbox }),
+    write: (model, nextInbox) =>
+      modifyFields(model, { inbox: () => nextInbox }),
     toParentMessage: message => Message.GotInboxMessage({ message }),
   })
 
@@ -1073,7 +1169,8 @@ const enterAudit = (origin: string, reportId: string) =>
     update: (child: Audit.Model) =>
       Audit.enter(origin, reportId, child.generation + 1),
     read: (model: Model) => Option.some(model.audit),
-    write: (model, nextAudit) => modifyFields(model, { audit: () => nextAudit }),
+    write: (model, nextAudit) =>
+      modifyFields(model, { audit: () => nextAudit }),
     toParentMessage: message => Message.GotAuditMessage({ message }),
   })
 
@@ -1161,6 +1258,7 @@ const enterRoute = (
     Rules: () => ({ model }),
     Account: () => enterAccount(model),
     Admin: () => enterAdmin(model.origin)(model),
+    Theme: () => enterThemeScreen(model),
     Templates: () => enterTemplates(model.origin)(model),
     TemplateEditor: ({ templateId, version }) =>
       enterTemplateEditor(model.origin, templateId, version)(model),
@@ -1281,10 +1379,16 @@ const goTo = (
 const isSameRoute = (a: AppRoute, b: AppRoute): boolean =>
   pathOf(a) === pathOf(b)
 
+// NOTE: The report and the template editor ask before they are left with
+// edits that are not saved.
+const hasUnsavedEditsHere = (model: Model): boolean =>
+  (AppRoute.guards.Report(model.route) &&
+    Report.hasUnsavedEdits(model.report)) ||
+  (AppRoute.guards.TemplateEditor(model.route) &&
+    TemplateEditor.hasUnsavedEdits(model.templateEditor))
+
 const mustAskBeforeLeaving = (model: Model, url: Url): boolean =>
-  AppRoute.guards.Report(model.route) &&
-  Report.hasUnsavedEdits(model.report) &&
-  !isSameRoute(urlToAppRoute(url), model.route)
+  hasUnsavedEditsHere(model) && !isSameRoute(urlToAppRoute(url), model.route)
 
 const askBeforeLeaving = (
   model: Model,
@@ -1312,7 +1416,14 @@ const leaveNow = (
   const went = goTo(
     modifyFields(model, {
       maybeLeaving: () => Option.none(),
-      report: report => (isGivingUp ? Report.cleared(report) : report),
+      report: report =>
+        isGivingUp && AppRoute.guards.Report(model.route)
+          ? Report.cleared(report)
+          : report,
+      templateEditor: editor =>
+        isGivingUp && AppRoute.guards.TemplateEditor(model.route)
+          ? TemplateEditor.cleared(editor)
+          : editor,
     }),
     leaving.url,
     Option.fromNullishOr(leaving.fragment),
@@ -1333,7 +1444,7 @@ const leaveWhenSaved = (
   Option.match(step.model.maybeLeaving, {
     onNone: () => step,
     onSome: leaving => {
-      if (!leaving.isWaiting || Report.hasUnsavedEdits(step.model.report)) {
+      if (!leaving.isWaiting || hasUnsavedEditsHere(step.model)) {
         return step
       }
       const left = leaveNow(step.model, leaving, false)
@@ -1498,14 +1609,16 @@ export const update = (model: Model, message: Message) =>
       Option.match(model.maybeLeaving, {
         onNone: () => ({ model }),
         onSome: leaving =>
-          leaveWhenSaved(
-            retryReportSave(
-              modifyFields(model, {
-                maybeLeaving: () =>
-                  Option.some({ ...leaving, isWaiting: true }),
-              }),
-            ),
-          ),
+          {
+            const waiting = modifyFields(model, {
+              maybeLeaving: () => Option.some({ ...leaving, isWaiting: true }),
+            })
+            return leaveWhenSaved(
+              AppRoute.guards.TemplateEditor(model.route)
+                ? retryTemplateEditorSave(waiting)
+                : retryReportSave(waiting),
+            )
+          },
       }),
     ClickedLeaveReportUnsaved: () =>
       Option.match(model.maybeLeaving, {
@@ -1528,9 +1641,10 @@ export const update = (model: Model, message: Message) =>
     GotLinkMessage: ({ message }) => foldLink(model, message),
     GotAccountMessage: ({ message }) => foldAccount(model, message),
     GotAdminMessage: ({ message }) => foldAdmin(model, message),
+    GotThemeScreenMessage: ({ message }) => foldThemeScreen(model, message),
     GotTemplatesMessage: ({ message }) => foldTemplates(model, message),
     GotTemplateEditorMessage: ({ message }) =>
-      foldTemplateEditor(model, message),
+      leaveWhenSaved(foldTemplateEditor(model, message)),
     GotUnitMessage: ({ message }) => foldUnit(model, message),
     GotReportsMessage: ({ message }) => foldReports(model, message),
     GotReportMessage: ({ message }) =>
@@ -1540,8 +1654,7 @@ export const update = (model: Model, message: Message) =>
     GotHistoryMessage: ({ message }) => foldHistory(model, message),
     GotPublishMessage: ({ message }) => foldPublish(model, message),
     GotInboxMessage: ({ message }) => foldInbox(model, message),
-    GotNotificationsMessage: ({ message }) =>
-      foldNotifications(model, message),
+    GotNotificationsMessage: ({ message }) => foldNotifications(model, message),
     GotReviewMessage: ({ message }) => foldReview(model, message),
     GotCommentsMessage: ({ message }) => foldComments(model, message),
     GotGridMessage: ({ message }) => foldGrid(model, message),
@@ -1751,6 +1864,13 @@ const reviewSubscriptions = Subscription.lift(Review.subscriptions)<
 
 // NOTE: The unread count in the navigation is asked for as soon as an account
 // is signed in and every 30 seconds after, on every screen.
+const templateEditorSubscriptions = Subscription.lift(
+  TemplateEditor.subscriptions,
+)<Model, Message>({
+  read: model => Option.some(model.templateEditor),
+  toParentMessage: message => Message.GotTemplateEditorMessage({ message }),
+})
+
 const notificationsSubscriptions = Subscription.lift(
   Notifications.subscriptions,
 )<Model, Message>({
@@ -1763,6 +1883,7 @@ export const subscriptions = Subscription.aggregate(
   appSubscriptions,
   notificationsSubscriptions,
   reportSubscriptions,
+  templateEditorSubscriptions,
   historySubscriptions,
   publishSubscriptions,
   reviewSubscriptions,

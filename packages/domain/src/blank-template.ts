@@ -7,14 +7,21 @@ import {
 // NOTE: The template a new draft starts from (stage 9): one drafting role,
 // one reviewing role that votes, and one section. It is valid as it is.
 
+const SHORT_NAME_MAX = 24
+
+// NOTE: always matches the short name pattern: the `t-` prefix a name that
+// starts with a digit needs counts toward the 24 characters.
 export const slug = (text: string): string => {
   const plain = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 24)
-    .replace(/-+$/g, '')
-  return /^[a-z]/.test(plain) ? plain : `t-${plain}`.replace(/-+$/g, '') || 'template'
+  if (plain === '') {
+    return 'template'
+  }
+  const prefixed = /^[a-z]/.test(plain) ? plain : `t-${plain}`
+  const cut = prefixed.slice(0, SHORT_NAME_MAX).replace(/-+$/g, '')
+  return cut === 't' ? 'template' : cut
 }
 
 export const blankTemplate = (id: string, name: string): Template => ({

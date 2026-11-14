@@ -154,6 +154,7 @@ export type StoreTemplateVersionRecord = Readonly<{
   publishedBy: string | null
   changes: string | null
   retiredAt: number | null
+  draftRevision: number
 }>
 
 export type StoreTemplateSummary = Omit<
@@ -944,8 +945,9 @@ export interface ReportRepositoryApi {
       name: string
       shortName: string
       definition: string
+      expectedRevision: number
     }>,
-  ) => Eff<Readonly<{ _tag: 'Saved' }> | Refused<'not_a_draft'>>
+  ) => Eff<Readonly<{ _tag: 'Saved' }> | Refused<'not_a_draft' | 'stale'>>
   readonly publishTemplateVersion: (
     input: Readonly<{
       templateId: string
@@ -953,14 +955,29 @@ export interface ReportRepositoryApi {
       changes: string
       publishedBy: string
       now: number
+      expectedRevision: number
       audit: AuditInput
     }>,
-  ) => Eff<Readonly<{ _tag: 'Published' }> | Refused<'not_a_draft'>>
+  ) => Eff<
+    Readonly<{ _tag: 'Published' }> | Refused<'not_a_draft' | 'stale' | 'retired'>
+  >
   readonly retireTemplate: (
     templateId: string,
     now: number,
     audit: AuditInput,
   ) => Eff<Readonly<{ _tag: 'Retired' }> | Refused<'not_published'>>
+  // NOTE: the newest retired version becomes published again; only while the
+  // template has no published version.
+  readonly restoreTemplate: (
+    templateId: string,
+    audit: AuditInput,
+  ) => Eff<Readonly<{ _tag: 'Restored' }> | Refused<'not_retired'>>
+  // NOTE: deletes a draft (never a published or retired version).
+  readonly discardTemplateDraft: (
+    templateId: string,
+    version: number,
+    audit: AuditInput,
+  ) => Eff<Readonly<{ _tag: 'Discarded' }> | Refused<'not_a_draft'>>
 
   // -- committees and case files
   readonly createCommittee: (
@@ -1490,9 +1507,11 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   getTemplateVersions: 1,
   listTemplates: 1,
   createTemplateDraft: 5,
-  saveTemplateDraft: 2,
-  publishTemplateVersion: 3,
+  saveTemplateDraft: 3,
+  publishTemplateVersion: 5,
   retireTemplate: 3,
+  restoreTemplate: 4,
+  discardTemplateDraft: 5,
   createCommittee: 5,
   updateCommittee: 5,
   listCommittees: 2,

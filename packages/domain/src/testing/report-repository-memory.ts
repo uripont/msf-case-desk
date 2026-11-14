@@ -1064,6 +1064,7 @@ export const makeMemoryReportRepository = (
                 publishedBy: null,
                 changes: null,
                 retiredAt: null,
+                draftRevision: 0,
               })
               inserted += 1
             }
@@ -1123,6 +1124,7 @@ export const makeMemoryReportRepository = (
             publishedBy: null,
             changes: null,
             retiredAt: null,
+            draftRevision: 0,
           })
           addAudit(input.audit)
           return { _tag: 'Created' } as const
@@ -1137,11 +1139,16 @@ export const makeMemoryReportRepository = (
           )
           if (index < 0)
             return { _tag: 'Refused', reason: 'not_a_draft' } as const
+          const current = versions[index] as StoreTemplateVersionRecord
+          if (current.draftRevision !== input.expectedRevision) {
+            return { _tag: 'Refused', reason: 'stale' } as const
+          }
           versions[index] = {
-            ...(versions[index] as StoreTemplateVersionRecord),
+            ...current,
             name: input.name,
             shortName: input.shortName,
             definition: input.definition,
+            draftRevision: current.draftRevision + 1,
           }
           return { _tag: 'Saved' } as const
         }),
@@ -1155,8 +1162,19 @@ export const makeMemoryReportRepository = (
           )
           if (index < 0)
             return { _tag: 'Refused', reason: 'not_a_draft' } as const
+          const mine = versions.filter(v => v.templateId === input.templateId)
+          if (
+            !mine.some(v => v.state === 'published') &&
+            mine.some(v => v.state === 'retired')
+          ) {
+            return { _tag: 'Refused', reason: 'retired' } as const
+          }
+          const current = versions[index] as StoreTemplateVersionRecord
+          if (current.draftRevision !== input.expectedRevision) {
+            return { _tag: 'Refused', reason: 'stale' } as const
+          }
           versions[index] = {
-            ...(versions[index] as StoreTemplateVersionRecord),
+            ...current,
             state: 'published',
             publishedAt: input.now,
             publishedBy: input.publishedBy,
@@ -1181,6 +1199,45 @@ export const makeMemoryReportRepository = (
             }
           })
           return { _tag: 'Retired' } as const
+        }),
+      restoreTemplate: (templateId, auditInput) =>
+        Effect.sync(() => {
+          const mine = versions.filter(v => v.templateId === templateId)
+          const retired = mine.filter(v => v.state === 'retired')
+          if (mine.some(v => v.state === 'published') || retired.length === 0) {
+            return { _tag: 'Refused', reason: 'not_retired' } as const
+          }
+          const newest = Math.max(...retired.map(v => v.version))
+          addAudit(auditInput)
+          const index = versions.findIndex(
+            v => v.templateId === templateId && v.version === newest,
+          )
+          versions[index] = {
+            ...(versions[index] as StoreTemplateVersionRecord),
+            state: 'published',
+            retiredAt: null,
+          }
+          return { _tag: 'Restored' } as const
+        }),
+      discardTemplateDraft: (templateId, version, auditInput) =>
+        Effect.sync(() => {
+          const index = versions.findIndex(
+            v =>
+              v.templateId === templateId &&
+              v.version === version &&
+              v.state === 'draft',
+          )
+          if (index < 0)
+            return { _tag: 'Refused', reason: 'not_a_draft' } as const
+          addAudit(auditInput)
+          versions.splice(index, 1)
+          if (
+            templates.get(templateId)?.builtin === false &&
+            !versions.some(v => v.templateId === templateId)
+          ) {
+            templates.delete(templateId)
+          }
+          return { _tag: 'Discarded' } as const
         }),
 
       createCommittee: input =>

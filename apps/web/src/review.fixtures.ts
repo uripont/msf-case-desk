@@ -66,6 +66,8 @@ export const outlineOf = (
     closing: false,
   },
   closing: false,
+  publishedAt: 1_700_000_000_000,
+  personLabels: [],
   sections: [{ sectionId: 'summary', size: 120, notApplicable: false }],
 })
 

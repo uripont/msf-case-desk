@@ -262,6 +262,7 @@ const versionOf = (r: Row): StoreTemplateVersionRecord => ({
   publishedBy: sn(r['published_by']),
   changes: sn(r['changes']),
   retiredAt: nn(r['retired_at']),
+  draftRevision: n(r['draft_revision']),
 })
 
 const summaryOf = (r: Row): StoreTemplateSummary => {
@@ -1211,7 +1212,8 @@ const ops: Impl = {
       await rows(
         db,
         `SELECT v.template_id, v.version, v.name, v.short_name, v.state, t.builtin,
-          v.created_by, v.created_at, v.published_at, v.published_by, v.changes, v.retired_at
+          v.created_by, v.created_at, v.published_at, v.published_by, v.changes, v.retired_at,
+          v.draft_revision
           FROM template_versions v JOIN templates t ON t.id = v.template_id
           ORDER BY v.template_id, v.version`,
       )
@@ -1259,42 +1261,66 @@ const ops: Impl = {
   saveTemplateDraft: async (db, input) => {
     const outcome = await runBatch(db, [
       {
-        sql: `UPDATE template_versions SET name = ?, short_name = ?, definition = ?
-          WHERE template_id = ? AND version = ? AND state = 'draft'`,
+        sql: `UPDATE template_versions SET name = ?, short_name = ?, definition = ?,
+          draft_revision = draft_revision + 1
+          WHERE template_id = ? AND version = ? AND state = 'draft' AND draft_revision = ?`,
         values: [
           input.name,
           input.shortName,
           input.definition,
           input.templateId,
           input.version,
+          input.expectedRevision,
         ],
         expectChanges: 1,
       },
     ])
-    return outcome._tag === 'Committed'
-      ? { _tag: 'Saved' }
-      : { _tag: 'Refused', reason: 'not_a_draft' }
+    if (outcome._tag === 'Committed') return { _tag: 'Saved' }
+    const draft = await row(
+      db,
+      `SELECT 1 AS d FROM template_versions WHERE template_id = ? AND version = ? AND state = 'draft'`,
+      input.templateId,
+      input.version,
+    )
+    return { _tag: 'Refused', reason: draft === null ? 'not_a_draft' : 'stale' }
   },
   publishTemplateVersion: async (db, input) => {
     const outcome = await runBatch(db, [
       {
         sql: `UPDATE template_versions SET state = 'published', published_at = ?,
           published_by = ?, changes = ?
-          WHERE template_id = ? AND version = ? AND state = 'draft'`,
+          WHERE template_id = ? AND version = ? AND state = 'draft' AND draft_revision = ?
+          AND (EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND state = 'published')
+            OR NOT EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND state = 'retired'))`,
         values: [
           input.now,
           input.publishedBy,
           input.changes,
           input.templateId,
           input.version,
+          input.expectedRevision,
+          input.templateId,
+          input.templateId,
         ],
         expectChanges: 1,
       },
       auditStep(input.audit),
     ])
-    return outcome._tag === 'Committed'
-      ? { _tag: 'Published' }
-      : { _tag: 'Refused', reason: 'not_a_draft' }
+    if (outcome._tag === 'Committed') return { _tag: 'Published' }
+    const draft = await row(
+      db,
+      `SELECT draft_revision,
+        (NOT EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND state = 'published')
+          AND EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND state = 'retired')) AS retired
+        FROM template_versions WHERE template_id = ? AND version = ? AND state = 'draft'`,
+      input.templateId,
+      input.templateId,
+      input.templateId,
+      input.version,
+    )
+    if (draft === null) return { _tag: 'Refused', reason: 'not_a_draft' }
+    if (b(draft['retired'])) return { _tag: 'Refused', reason: 'retired' }
+    return { _tag: 'Refused', reason: 'stale' }
   },
   retireTemplate: async (db, templateId, now, audit) => {
     const outcome = await runBatch(db, [
@@ -1316,6 +1342,55 @@ const ops: Impl = {
     return outcome._tag === 'Committed'
       ? { _tag: 'Retired' }
       : { _tag: 'Refused', reason: 'not_published' }
+  },
+
+  restoreTemplate: async (db, templateId, audit) => {
+    const outcome = await runBatch(db, [
+      {
+        ...auditStep(audit, {
+          where: {
+            sql: `NOT EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND state = 'published')
+              AND EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND state = 'retired')`,
+            values: [templateId, templateId],
+          },
+        }),
+        expectChanges: 1,
+      },
+      {
+        sql: `UPDATE template_versions SET state = 'published', retired_at = NULL
+          WHERE template_id = ? AND state = 'retired'
+          AND version = (SELECT MAX(version) FROM template_versions WHERE template_id = ? AND state = 'retired')`,
+        values: [templateId, templateId],
+      },
+    ])
+    return outcome._tag === 'Committed'
+      ? { _tag: 'Restored' }
+      : { _tag: 'Refused', reason: 'not_retired' }
+  },
+  discardTemplateDraft: async (db, templateId, version, audit) => {
+    const outcome = await runBatch(db, [
+      {
+        ...auditStep(audit, {
+          where: {
+            sql: `EXISTS (SELECT 1 FROM template_versions WHERE template_id = ? AND version = ? AND state = 'draft')`,
+            values: [templateId, version],
+          },
+        }),
+        expectChanges: 1,
+      },
+      {
+        sql: `DELETE FROM template_versions WHERE template_id = ? AND version = ? AND state = 'draft'`,
+        values: [templateId, version],
+      },
+      {
+        sql: `DELETE FROM templates WHERE id = ? AND builtin = 0
+          AND NOT EXISTS (SELECT 1 FROM template_versions WHERE template_id = ?)`,
+        values: [templateId, templateId],
+      },
+    ])
+    return outcome._tag === 'Committed'
+      ? { _tag: 'Discarded' }
+      : { _tag: 'Refused', reason: 'not_a_draft' }
   },
 
   // -- committees and case files

@@ -22,6 +22,7 @@ import { renderBuilt, saveFile } from './pdf/make'
 import {
   type Basics,
   type Built,
+  type ImageCache,
   approvalRecord,
   authorVersion,
   loadBasics,
@@ -115,6 +116,37 @@ const zipName = (downloads: typeof DownloadSet.Type, shortName: string) =>
     templateShortName: shortName,
   }).replace(/approval-record\.pdf$/, 'all-versions.zip')
 
+// NOTE: The date inside a zip is the date of its newest version at midnight
+// UTC, never the clock: the same report gives the same zip.
+export const zipDateOf = (downloads: typeof DownloadSet.Type): Date => {
+  const newest = Math.max(
+    0,
+    ...Array.map(downloads.versions, version => version.at),
+  )
+  return new Date(newest - (newest % 86_400_000))
+}
+
+const ZIP_TOO_LARGE =
+  'The files are too large to put in one zip. Download them one at a time.'
+
+// NOTE: A zip over the safe size is refused with a clear message; any other
+// failure reads as before.
+export const makeFailureOf = (error: unknown): Failure => {
+  const cause =
+    typeof error === 'object' && error !== null && 'cause' in error
+      ? error.cause
+      : error
+  return [error, cause].some(
+    item =>
+      typeof item === 'object' &&
+      item !== null &&
+      '_tag' in item &&
+      item._tag === 'ZipTooLarge',
+  )
+    ? Failure.Refused({ message: ZIP_TOO_LARGE })
+    : failureOf(error)
+}
+
 export const MakeFile = Command.define('MakeFile', {
   args: { scope: PageScope, downloads: DownloadSet, target: MakeTarget },
   messages: [Message.SucceededMakeFile, Message.FailedMakeFile],
@@ -132,31 +164,41 @@ export const MakeFile = Command.define('MakeFile', {
             ...(downloads.approvalRecord ? [MakeTarget.Approval()] : []),
           ],
         })
+        const { zipParts, checkZipSize } = yield* Effect.tryPromise(
+          () => import('@case-desk/pdf'),
+        )
+        // NOTE: One file at a time, so only one document is being built at
+        // once; what was read is kept across the versions, and the size is
+        // checked as the files come, not after all of them.
+        const cache: ImageCache = new Map()
+        const sizes: Array<number> = []
         const files = yield* Effect.forEach(everything, one =>
           Effect.flatMap(builtOf(client, basics, one), built =>
-            Effect.forEach(built, item => renderBuilt(reportId, item)),
+            Effect.forEach(built, item =>
+              Effect.flatMap(renderBuilt(reportId, item, cache), made =>
+                Effect.try(() => {
+                  sizes.push(made.bytes.length)
+                  checkZipSize(sizes)
+                  return made
+                }),
+              ),
+            ),
           ),
         ).pipe(Effect.map(Array.flatten))
         const [first] = files
         if (target._tag !== 'All' && first !== undefined) {
-          yield* saveFile(
-            first.name,
-            Uint8Array.from(first.bytes),
-            'application/pdf',
-          )
+          yield* saveFile(first.name, [first.bytes], 'application/pdf')
           return
         }
-        const { zipStore } = yield* Effect.tryPromise(
-          () => import('@case-desk/pdf'),
-        )
-        const now = yield* Effect.sync(() => new Date())
-        const zip = zipStore(
-          Array.map(files, file => ({ name: file.name, data: file.bytes })),
-          now,
+        const parts = yield* Effect.try(() =>
+          zipParts(
+            Array.map(files, file => ({ name: file.name, data: file.bytes })),
+            zipDateOf(downloads),
+          ),
         )
         yield* saveFile(
           zipName(downloads, basics.template.shortName),
-          Uint8Array.from(zip),
+          parts,
           'application/zip',
         )
       }),
@@ -164,7 +206,7 @@ export const MakeFile = Command.define('MakeFile', {
       Effect.map(() => Message.SucceededMakeFile({ scope })),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedMakeFile({ scope, failure: failureOf(error) }),
+          Message.FailedMakeFile({ scope, failure: makeFailureOf(error) }),
         ),
       ),
     ),

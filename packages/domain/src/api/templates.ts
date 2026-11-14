@@ -17,6 +17,8 @@ export const TemplateVersionState = Schema.Literals([
 
 export const TemplateSummary = Schema.Struct({
   id: TemplateId,
+  // NOTE: The name of the published version (what authors see); the latest
+  // version's name when none is published. A draft's name is `draftName`.
   name: DisplayName,
   shortName: Schema.String,
   builtIn: Schema.Boolean,
@@ -25,9 +27,21 @@ export const TemplateSummary = Schema.Struct({
     Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   ),
   hasDraft: Schema.Boolean,
+  draftVersion: Schema.optionalKey(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  ),
+  draftName: Schema.optionalKey(DisplayName),
   retired: Schema.Boolean,
 })
 export type TemplateSummary = typeof TemplateSummary.Type
+
+// NOTE: One page of the template list, ordered by name then ID; `next` is the
+// offset of the following page, absent on the last.
+export const TemplatesPage = Schema.Struct({
+  templates: Schema.Array(TemplateSummary).check(Schema.isMaxLength(100)),
+  next: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+})
+export type TemplatesPage = typeof TemplatesPage.Type
 
 // NOTE: What an author sees when choosing a template for a new report: only
 // published, not retired templates, and no definition.
@@ -47,6 +61,9 @@ export const TemplateVersionRecord = Schema.Struct({
   // NOTE: A draft only has to fit the schema. Whether it is publishable is
   // what `validateTemplate` says, returned as problems.
   template: Template,
+  // NOTE: Counts the saves of a draft. A save and a publish name the number
+  // the editor showed and are refused when someone else saved since.
+  draftRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   createdBy: ApiId,
   createdAt: EpochMs,
   publishedAt: Schema.optionalKey(EpochMs),

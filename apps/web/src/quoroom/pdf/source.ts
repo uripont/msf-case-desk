@@ -8,6 +8,7 @@ import {
   type Person,
   type ReportContent,
   type ReportSummary,
+  type RevisionOutline,
   type SectionContent,
   type Template,
   type Theme,
@@ -42,6 +43,7 @@ export type Built = Readonly<{
   description: DocumentDescription
   fileName: string
   context: ImageContext
+  logoImageId: string | undefined
 }>
 
 export const isoDate = (at: number): string =>
@@ -91,8 +93,55 @@ const draftOfVersion = (
         revision => revision.draft,
       )
 
+// NOTE: The conclusion is part of the file when the report is concluding or
+// archived (a revision closing the report); otherwise the description's own
+// default holds: only if the conclusion has content (D23).
+export const isConcluding = (state: string): boolean =>
+  state === 'concluding' || state === 'archived'
+
+export const conclusionChoice = (
+  concluding: boolean,
+): { includeConclusion?: boolean } =>
+  concluding ? { includeConclusion: true } : {}
+
+// NOTE: What each builder asks of the client, so a test can give it only that.
+export type ClientError = Effect.Error<
+  ReturnType<QuoroomClient['GetRevisionOutline']>
+>
+type Reply<A> = Effect.Effect<A, ClientError>
+export type AuthorClient = Readonly<{
+  GetPeople: (payload: {
+    reportId: string
+    draft: number
+  }) => Reply<{ people: ReadonlyArray<Person> }>
+  GetDraftSection: (payload: {
+    reportId: string
+    draft: number
+    sectionId: string
+    view: 'original' | 'redacted'
+  }) => Reply<{ content: SectionContent }>
+}>
+export type ReviewerClient = Readonly<{
+  GetRevisionOutline: (payload: {
+    reportId: string
+    revision: number
+  }) => Reply<RevisionOutline>
+  GetTemplateVersion: (payload: {
+    templateId: string
+    version: number
+    reportId: string
+    revision: number
+  }) => Reply<{ template: Template }>
+  GetTheme: () => Reply<{ theme: Theme }>
+  GetRevisionSection: (payload: {
+    reportId: string
+    revision: number
+    sectionId: string
+  }) => Reply<{ content: SectionContent }>
+}>
+
 export const authorVersion = (
-  client: QuoroomClient,
+  client: AuthorClient,
   basics: Basics,
   version: typeof DownloadVersion.Type,
 ) =>
@@ -103,7 +152,9 @@ export const authorVersion = (
       onSome: Effect.succeed,
     })
     const { people } = yield* client.GetPeople({ reportId, draft })
-    const found = yield* Effect.forEach(
+    // NOTE: The server answers an empty section for a section without a row,
+    // so no error is swallowed here: a real failure fails the file.
+    const sections = yield* Effect.forEach(
       topLevelSections(template),
       section =>
         client
@@ -113,19 +164,9 @@ export const authorVersion = (
             sectionId: section.id,
             view: version.view,
           })
-          .pipe(
-            Effect.map(read =>
-              Option.some([section.id, read.content] as const),
-            ),
-            Effect.catch(error =>
-              template.conclusion?.id === section.id
-                ? Effect.succeed(Option.none())
-                : Effect.fail(error),
-            ),
-          ),
+          .pipe(Effect.map(read => [section.id, read.content] as const)),
       { concurrency: 4 },
     )
-    const sections = Array.getSomes(found)
     const description = documentDescription({
       template,
       content: contentOf(template, sections),
@@ -141,9 +182,7 @@ export const authorVersion = (
         versionLabel: version.label,
         date: isoDate(version.at),
       },
-      includeConclusion:
-        template.conclusion !== undefined &&
-        sections.some(([id]) => id === template.conclusion?.id),
+      ...conclusionChoice(isConcluding(summary.state)),
     })
     return {
       description,
@@ -158,11 +197,12 @@ export const authorVersion = (
         version.kind === 'draft'
           ? { kind: 'draft', draft: version.number }
           : { kind: 'revision', revision: version.number },
+      logoImageId: basics.theme.logo,
     } satisfies Built
   })
 
 export const reviewerVersion = (
-  client: QuoroomClient,
+  client: ReviewerClient,
   reportId: string,
   revision: number,
 ) =>
@@ -188,7 +228,17 @@ export const reviewerVersion = (
     const description = documentDescription({
       template,
       content: contentOf(template, sections),
-      view: { kind: redacted ? 'redacted' : 'original', people: [] },
+      // NOTE: Only labels reach a reviewer; they print where a people item
+      // names someone, for a full reviewer as well (never a raw ID).
+      view: {
+        kind: redacted ? 'redacted' : 'original',
+        people: Array.map(outline.personLabels, person => ({
+          id: person.id,
+          name: person.label,
+          label: person.label,
+          aliases: [],
+        })),
+      },
       caseFile: {
         reference: outline.caseReference,
         unit: '',
@@ -198,11 +248,9 @@ export const reviewerVersion = (
       version: {
         reportName: template.name,
         versionLabel: outline.label,
-        date: isoDate(outline.publishedAt ?? 0),
+        date: isoDate(outline.publishedAt),
       },
-      includeConclusion:
-        template.conclusion !== undefined &&
-        sections.some(([id]) => id === template.conclusion?.id),
+      ...conclusionChoice(outline.closing),
     })
     return {
       description,
@@ -214,6 +262,7 @@ export const reviewerVersion = (
         people: [],
       }),
       context: { kind: 'revision', revision },
+      logoImageId: themeRecord.theme.logo,
     } satisfies Built
   })
 
@@ -240,10 +289,11 @@ export const approvalRecord = (client: QuoroomClient, basics: Basics) =>
         templateShortName: basics.template.shortName,
       }),
       context: { kind: 'working_copy' },
+      logoImageId: basics.theme.logo,
     } satisfies Built
   })
 
-const dataUriOf = (blob: Blob): Promise<string> =>
+export const dataUriOf = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
@@ -254,22 +304,40 @@ const dataUriOf = (blob: Blob): Promise<string> =>
 // NOTE: The images a description names, as data URIs, read through the
 // version they belong to (D5). An image that cannot be read is left out and
 // the PDF prints a note in its place.
+// NOTE: A cache of what was read, kept by "Download all" across the versions
+// it renders (the logo and the images that did not change are read once).
+export type ImageCache = Map<string, string>
+
 export const imagesOf = (
   reportId: string,
-  built: Built,
+  built: Pick<Built, 'context' | 'logoImageId'> &
+    Readonly<{ description: Pick<Built['description'], 'imageIds'> }>,
+  cache?: ImageCache,
 ): Effect.Effect<ReadonlyMap<string, string>> =>
   Effect.forEach(
     built.description.imageIds,
-    imageId =>
-      Effect.tryPromise(async signal => {
-        const loaded = await loadImage(
-          { imageId, reportId, context: built.context },
-          signal,
-        )
-        return Option.isNone(loaded)
-          ? Option.none()
-          : Option.some([imageId, await dataUriOf(loaded.value.blob)] as const)
-      }).pipe(Effect.catch(() => Effect.succeed(Option.none()))),
+    imageId => {
+      const known = cache?.get(imageId)
+      return known !== undefined
+        ? Effect.succeed(Option.some([imageId, known] as const))
+        : Effect.tryPromise(async signal => {
+            const loaded = await loadImage(
+              {
+                imageId,
+                reportId,
+                context:
+                  imageId === built.logoImageId
+                    ? { kind: 'theme' }
+                    : built.context,
+              },
+              signal,
+            )
+            if (Option.isNone(loaded)) return Option.none()
+            const uri = await dataUriOf(loaded.value.blob)
+            cache?.set(imageId, uri)
+            return Option.some([imageId, uri] as const)
+          }).pipe(Effect.catch(() => Effect.succeed(Option.none())))
+    },
     { concurrency: 3 },
   ).pipe(Effect.map(found => new Map(Array.getSomes(found))))
 

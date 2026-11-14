@@ -433,11 +433,7 @@ export const MakeReviewPdf = Command.define('MakeReviewPdf', {
       Effect.gen(function* () {
         const built = yield* reviewerVersion(client, reportId, revision)
         const made = yield* renderBuilt(reportId, built)
-        yield* saveFile(
-          made.name,
-          Uint8Array.from(made.bytes),
-          'application/pdf',
-        )
+        yield* saveFile(made.name, [made.bytes], 'application/pdf')
       }),
     ).pipe(
       Effect.map(() => Message.SucceededMakePdf({ scope })),

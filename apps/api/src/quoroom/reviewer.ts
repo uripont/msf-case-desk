@@ -391,6 +391,11 @@ export const reviewerHandlers: Pick<
         published.draftNumber,
         view,
       )
+      // NOTE: the labels (never names or aliases) of the people of the
+      // revision, so a people item prints a label and never an ID, in the
+      // reviewer's PDF too (stage 8+9 review, finding 6).
+      const labelled =
+        draft === null ? [] : yield* readPeople(draft.people)
       const clock = yield* QuoroomClock
       yield* db.recordEvent({
         reportId,
@@ -422,6 +427,10 @@ export const reviewerHandlers: Pick<
         ...(decision === undefined ? {} : { myDecision: decision }),
         closing: entry.round.closing,
         publishedAt: published.publishedAt,
+        personLabels: labelled.map(person => ({
+          id: person.id,
+          label: person.label,
+        })),
         sections: sectionRefsOf(rows),
       }
     }),

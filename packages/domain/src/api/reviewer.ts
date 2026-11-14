@@ -128,7 +128,12 @@ export const RevisionOutline = Schema.Struct({
   myDecision: Schema.optionalKey(ReviewDecisionSchema),
   closing: Schema.Boolean,
   // NOTE: When the revision was published; it is the date of the PDF.
-  publishedAt: Schema.optionalKey(EpochMs),
+  publishedAt: EpochMs,
+  // NOTE: Only the label of each person, the text a people item prints for
+  // every reader (a name never leaves the authors' side for a redacted role).
+  personLabels: Schema.Array(
+    Schema.Struct({ id: ApiId, label: Schema.String }),
+  ),
   sections: Schema.Array(SectionRef),
 })
 export type RevisionOutline = typeof RevisionOutline.Type

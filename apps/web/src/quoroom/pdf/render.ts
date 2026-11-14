@@ -35,4 +35,7 @@ const fontSource = async (file: string): Promise<string> => {
 export const renderDocument = (
   description: DocumentDescription,
   images: ReadonlyMap<string, string>,
-): Promise<Uint8Array> => renderPdfInBrowser(description, images, fontSource)
+): Promise<Uint8Array<ArrayBuffer>> =>
+  renderPdfInBrowser(description, images, fontSource).then(bytes =>
+    Uint8Array.from(bytes),
+  )
