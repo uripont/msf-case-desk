@@ -4,6 +4,9 @@ import { describe, expect, test } from 'vitest'
 
 import { SYNTHETIC_ME, signedInModel, urlOf } from './fixtures'
 import { Message, Session, update } from './main'
+import { Failure } from './quoroom/failure'
+import * as Link from './quoroom/link'
+import { LoadState } from './quoroom/unit'
 
 // NOTE: Stage 10a. A session that ends keeps what the screens hold and asks for
 // the password again at the same address; Escape answers an open question.
@@ -40,6 +43,66 @@ describe('a session that ends', () => {
     const back = update(ended, Message.SucceededSignIn({ me: other })).model
     expect(back.maybeEndedFor).toEqual(Option.none())
     expect(back.names.maybeRemoving).toEqual(Option.none())
+  })
+
+  test('another account signing in does not get the entry form typed before', () => {
+    const typed = modifyFields(working, {
+      entryForm: form => modifyFields(form, { summary: () => 'Invented summary' }),
+    })
+    const ended = update(typed, Message.EndedSession()).model
+    const other = { ...SYNTHETIC_ME, id: 'someone-else' }
+    const back = update(ended, Message.SucceededSignIn({ me: other })).model
+    expect(back.entryForm.summary).toBe('')
+  })
+
+  test('another account signing in with a link after the session ended starts from empty screens', () => {
+    const ended = update(working, Message.EndedSession()).model
+    const linked = modifyFields(ended, {
+      maybeLink: () => Option.some(Link.init(Option.none()).model),
+    })
+    const other = { ...SYNTHETIC_ME, id: 'someone-else' }
+    const back = update(
+      linked,
+      Message.GotLinkMessage({
+        message: Link.Message.SucceededConsumeLink({ me: other }),
+      }),
+    ).model
+    expect(back.session).toEqual(Session.SignedIn({ me: other }))
+    expect(back.names.maybeRemoving).toEqual(Option.none())
+    expect(back.maybeEndedFor).toEqual(Option.none())
+  })
+
+  test('the same account signing in with a link after the session ended keeps the screens', () => {
+    const ended = update(working, Message.EndedSession()).model
+    const linked = modifyFields(ended, {
+      maybeLink: () => Option.some(Link.init(Option.none()).model),
+    })
+    const back = update(
+      linked,
+      Message.GotLinkMessage({
+        message: Link.Message.SucceededConsumeLink({ me: SYNTHETIC_ME }),
+      }),
+    ).model
+    expect(back.names).toEqual(working.names)
+  })
+
+  test('a screen whose load failed when the session ended is loaded again after the sign-in', () => {
+    const atInbox = update(
+      signedInModel,
+      Message.ChangedUrl({ url: urlOf('/inbox') }),
+    ).model
+    const failed = modifyFields(atInbox, {
+      inbox: inbox =>
+        modifyFields(inbox, {
+          load: () => LoadState.Failed({ failure: Failure.SignInRequired() }),
+        }),
+    })
+    const ended = update(failed, Message.EndedSession()).model
+    const back = update(ended, Message.SucceededSignIn({ me: SYNTHETIC_ME }))
+    expect(back.model.inbox.load).toEqual(LoadState.Loading())
+    expect(
+      (back.commands ?? []).some(command => command.name === 'LoadInbox'),
+    ).toBe(true)
   })
 
   test('a signed-out app does not end a second time', () => {

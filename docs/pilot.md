@@ -24,7 +24,7 @@ pnpm pilot:deploy        # imports .local/grants-pilot.sql
 - An expired or lost link: run the same command again and deploy, for a fresh link.
 - A forgotten password: `pnpm grant-admin --env pilot --email <email> --reset`, then deploy. Once the pilot runs, an administrator issues resets in the app instead (*Administration*, *Issue reset link*). A reset ends all of that person's sessions.
 
-On `workerd` use `--env workerd` and restart `pnpm workerd --mode pilot` instead of deploying.
+On `workerd` use `--env workerd` (the link points at `http://127.0.0.1:8787` unless you pass `--origin`) and restart `pnpm workerd --mode pilot` instead of deploying. `workerd` sends no notification by itself: start it with `TICK_SECRET` and add the host cron of [`self-hosting.md`](self-hosting.md) (*Notifications*), or review requests, reminders and deadlines are only noticed when someone opens the report.
 
 ## 2. Theme and units
 
@@ -32,6 +32,8 @@ Signed in, the administrator:
 
 1. Opens **Theme**: organisation name, logo, primary, accent, text and background colours, a heading font and a body font, and the PDF header and footer (also a different one for the cover page) with the tokens `{page}`, `{pages}`, `{case}` and `{title}`. The screen shows an app page and a sample PDF, and refuses colours whose text would be hard to read. An organisation's logo is uploaded here by its own administrator; it is never part of the repository.
 2. Opens **Administration**, creates each unit (a name and a short code), and gives capabilities by e-mail: *Author in a unit* (for that unit), *Template editor* or *Administrator*. The administrator gives *Author* to themselves too. For an e-mail with no account yet, the screen shows a one-time activation link to hand over; Quoroom sends no e-mail.
+
+A saved theme shows at once for the administrator; other people see it the next time they open the app, within a minute (the browser keeps the theme for 30 seconds).
 
 Authors then open **My unit** to invite co-authors, register reviewers (name, e-mail, phone number) and group them into committees. Each new person gets an activation link from whoever invited them.
 
@@ -49,7 +51,21 @@ The same steps are the automated end-to-end test and the walkthrough with the fi
 8. Reminders reach whoever has not decided. R1 and R2 approve Revision 2; the round is decided and the authors are told.
 9. A starts the conclusion. Only the conclusion section can be edited now. A writes it, shares Draft 5 and publishes it as the closing Revision 3. R1 and R2 approve it, and the report is archived.
 10. A opens **Downloads** and downloads everything, and the approval record. The **Status grid** and the **Audit log** tell the whole story.
-11. In short: an *Investigation report*, archived on approval, and a report whose deadline passes with one reviewer silent, decided by the deadline and answered with another revision.
+11. In short: an *Investigation report*, archived on approval; a report whose deadline passes with one reviewer silent, decided by the deadline and answered with another revision; and a report on a template published from **Templates** (a copy of the intake whose committee decides by majority, with an observer who comments but cannot vote and a chair who reads the original text).
+
+The script is also a browser rehearsal with seven invented people, through the web UI only, the reviewers at phone width. It takes about 15 minutes, mostly waiting for a reminder and a deadline, and needs a fresh target whose first administrator was just granted (on `workerd`, stop it and move `.local/workerd-data-pilot/` aside first):
+
+```sh
+# On a test environment (see *When something fails*), after test-env:up --fast:
+pnpm rehearsal https://test-<name>-pilot.<subdomain>.workers.dev --admin-link-file /tmp/admin-link.txt
+# On workerd, with short reminder timings and a tick secret instead of a cron:
+pnpm -s grant-admin --env workerd --email admin@example.org --name "Admin Example" > /tmp/admin-link.txt
+TICK_SECRET=$(cat ~/.quoroom-tick-secret) NOTIFY_FIRST_REMINDER_MINUTES=10 NOTIFY_FINAL_REMINDER_MINUTES=3 \
+  pnpm workerd --mode pilot
+pnpm rehearsal http://127.0.0.1:8787 --admin-link-file /tmp/admin-link.txt --tick-secret-file ~/.quoroom-tick-secret
+```
+
+It stops at the first step that fails and keeps a screenshot of what each person saw (in `/tmp/quoroom-rehearsal`, or `E2E_SHOTS`).
 
 ## 4. Backup: D1 Time Travel
 

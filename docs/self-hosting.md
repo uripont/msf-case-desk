@@ -129,7 +129,7 @@ Everything fits in the free plan. No payment card is needed; when a daily limit 
 What the pilot stack holds fixed:
 
 - **Stages.** `alchemy.pilot.run.ts` deploys only the stage `pilot` or a `test_<name>` stage and throws for anything else, so a stray `ALCHEMY_STAGE` can never send it elsewhere.
-- **Guards.** `pnpm pilot:*` and `pnpm test-env:*` always use the Alchemy profile `default`. They pass on only `--yes`, `-y`, `--dry-run` and `--detailed`, and refuse to run when an account-selecting variable (`ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and the others in [`scripts/pilot-guards.mjs`](../scripts/pilot-guards.mjs)) is set in the environment or in `.env`.
+- **Guards.** `pnpm pilot:*` and `pnpm test-env:*` always use the Alchemy profile `default`. `pnpm pilot:*` passes on only `--yes`, `-y`, `--dry-run` and `--detailed`; `pnpm test-env:*` always deploys with `--yes` and accepts only `--fast` and `--invocation-logs`. Both refuse to run when an account-selecting variable (`ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and the others in [`scripts/pilot-guards.mjs`](../scripts/pilot-guards.mjs)) is set in the environment or in `.env`.
 - **EU jurisdiction.** Set before the first deploy and never changed: changing it replaces the database.
 - **Logs.** Workers Logs keep what the code writes (errors, and the counts of each notification pass). Invocation logs, which record URLs, and traces are off; no request body is logged. Workers Issues is on.
 

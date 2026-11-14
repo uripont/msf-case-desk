@@ -28,6 +28,7 @@
     "demo:refresh": "pnpm --filter @case-desk/api demo:seed",
     "workerd": "sh scripts/workerd.sh",
     "smoke": "node scripts/smoke.mjs",
+    "rehearsal": "node packages/e2e/src/rehearsal.ts",
     "pilot:plan": "node scripts/pilot-stack.mjs pilot-plan",
     "pilot:deploy": "node scripts/pilot-stack.mjs pilot-deploy",
     "pilot:destroy": "node scripts/pilot-stack.mjs pilot-destroy",

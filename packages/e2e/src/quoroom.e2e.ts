@@ -21,6 +21,21 @@ import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { extractPages } from '@case-desk/pdf/testing'
 import { type Browser, type Locator, type Page, chromium, firefox } from 'playwright-core'
 
+import {
+  PASSWORD,
+  activate,
+  copiedLink,
+  ensureChecked,
+  noSideScroll,
+  openIn,
+  person,
+  reportIdOf,
+  results,
+  settled,
+  shot,
+  step,
+  syntheticImage,
+} from './helpers.ts'
 import { runKeyboard } from './keyboard.ts'
 import { runSweep } from './sweep.ts'
 
@@ -30,22 +45,6 @@ const TICK_SECRET = 'e2e-tick-secret-not-a-real-one'
 const shots = process.env.E2E_SHOTS ?? '/tmp/quoroom-e2e-screens'
 const chromePath = process.env.E2E_CHROMIUM ?? '/usr/bin/chromium'
 
-// NOTE: A committee member is added by a click that the server answers; the
-// box shows the answer. A member change is one add operation, so a second
-// click while the first is still in flight is harmless, and a click that did
-// not take is tried again instead of being waited for.
-const ensureChecked = async (box: Locator, what: string): Promise<void> => {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    try {
-      await box.check({ timeout: 4000 })
-      return
-    } catch {
-      if (await box.isChecked()) return
-    }
-  }
-  assert.ok(await box.isChecked(), what)
-}
-const PASSWORD = 'synthetic-pass-1234'
 
 const freePort = (): Promise<number> =>
   new Promise((resolve, reject) => {
@@ -85,64 +84,6 @@ const waitForHealth = async (base: string): Promise<void> => {
   throw new Error('workerd did not come up')
 }
 
-const results: Array<{ name: string; ok: boolean }> = []
-
-const step = async (name: string, body: () => Promise<void>): Promise<void> => {
-  try {
-    await body()
-    results.push({ name, ok: true })
-    console.log(`ok   ${name}`)
-  } catch (error) {
-    results.push({ name, ok: false })
-    console.log(`FAIL ${name}: ${error instanceof Error ? error.message : error}`)
-  }
-}
-
-const noSideScroll = async (page: Page): Promise<void> => {
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - window.innerWidth,
-  )
-  assert.ok(overflow <= 0, `the page scrolls sideways by ${overflow}px`)
-}
-
-const shot = async (page: Page, name: string): Promise<void> => {
-  await noSideScroll(page)
-  await page.screenshot({ path: join(shots, `${name}.png`), fullPage: true })
-}
-
-const person = async (browser: Browser): Promise<Page> => {
-  const context = await browser.newContext({
-    viewport: { width: 375, height: 812 },
-    deviceScaleFactor: 2,
-  })
-  const page = await context.newPage()
-  if (process.env.E2E_DEBUG === '1') {
-    page.on('console', message => console.log(`[console ${message.type()}] ${message.text()}`))
-    page.on('pageerror', error => console.log(`[pageerror] ${error.message}`))
-  }
-  return page
-}
-
-const activate = async (page: Page, link: string, name: string): Promise<void> => {
-  await page.goto(link)
-  await page.getByRole('heading', { name: 'Set your password' }).waitFor()
-  await shot(page, `${name}-1-set-password`)
-  await page.getByLabel('New password').fill(PASSWORD)
-  await page.getByLabel('Type it again').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Set password and sign in' }).click()
-  await page.getByRole('button', { name: 'Sign out' }).waitFor()
-  assert.equal(new URL(page.url()).pathname, '/')
-  assert.equal(new URL(page.url()).hash, '', 'the token is left in the address')
-  await shot(page, `${name}-2-signed-in`)
-}
-
-const copiedLink = async (page: Page): Promise<string> => {
-  const link = await page.getByRole('textbox', { name: 'Link' }).inputValue()
-  assert.match(link, /\/link#[0-9a-f]{64}$/)
-  await page.getByRole('button', { name: 'I have copied it' }).click()
-  await page.getByRole('textbox', { name: 'Link' }).waitFor({ state: 'detached' })
-  return link
-}
 
 const startWorkerd = (
   port: number,
@@ -209,56 +150,6 @@ const withExif = (jpeg: Buffer, marker: string): Buffer => {
   return Buffer.concat([jpeg.subarray(0, 2), segment, payload, jpeg.subarray(2)])
 }
 
-const syntheticImage = (
-  page: Page,
-  options: { width: number; height: number; kind: 'photo' | 'transparent' | 'noise'; quality: number },
-): Promise<string> =>
-  page.evaluate(async ({ width, height, kind, quality }) => {
-    const canvas = new OffscreenCanvas(width, height)
-    const context = canvas.getContext('2d')
-    if (context === null) {
-      throw new Error('no canvas')
-    }
-    if (kind === 'photo') {
-      const gradient = context.createLinearGradient(0, 0, width, height)
-      gradient.addColorStop(0, '#264653')
-      gradient.addColorStop(0.5, '#e9c46a')
-      gradient.addColorStop(1, '#e76f51')
-      context.fillStyle = gradient
-      context.fillRect(0, 0, width, height)
-      context.fillStyle = '#ffffff'
-      context.beginPath()
-      context.arc(width / 2, height / 2, height / 4, 0, Math.PI * 2)
-      context.fill()
-    } else if (kind === 'transparent') {
-      context.clearRect(0, 0, width, height)
-      context.fillStyle = '#d62828'
-      context.beginPath()
-      context.arc(width / 2, height / 2, height / 3, 0, Math.PI * 2)
-      context.fill()
-    } else {
-      const pixels = context.createImageData(width, height)
-      for (let at = 0; at < pixels.data.length; at += 65_536) {
-        crypto.getRandomValues(pixels.data.subarray(at, Math.min(at + 65_536, pixels.data.length)))
-      }
-      for (let at = 3; at < pixels.data.length; at += 4) {
-        pixels.data[at] = 255
-      }
-      // NOTE: one translucent pixel makes the re-encoded picture a PNG, and
-      // noise does not compress, so it stays over 1 MB.
-      pixels.data[3] = 128
-      context.putImageData(pixels, 0, 0)
-    }
-    const blob = await canvas.convertToBlob(
-      kind !== 'photo' ? { type: 'image/png' } : { type: 'image/jpeg', quality },
-    )
-    const bytes = new Uint8Array(await blob.arrayBuffer())
-    let binary = ''
-    for (let at = 0; at < bytes.length; at += 32_768) {
-      binary += String.fromCharCode(...bytes.subarray(at, at + 32_768))
-    }
-    return btoa(binary)
-  }, options)
 
 
 const main = async (): Promise<void> => {
@@ -1115,20 +1006,8 @@ const main = async (): Promise<void> => {
     }
     const fixture = (name: string): Json =>
       JSON.parse(readFileSync(join(import.meta.dirname, '../fixtures', `${name}.content.json`), 'utf8'))
-    const reportIdOf = (page: Page): string => new URL(page.url()).pathname.split('/').pop() ?? ''
     // NOTE: the report of a reference, for the steps that come back to it.
     const reportsByReference: Record<string, string> = {}
-    const openIn = async (page: Page, name: RegExp): Promise<void> => {
-      const row = page.getByRole('button', { name })
-      if (!(await row.first().isVisible())) {
-        await page.getByRole('button', { name: /^Sections/ }).click()
-      }
-      await row.first().click()
-    }
-    const settled = async (page: Page): Promise<void> => {
-      await page.waitForTimeout(400)
-      await page.getByText(/Saved at \d\d:\d\d/).waitFor()
-    }
     const storedSection = async (page: Page, sectionId: string): Promise<Json> =>
       (await rpc(page, 'GetWorkingCopySection', { reportId: reportIdOf(page), sectionId })).content
     // NOTE: Entry IDs are made by the browser, so they are replaced by their

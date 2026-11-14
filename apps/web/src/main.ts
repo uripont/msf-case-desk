@@ -874,6 +874,9 @@ const signedOut = (model: Model): Model =>
     publish: Publish.cleared,
     maybeLeaving: () => Option.none(),
     maybeEndedFor: () => Option.none(),
+    maybeFocusReturn: () => Option.none(),
+    entryForm: () => emptyEntryForm(model.now),
+    rulesForm: () => rulesFormFor([], 'Default'),
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
     ruleSets: () => [],
@@ -882,6 +885,22 @@ const signedOut = (model: Model): Model =>
     isDetailSheetOpen: () => false,
     maybeLogoSrc: () => Option.none(),
   })
+
+// NOTE: The screens as they may be shown to `me`: kept only if they were
+// filled for the same account (signed in, or whose session ended), else empty.
+const fromAccount = (model: Model, me: MeView): Model => {
+  const maybePrevious = Option.orElse(model.maybeEndedFor, () =>
+    Session.match(model.session, {
+      Checking: () => Option.none<string>(),
+      SignedOut: () => Option.none<string>(),
+      SignedIn: ({ me: current }) => Option.some(current.id),
+    }),
+  )
+  return Option.match(maybePrevious, {
+    onNone: () => model,
+    onSome: previous => (previous === me.id ? model : signedOut(model)),
+  })
+}
 
 const loadingDesk = (model: Model, me: MeView): Model =>
   modifyFields(model, {
@@ -901,7 +920,7 @@ const foldLink = Update.foldChild({
       SignedInWithLink:
         ({ me }) =>
         stepModel => {
-          const home = modifyFields(loadingDesk(stepModel, me), {
+          const home = modifyFields(loadingDesk(fromAccount(stepModel, me), me), {
             maybeLink: () => Option.none(),
             route: () => AppRoute.Desk(),
           })
@@ -1547,8 +1566,46 @@ const opensLink = (
 
 // UPDATE
 
+const isFailedLoad = (load: Readonly<{ _tag: string }>): boolean =>
+  load._tag === 'Failed'
+
+// NOTE: Whether the screen of the current route has no data because its load
+// failed (for example the call that found the session had ended). Such a
+// screen holds nothing to keep, so it is loaded again after the sign-in.
+const hasFailedLoad = (model: Model): boolean =>
+  AppRoute.match(model.route, {
+    Desk: () => false,
+    NewCase: () => false,
+    Rules: () => false,
+    Link: () => false,
+    NotFound: () => false,
+    Account: () => isFailedLoad(model.account.load),
+    Admin: () => isFailedLoad(model.admin.load),
+    Theme: () => isFailedLoad(model.themeScreen.load),
+    Templates: () => isFailedLoad(model.templates.load),
+    TemplateEditor: () => isFailedLoad(model.templateEditor.load),
+    Unit: () =>
+      isFailedLoad(model.unit.load) || isFailedLoad(model.unit.dataLoad),
+    Reports: () =>
+      isFailedLoad(model.reports.load) || isFailedLoad(model.reports.dataLoad),
+    Report: () => isFailedLoad(model.report.load),
+    Share: () => isFailedLoad(model.share.load),
+    Names: () => isFailedLoad(model.names.load),
+    Publish: () => isFailedLoad(model.publish.load),
+    Drafts: () => isFailedLoad(model.history.load),
+    Draft: () => isFailedLoad(model.history.load),
+    Inbox: () => isFailedLoad(model.inbox.load),
+    Notifications: () => isFailedLoad(model.notifications.load),
+    Comments: () => isFailedLoad(model.comments.load),
+    Grid: () => isFailedLoad(model.grid.load),
+    Audit: () => isFailedLoad(model.audit.load),
+    Downloads: () => isFailedLoad(model.downloads.load),
+    Revision: () => isFailedLoad(model.review.load),
+  })
+
 // NOTE: The same account after its session ended: the screens are as they
-// were, and what could not be saved is saved now.
+// were, and what could not be saved is saved now. A screen whose load failed
+// is loaded again, so it does not go on saying the session has ended.
 const signedBackIn = (
   model: Model,
   me: typeof MeView.Type,
@@ -1558,13 +1615,13 @@ const signedBackIn = (
     maybeEndedFor: () => Option.none(),
     loginForm: () => emptyLoginForm,
   })
-  const saved: Update.Return<Model, Message> = AppRoute.guards.Report(
-    back.route,
-  )
-    ? retryReportSave(back)
-    : AppRoute.guards.TemplateEditor(back.route)
-      ? retryTemplateEditorSave(back)
-      : { model: back }
+  const saved: Update.Return<Model, Message> = hasFailedLoad(back)
+    ? resume(back)
+    : AppRoute.guards.Report(back.route)
+      ? retryReportSave(back)
+      : AppRoute.guards.TemplateEditor(back.route)
+        ? retryTemplateEditorSave(back)
+        : { model: back }
   return {
     model: saved.model,
     commands: [...(saved.commands ?? []), focusPageHeading()],

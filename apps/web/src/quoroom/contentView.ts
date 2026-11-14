@@ -45,7 +45,8 @@ export type ViewContext = Readonly<{
   // (`itemKey`: the entry path and the item, joined with `/`).
   highlights?: ReadonlyArray<ItemHighlight>
   // NOTE: A reader without the people list (a reviewer) sees how many people
-  // an item names, never an ID.
+  // an item names, never an ID, and no note on whether a picture is marked
+  // safe to share.
   peopleHidden?: boolean
 }>
 
@@ -165,6 +166,7 @@ const itemRow = <M>(
               context.imageContext,
               context.marks ?? [],
               rangesFor(context, entryPath, item.id, anchorText(value.doc)),
+              context.peopleHidden !== true,
             )
           : value.type === 'repeated'
             ? h.empty

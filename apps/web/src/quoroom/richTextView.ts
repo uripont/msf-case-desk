@@ -66,6 +66,9 @@ type Marks = ReadonlyArray<string>
 
 type Ctx = Readonly<{
   marks: Marks
+  // NOTE: Whether a figure says if it is marked safe to share (for authors;
+  // a reviewer only sees what they were given).
+  safeNote: boolean
   ranges: ReadonlyArray<HighlightRange>
   starts: ReadonlyMap<object, number>
 }>
@@ -287,21 +290,23 @@ const blockView = <M>(
               picture.Alt(block.attrs.alt),
               h.Class('block max-w-full border border-msf-line bg-msf-mist'),
             ]),
-        h.p(
-          [
-            h.Class(
-              clsx(
-                'text-sm font-medium',
-                block.attrs.safeToShare ? 'text-msf-ink' : 'text-msf-grey',
-              ),
-            ),
-          ],
-          [
-            block.attrs.safeToShare
-              ? 'Marked safe to share.'
-              : 'Not marked safe to share. Withheld from redacted views.',
-          ],
-        ),
+        ctx.safeNote
+          ? h.p(
+              [
+                h.Class(
+                  clsx(
+                    'text-sm font-medium',
+                    block.attrs.safeToShare ? 'text-msf-ink' : 'text-msf-grey',
+                  ),
+                ),
+              ],
+              [
+                block.attrs.safeToShare
+                  ? 'Marked safe to share.'
+                  : 'Not marked safe to share. Withheld from redacted views.',
+              ],
+            )
+          : h.empty,
         h.figcaption(
           [
             h.Class('text-sm text-msf-grey'),
@@ -328,9 +333,11 @@ export const richTextView = <M>(
   // NOTE: Strings to highlight (the redacted preview).
   marks: Marks = [],
   highlights: ReadonlyArray<HighlightRange> = [],
+  safeNote = true,
 ): Html => {
   const ctx: Ctx = {
     marks,
+    safeNote,
     ranges: highlights,
     starts: highlights.length === 0 ? new Map() : blockStarts(doc),
   }

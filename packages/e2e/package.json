@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "e2e": "node src/quoroom.e2e.ts"
+    "e2e": "node src/quoroom.e2e.ts",
+    "rehearsal": "node src/rehearsal.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
