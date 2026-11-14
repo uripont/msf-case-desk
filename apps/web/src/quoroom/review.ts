@@ -34,7 +34,7 @@ import { alertText, loadingText, panel, statusText } from './ui'
 import { LoadState } from './unit'
 import { deadlineText } from './zoned'
 
-// NOTE: The reviewer's reading view of one revision (stages 6b and 6c). The
+// NOTE: The reviewer's reading view of one revision. The
 // server chooses what is read (stored redacted text for a redacted role, the
 // original for a full one): nothing here asks for a view. The text is the
 // read-only view, never the editor. Comments sit beside the text at desktop

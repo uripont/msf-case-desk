@@ -34,7 +34,7 @@ import {
 } from './review.fixtures'
 import { view } from './view'
 
-// NOTE: Stages 6b and 6c: the reading view, selection to comment, the pending
+// NOTE: The reading view, selection to comment, the pending
 // review, the send dialog and the authors' list of comments. The text is the
 // read-only view; width is a matter of the grid classes, checked in the
 // browser test at 375 px and at desktop width.

@@ -15,7 +15,7 @@ import {
   routeErrorText,
 } from './plan'
 
-// NOTE: Uploading a prepared image through `/api/images` (stage 4d, D5). Bytes
+// NOTE: Uploading a prepared image through `/api/images` (D5). Bytes
 // never go through the RPC. The image is cut into chunks of at most 700 KB and
 // sent in order, each as the raw body of a POST with its description in the
 // query string. A chunk that fails for a reason that may pass (no network, a

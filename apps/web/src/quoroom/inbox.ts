@@ -18,7 +18,7 @@ import { alertText, failureAlert, loadingText, panel } from './ui'
 import { LoadState } from './unit'
 import { countdownText, deadlineText } from './zoned'
 
-// NOTE: The reviewer's inbox (stage 6b): the rounds the account takes part in,
+// NOTE: The reviewer's inbox: the rounds the account takes part in,
 // each with its deadline in the reviewer's own time zone, what they sent, and
 // whether the round is decided or replaced. It shows the reference of the case
 // file, never its title. Rounds waiting for a review come first.

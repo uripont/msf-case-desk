@@ -86,7 +86,7 @@ const anchorOf = (comment: StoreCommentRecord) => {
   }
 }
 
-const sectionKnown = (template: Loaded['template'], sectionId: string) =>
+export const sectionKnown = (template: Loaded['template'], sectionId: string) =>
   templateNodes(template).some(
     entry => entry.kind === 'section' && entry.node.id === sectionId,
   )
@@ -394,7 +394,7 @@ export const reviewerHandlers: Pick<
       )
       // NOTE: the labels (never names or aliases) of the people of the
       // revision, so a people item prints a label and never an ID, in the
-      // reviewer's PDF too (stage 8+9 review, finding 6).
+      // reviewer's PDF too.
       const labelled =
         draft === null ? [] : yield* readPeople(draft.people)
       const clock = yield* QuoroomClock

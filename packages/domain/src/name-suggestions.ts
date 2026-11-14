@@ -9,7 +9,7 @@ import { findAliasMatches } from './redaction'
 import { richTextBlocks, richTextFigures } from './richtext'
 import type { Template } from './template'
 
-// NOTE: Name suggestions (D14, stage 1e): a heuristic that points the author at
+// NOTE: Name suggestions (D14): a heuristic that points the author at
 // words that look like the name of a person and are not covered by the people
 // list yet. It is shown only to authors and never decides anything. It is
 // deterministic and does no I/O.

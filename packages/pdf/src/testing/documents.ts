@@ -13,7 +13,7 @@ import {
 } from '@case-desk/domain'
 import { fullContent } from '@case-desk/domain/testing/fixtures'
 
-// NOTE: Test support (stage 8): documents that are long enough to fill pages,
+// NOTE: Test support: documents that are long enough to fill pages,
 // with invented people, tables, lists, links and images. Everything is
 // synthetic.
 

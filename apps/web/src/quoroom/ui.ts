@@ -7,11 +7,10 @@ import {
   focusRing,
   labelClassName,
   primaryButtonClassName,
-  textButtonClassName,
 } from '../style'
 import { type Failure, failureText } from './failure'
 
-// NOTE: Shared pieces for the iteration 3 screens. Each takes the builder of
+// NOTE: Shared pieces for the screens. Each takes the builder of
 // the screen that uses it, so its handlers send that screen's Messages.
 
 export const PAGE_HEADING_ID = 'page-heading'
@@ -232,20 +231,6 @@ export const smallButton = <M>(
     [label],
   )
 
-export const linkButton = <M>(
-  h: HtmlBuilder<M>,
-  label: string,
-  onClick: M,
-): Html =>
-  h.button(
-    [
-      h.Type('button'),
-      h.Class(clsx('self-start text-base', textButtonClassName)),
-      h.OnClick(onClick),
-    ],
-    [label],
-  )
-
 export const alertText = <M>(h: HtmlBuilder<M>, text: string): Html =>
   h.p(
     [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
@@ -260,27 +245,6 @@ export const failureAlert = <M>(h: HtmlBuilder<M>, failure: Failure): Html =>
 
 export const loadingText = <M>(h: HtmlBuilder<M>, text: string): Html =>
   h.p([h.Role('status'), h.Class('text-lg text-msf-grey')], [text])
-
-export const listOf = <M, A>(
-  h: HtmlBuilder<M>,
-  label: string,
-  items: ReadonlyArray<A>,
-  empty: string,
-  row: (item: A) => Html,
-): Html =>
-  Array.match(items, {
-    onEmpty: () => h.p([h.Class('text-lg text-msf-grey')], [empty]),
-    onNonEmpty: nonEmpty =>
-      h.ul(
-        [
-          h.AriaLabel(label),
-          h.Class(
-            'flex flex-col divide-y divide-msf-line border-y border-msf-line',
-          ),
-        ],
-        Array.map(nonEmpty, row),
-      ),
-  })
 
 // NOTE: never throws: a time no date can hold reads as an unknown time.
 export const formatMoment = (epochMs: number): string => {

@@ -1,4 +1,4 @@
-// Browser check of the Quoroom "done when" flow of stage 3, at 375 px.
+// Browser check of the Quoroom flows, at 375 px.
 //
 //   pnpm --filter @case-desk/e2e e2e
 //
@@ -123,7 +123,7 @@ const stop = (child: ChildProcess | undefined): void => {
   }
 }
 
-// NOTE: Helpers for the image step (stage 4d). Everything is generated; no
+// NOTE: Helpers for the image step. Everything is generated; no
 // real photograph is ever used.
 const jpegSize = (bytes: Buffer): { width: number; height: number } | undefined => {
   let at = 2
@@ -525,7 +525,7 @@ const main = async (): Promise<void> => {
       await shot(pilot, 'pilot-quoroom')
     })
 
-    // NOTE: Stage 4a and 4b, at 375 px: an author makes a case file and an
+    // NOTE: At 375 px: an author makes a case file and an
     // intake report, fills structured fields in two sections, ends the report
     // with a branch answer and restores it, reloads, and finds the values kept.
     await step('an author writes an intake report on a phone and the values persist', async () => {
@@ -593,7 +593,7 @@ const main = async (): Promise<void> => {
       await shot(pilot, 'report-4-reloaded')
     })
 
-    // NOTE: Stage 4c, at 375 px: the rich-text editor. The editor chunk is not
+    // NOTE: At 375 px: the rich-text editor. The editor chunk is not
     // requested until a section with a rich-text item is shown; the author
     // types, makes text bold, a list, a link (an unsafe address is refused), a
     // table with an added row and a resized column, undoes, and after a reload
@@ -760,7 +760,7 @@ const main = async (): Promise<void> => {
       assert.ok(gzip < 250 * 1024, `the editor chunk is ${gzip} bytes gzip`)
     })
 
-    // NOTE: Stage 4d, at 375 px: images. A large synthetic JPEG with an EXIF
+    // NOTE: At 375 px: images. A large synthetic JPEG with an EXIF
     // segment is chosen (4000 x 3000) and is stored at 1600 x 1200, under 1 MB,
     // with no EXIF; a transparent PNG stays a PNG with alpha; one is marked safe
     // to share, with alt text and a caption; after a reload both are shown and
@@ -974,7 +974,7 @@ const main = async (): Promise<void> => {
       await noSideScroll(page)
     })
 
-    // NOTE: Stages 4e and 4f, at 375 px. Entries, *not applicable*, the save
+    // NOTE: At 375 px. Entries, *not applicable*, the save
     // states, two tabs of one author, and a fixture that fills every item of
     // both built-in templates (entered through the API in bulk, read back and
     // compared with the expected JSON). The invented panel template cannot be
@@ -1175,7 +1175,7 @@ const main = async (): Promise<void> => {
       await page.waitForTimeout(300)
       assert.equal(dialogType, 'beforeunload', 'leaving with unsaved edits did not ask')
       assert.equal(page.isClosed(), false, 'the page closed although the author stayed')
-      // Leaving by a link of the app asks as well (stage 4 review), and staying keeps the edit.
+      // Leaving by a link of the app asks as well, and staying keeps the edit.
       await page.getByRole('link', { name: 'Home' }).click()
       await page.getByRole('heading', { name: 'This report has changes that are not saved' }).waitFor()
       await shot(page, 'save-2-leave-asked')
@@ -1370,7 +1370,7 @@ const main = async (): Promise<void> => {
       }
     })
 
-    // NOTE: Stage 4g, at 375 px: two authors start from the same draft. Each
+    // NOTE: At 375 px: two authors start from the same draft. Each
     // adds a different allegation and both change the investigator. The first
     // shares; the second sees the comparison with only the investigator as a
     // conflict and both allegations taken automatically, resolves, and gets
@@ -1666,7 +1666,7 @@ const main = async (): Promise<void> => {
       assert.ok(stored.includes('Person 1'), 'the stored redacted section has no label')
     })
 
-    // NOTE: Stage 6a, at 375 px: an author publishes Revision 1 to a committee
+    // NOTE: At 375 px: an author publishes Revision 1 to a committee
     // with a deadline after confirming the preview, sees the round and the
     // WhatsApp buttons (a link holding the deadline and no report content), then
     // publishes Revision 2 and Revision 1 shows as superseded.
@@ -1963,7 +1963,7 @@ const main = async (): Promise<void> => {
       await ravi.context().close()
       await rhea.context().close()
     })
-    // NOTE: Stage 6d and 6e at 375 px with three accounts: the author (Pia) and
+    // NOTE: At 375 px with three accounts: the author (Pia) and
     // two reviewers (Rhea, Ravi) of one committee. The closing path of a report
     // whose template has a conclusion, then the grid and the audit log.
     await step('the closing path on a phone: change request and comments, Revision 2, approvals on Revision 2 only, the round decided, the conclusion, the closing revision, the archive; then the grid and the audit log', async () => {
@@ -2431,12 +2431,11 @@ const main = async (): Promise<void> => {
       await shot(pia, 'downloads-3-approval-record-375')
     })
 
-    // NOTE: Stage 9, at 1280 px: a template editor copies the intake template,
+    // NOTE: At 1280 px: a template editor copies the intake template,
     // adds a section and a choice with an ending, meets a validation error next
     // to its row, fixes it, previews and publishes after the differences; an
     // author then starts a report from the new version. At 375 px the list
-    // opens without sideways scrolling. The pilot script's short run of a
-    // published template is covered in stage 10.
+    // opens without sideways scrolling.
     await step('a template editor copies the intake template, adds a section and an ending choice, fixes a validation error, previews and publishes; an author starts a report from the new version', async () => {
       const pia = pilotPage
       assert.ok(pia !== undefined, 'no pilot page')
@@ -2518,7 +2517,7 @@ const main = async (): Promise<void> => {
       await shot(pia, 'templates-8-list-375')
     })
 
-    // NOTE: Stage 9d: an administrator sets the theme. At 375 px: uploads a
+    // NOTE: An administrator sets the theme. At 375 px: uploads a
     // synthetic logo, types a colour that is unreadable and meets the refusal,
     // fixes it, changes the PDF footer, looks at the sample PDF, saves; the app
     // shows the new organisation name and colour with no reload. At 1280 px the
@@ -2673,7 +2672,7 @@ const main = async (): Promise<void> => {
       await shot(pia, 'theme-6-downloads-1280')
     })
 
-    // NOTE: Stage 10a. The pilot now holds every kind of screen: reports with
+    // NOTE: The pilot holds every kind of screen: reports with
     // drafts, revisions, a decided round, a closing revision and an archive;
     // an inbox; a theme. One more author, in a unit of their own, has nothing
     // at all, to see every screen empty. Then the sweep of every route.

@@ -11,7 +11,7 @@ import {
   validateTheme,
 } from '@case-desk/domain'
 
-// NOTE: The theme screen's form (stage 9d), kept as plain text the way it is
+// NOTE: The theme screen's form, kept as plain text the way it is
 // typed. `candidateOf` turns it into what the domain checks, and the domain
 // decides what is a problem (`validateTheme`): the screen never has a second
 // opinion about contrast, fonts or tokens, it only places each problem next to

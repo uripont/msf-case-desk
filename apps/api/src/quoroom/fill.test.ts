@@ -7,7 +7,7 @@ import {
 
 import { SCENARIOS, type World, makeWorld } from './testkit'
 
-// NOTE: Stage 4e: a report that fills every item of the template, entries and
+// NOTE: A report that fills every item of the template, entries and
 // nested entries included, is stored exactly as sent, section by section, and
 // holds none of the template's instruction texts. This covers the invented
 // panel template, which the browser check (built-in templates only) cannot

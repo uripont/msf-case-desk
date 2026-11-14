@@ -27,7 +27,7 @@ import {
 } from './template-form'
 import { type TemplateProblem, validateTemplate } from './template-validation'
 
-// NOTE: The edits of the template editor (stage 9), as plain data, applied
+// NOTE: The edits of the template editor, as plain data, applied
 // by one pure function. The editor never builds a row itself: a new ID comes
 // with the edit (`freshId`, from a counter the caller keeps), so the same
 // edits always give the same form. An edit that makes no sense (moving the

@@ -20,8 +20,8 @@ import {
 } from './common'
 
 // NOTE: Case files, reports, working copies, sharing, history, redaction
-// confirmation, images and publishing (stages 4 to 6, author side). Everything
-// here is for members of the drafting role. Payloads stay within the spike 3
+// confirmation, images and publishing (author side). Everything
+// here is for members of the drafting role. Payloads stay within the measured
 // limits: a section per request, never a whole document.
 
 const DraftNumber = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -132,7 +132,7 @@ export const DraftingInfo = Schema.Struct({
   hasUnsharedChanges: Schema.Boolean,
 })
 
-// ---- Sharing (spike 3) -------------------------------------------------------------------
+// ---- Sharing -------------------------------------------------------------------
 
 // NOTE: Mirrors `DraftConflict` of compare.ts. The sides hold only the
 // conflicting item, never the document.
@@ -282,7 +282,7 @@ export const RevisionHeader = Schema.Struct({
 export type RevisionHeader = typeof RevisionHeader.Type
 
 // NOTE: Sharing on a stale base does not fail: it answers with the
-// comparison (stage 2c). The two shares of a race give one Draft N and one
+// comparison. The two shares of a race give one Draft N and one
 // comparison.
 export const ShareOutcome = Schema.Union([
   Schema.Struct({

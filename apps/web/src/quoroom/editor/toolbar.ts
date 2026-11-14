@@ -1,6 +1,6 @@
 import { Array, Option, Record } from 'effect'
 
-// NOTE: The pure part of the editor toolbar (stage 4c). The toolbar is drawn by
+// NOTE: The pure part of the editor toolbar. The toolbar is drawn by
 // the editor element, because what it shows (which mark is on at the caret,
 // whether undo is possible, whether the caret is inside a table) changes with
 // every ProseMirror transaction and would otherwise travel through Messages on

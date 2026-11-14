@@ -8,7 +8,7 @@ import { Failure } from './quoroom/failure'
 import * as Link from './quoroom/link'
 import { LoadState } from './quoroom/unit'
 
-// NOTE: Stage 10a. A session that ends keeps what the screens hold and asks for
+// NOTE: A session that ends keeps what the screens hold and asks for
 // the password again at the same address; Escape answers an open question.
 
 describe('a session that ends', () => {

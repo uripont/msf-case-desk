@@ -31,7 +31,7 @@ import {
   richContent,
 } from './testkit'
 
-// NOTE: Stage 7: the notification pass, with an injected clock and the real RPC
+// NOTE: The notification pass, with an injected clock and the real RPC
 // stack (invented people only). What it must produce for a scripted scenario
 // (D12, D19), that nothing is sent twice (two passes at once, a pass that stops
 // halfway), nothing after a round is decided or a newer revision exists, retries

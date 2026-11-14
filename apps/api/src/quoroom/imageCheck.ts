@@ -1,4 +1,4 @@
-// NOTE: What an uploaded image may carry (stage 4 review, D3). The browser
+// NOTE: What an uploaded image may carry (D3). The browser
 // always draws the picture on a canvas and saves that again, which leaves no
 // metadata; the server does not trust that, so it refuses a file that carries
 // any, instead of stripping (stripping means rewriting the file in the

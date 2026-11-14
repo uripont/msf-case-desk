@@ -22,7 +22,7 @@ import {
   reviewerVersion,
 } from './source'
 
-// NOTE: Stage 8+9 review, findings 2, 6, 12 and 13: what the PDF source asks
+// NOTE: What the PDF source asks
 // the server and what it keeps, with a fake client and invented data.
 
 const EMPTY_SECTION: SectionContent = { values: {}, sections: {} }

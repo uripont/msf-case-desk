@@ -6,7 +6,7 @@ import { NOW } from './publish.fixtures'
 import { authorModel } from './quoroom.fixtures'
 import * as Notifications from './quoroom/notifications'
 
-// NOTE: Stage 7: marking read, the unread count and its poll.
+// NOTE: Marking read, the unread count and its poll.
 
 const SCOPE = { reportId: '', generation: 1 }
 

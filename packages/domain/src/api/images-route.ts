@@ -1,9 +1,9 @@
 import { Schema } from 'effect'
 
 import { ApiId, Count } from './common'
-import { ImageMeta, ImageMime, ImageOwner } from './reports'
+import { ImageMeta, ImageMime } from './reports'
 
-// NOTE: The `/api/images` route (D5, spike 3). Image bytes never go through
+// NOTE: The `/api/images` route (D5). Image bytes never go through
 // the RPC: they would be decoded and re-encoded by its Schemas. The route is
 // authenticated by the same session cookie and authorizes like the RPC does.
 // This file only describes its requests and responses.
@@ -83,25 +83,6 @@ export type ImageChunkResult = typeof ImageChunkResult.Type
 
 // ---- Read ------------------------------------------------------------------------------------------
 
-// NOTE: Where the caller reads the image from. Reading is allowed only if the
-// image is referenced by that version, which the caller may read; for a
-// `redacted` role only if it is marked safe there. One query decides.
-export const ImageReadContext = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal('working_copy'), reportId: ApiId }),
-  Schema.Struct({
-    kind: Schema.Literal('draft'),
-    reportId: ApiId,
-    draft: Count,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal('revision'),
-    reportId: ApiId,
-    revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
-  }),
-  // NOTE: The theme's logo, readable by every signed-in account.
-  Schema.Struct({ kind: Schema.Literal('theme') }),
-])
-
 export const ImageReadQuery = Schema.Struct({
   context: Schema.Literals(['working_copy', 'draft', 'revision', 'theme']),
   report: Schema.optionalKey(ApiId),
@@ -163,5 +144,3 @@ export const ImageRouteError = Schema.Struct({
   message: Schema.String.check(Schema.isMaxLength(200)),
 })
 export type ImageRouteError = typeof ImageRouteError.Type
-
-export const ImageRouteOwner = ImageOwner

@@ -31,7 +31,7 @@ import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { alertText, loadingText, statusText } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: Downloads (stage 8): a PDF of any draft or revision, original or as
+// NOTE: Downloads: a PDF of any draft or revision, original or as
 // stored for redacted roles, the approval record, and all of them as one zip.
 // Nothing is stored: each PDF is made here, in the browser, from the content
 // the server returns to this person, and handed to the browser as a file. The

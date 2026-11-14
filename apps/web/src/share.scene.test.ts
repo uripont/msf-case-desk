@@ -19,7 +19,7 @@ import * as Share from './quoroom/share'
 import { REPORT_ID, detailOf } from './report.fixtures'
 import { view } from './view'
 
-// NOTE: Stage 4 review: a comparison whose list of automatic changes was
+// NOTE: A comparison whose list of automatic changes was
 // capped says how many more there were.
 
 const comparisonScreen = (automaticOmitted: number | undefined) =>
@@ -84,7 +84,7 @@ describe('the comparison of a share', () => {
   })
 })
 
-// NOTE: Stage 5: the preview of exactly what is shared, redacted by default.
+// NOTE: The preview of exactly what is shared, redacted by default.
 
 const previewScreen = () =>
   [

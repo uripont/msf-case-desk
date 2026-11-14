@@ -1,8 +1,6 @@
 import { Effect } from 'effect'
 
 import {
-  type DraftHeader,
-  type DraftRecord,
   type ReportSummary,
   type RevisionHeader,
   type RoundView,
@@ -10,8 +8,6 @@ import {
   type Template,
   RoundSummary as RoundSummarySchema,
   SectionRef as SectionRefSchema,
-  draftLabel,
-  draftingRoleOf,
   revisionTitle,
   tallyRound,
 } from '@case-desk/domain'
@@ -90,21 +86,6 @@ export const sectionRefsOf = (
     size: utf8Length(row.content),
     notApplicable: parseSection(row.content).notApplicable !== undefined,
   }))
-
-export const draftHeaderOf = (
-  draft: DraftRecord,
-  redactedHash: string,
-): DraftHeader => ({
-  number: draft.number,
-  label: draftLabel(draft.number),
-  ...(draft.baseNumber === null ? {} : { baseDraft: draft.baseNumber }),
-  ...(draft.authorId === null || draft.authorName === null
-    ? {}
-    : { sharedBy: { id: draft.authorId, name: draft.authorName } }),
-  sharedAt: draft.sharedAt,
-  redactedHash,
-  redactionConfirmed: draft.redactionConfirmedAt !== null,
-})
 
 export const revisionHeaderOf = (
   loaded: Loaded,
@@ -207,10 +188,5 @@ export const roundViewOf = (
     tally: tallyRound(loaded.template, flowRound),
   }
 }
-
-export const memberRefs = (loaded: Loaded) =>
-  loaded.members
-    .filter(member => member.roleId === draftingRoleOf(loaded.template)?.id)
-    .map(member => ({ id: member.userId, name: member.name }))
 
 export { flowOf, Effect }

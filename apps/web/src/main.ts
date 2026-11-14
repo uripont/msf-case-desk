@@ -91,7 +91,7 @@ export const ConfigLoad = defineTaggedUnion({
 export type ConfigLoad = typeof ConfigLoad.Type
 
 // NOTE: An address the author asked for while the report has edits that are
-// not saved. The page asks first (stage 4 review): stay, wait for the save and
+// not saved. The page asks first: stay, wait for the save and
 // then go, or go without it. Nothing leaves a report with unsaved edits
 // silently.
 export const Leaving = Schema.Struct({

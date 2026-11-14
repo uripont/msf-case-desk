@@ -41,7 +41,7 @@ import {
   settle,
 } from '@case-desk/domain'
 
-// NOTE: The pieces every Quoroom handler shares (stage 2c): the injected
+// NOTE: The pieces every Quoroom handler shares: the injected
 // clock and ID services, the repository with its errors mapped to the typed
 // `StorageUnavailable`, loading a report with its flow (settling the round
 // lazily), authorization through `authorize`, and the mapping from domain
@@ -100,10 +100,6 @@ export const clientAddress = (
   return policy.kind === 'cloudflare' ? 'unknown' : SELF_HOSTED_BUCKET
 }
 
-export const QuoroomNetworkCloudflare = Layer.succeed(QuoroomNetwork, {
-  kind: 'cloudflare',
-})
-
 export const QuoroomClockLive = Layer.succeed(QuoroomClock, {
   now: Effect.sync(() => Date.now()),
 })
@@ -112,11 +108,6 @@ export const QuoroomIdsLive = Layer.succeed(QuoroomIds, {
   next: prefix =>
     Effect.sync(() => `${prefix}-${crypto.randomUUID().replaceAll('-', '')}`),
 })
-
-export const QuoroomConfigLive = Layer.succeed(
-  QuoroomConfig,
-  DEFAULT_NOTIFICATION_CONFIG,
-)
 
 // NOTE: the services for Cloudflare. Anywhere else, `QuoroomServicesFor`
 // names where addresses can be trusted from.
@@ -172,15 +163,23 @@ type Wrapped<Api> = {
 }
 export type Store = Wrapped<ReportRepositoryApi>
 
+// NOTE: a storage error of either repository, as the API reports it.
+export const fromRepository = <A>(
+  effect: Effect.Effect<A, { readonly message: string }>,
+): Effect.Effect<A, StorageUnavailable> =>
+  effect.pipe(
+    Effect.mapError(error => new StorageUnavailable({ message: error.message })),
+  )
+
 export const wrapRepository = (api: ReportRepositoryApi): Store =>
   Object.fromEntries(
     Object.entries(api).map(([name, operation]) => [
       name,
       (...args: Array<unknown>) =>
-        (operation as (...a: Array<unknown>) => Effect.Effect<unknown, Error>)(
-          ...args,
-        ).pipe(
-          Effect.mapError(error => new StorageUnavailable({ message: error.message })),
+        fromRepository(
+          (operation as (...a: Array<unknown>) => Effect.Effect<unknown, Error>)(
+            ...args,
+          ),
         ),
     ]),
   ) as unknown as Store
@@ -200,7 +199,7 @@ export const store: Effect.Effect<Store, never, ReportRepository> =
     return made
   })
 
-// NOTE: what the notification pass (stage 7) calls once per run: unreferenced
+// NOTE: what the notification pass calls once per run: unreferenced
 // images and abandoned staged shares older than a day, at most
 // `CLEANUP_LIMIT` of each, so one run is bounded.
 export const STALE_AFTER_MS = 24 * 3_600_000

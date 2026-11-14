@@ -17,7 +17,7 @@ import {
   hasTransparency,
 } from './plan'
 
-// NOTE: Preparing a picture in the browser (stage 4d, D3): decode it, shrink it
+// NOTE: Preparing a picture in the browser (D3): decode it, shrink it
 // to at most 1600 pixels on the longest side, and save it again as JPEG (a
 // photo) or PNG (when it has transparency). Drawing the picture on a canvas and
 // saving that is what removes its metadata (EXIF, GPS, camera and time); the

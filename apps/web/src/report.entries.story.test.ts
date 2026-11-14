@@ -22,7 +22,7 @@ import {
   staleSaveFacts,
 } from './report.fixtures'
 
-// NOTE: Stage 4e and 4f, as a person would drive them: entries, *not
+// NOTE: As a person would drive them: entries, *not
 // applicable*, and the save states, checked on the Model and the Commands.
 
 const reportMessage = (message: Report.Message) =>

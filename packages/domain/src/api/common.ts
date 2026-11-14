@@ -95,7 +95,7 @@ export type Problem = typeof Problem.Type
 
 // ---- Errors -----------------------------------------------------------------
 
-// NOTE: One answer for "forbidden" and "does not exist" (stage 2). It carries
+// NOTE: One answer for "forbidden" and "does not exist". It carries
 // nothing, so it cannot tell the two apart.
 export class NotFound extends Schema.TaggedError<NotFound>()('NotFound', {}) {}
 

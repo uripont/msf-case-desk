@@ -34,7 +34,7 @@ import {
 } from './core'
 import { member } from './support'
 
-// NOTE: Templates and the theme (stage 9). A template version is immutable
+// NOTE: Templates and the theme. A template version is immutable
 // once published: a draft is saved in place, publishing freezes it and logs
 // what changed since the previous version, and nothing ever rewrites a
 // published one. A draft only has to fit the schema; whether it can be

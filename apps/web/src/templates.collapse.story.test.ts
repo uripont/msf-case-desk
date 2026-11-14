@@ -20,7 +20,7 @@ import {
 } from './templates.fixtures'
 import { view } from './view'
 
-// NOTE: Stage 9d: the long editor folds. Closed by default except the sections
+// NOTE: The long editor folds. Closed by default except the sections
 // panel; opening is remembered; a problem shows its panel and its section
 // open; a section just added is open.
 

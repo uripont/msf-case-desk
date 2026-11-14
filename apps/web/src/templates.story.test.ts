@@ -22,7 +22,7 @@ import {
   scopeOf,
 } from './templates.fixtures'
 
-// NOTE: Stage 9b and 9c, as a person would drive them: the invented panel
+// NOTE: As a person would drive them: the invented panel
 // template built from a blank draft in the editor, one edit at a time; adding
 // rows with generated IDs; saving; publishing only after the differences have
 // been shown. Checked on the Model and the Commands.

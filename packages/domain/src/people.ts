@@ -6,7 +6,7 @@ import { foldedKey, makeMatcher } from './redaction'
 // NOTE: The people of a report and their aliases (D14, section 5). The list is
 // edited in working copies like content and copied into every shared draft. A
 // person has a stable ID, the name as it appears in the report and the aliases
-// that replace it for redacted roles (redaction itself is stage 1e).
+// that replace it for redacted roles.
 
 export const PersonId = EntryId
 

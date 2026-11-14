@@ -41,7 +41,7 @@ import {
 } from './report.fixtures'
 import { view } from './view'
 
-// NOTE: Stage 6d and 6e, with invented people: the status grid (each fact
+// NOTE: With invented people: the status grid (each fact
 // with its time), the actions on an open round (extend, remove with the rule
 // consequence shown first), the audit log, and the outcome of a decided round
 // on the report screen.

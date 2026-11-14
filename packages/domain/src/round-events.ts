@@ -1,9 +1,9 @@
-import { type ReviewDecision, standingDecisions } from './approval'
+import type { ReviewDecision } from './approval'
 import type { DecidedBy, Round } from './report-flow'
 
 // NOTE: The facts of a report that carry a time (D12, step 10 of the
 // pipeline). The report flow (report-flow.ts) holds the state and no clock, so
-// the times live in an event log that stage 2 stores: when a draft was shared,
+// the times live in an event log that the server stores: when a draft was shared,
 // when a revision was published, when someone was told, opened, reminded,
 // reviewed, and when a round was decided. The grid and the notification rules
 // both read this one log. Times are milliseconds since the epoch.
@@ -122,19 +122,3 @@ export const decidedAtOf = (
   const last = decisions[decisions.length - 1]
   return last?.at ?? publishedAtOf(events, round.revision)
 }
-
-// NOTE: The standing decision of each reviewer, from the log.
-export const standingFacts = (
-  events: ReadonlyArray<ReportEvent>,
-  revision: number,
-): ReadonlyMap<string, ReviewFact> => {
-  const standing = new Map<string, ReviewFact>()
-  for (const review of reviewFactsOf(events, revision)) {
-    if (review.decision !== 'comment') standing.set(review.reviewerId, review)
-  }
-  return standing
-}
-
-// NOTE: Who has decided in the round according to the flow itself.
-export const decidedReviewers = (round: Round): ReadonlySet<string> =>
-  new Set(standingDecisions(round.reviews, round.revision).keys())

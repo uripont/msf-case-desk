@@ -16,7 +16,7 @@ import { readOnlySection } from './contentView'
 import { topLevelSections } from './draftText'
 import { markedChildren } from './marked'
 
-// NOTE: The original and the redacted view of a working copy (stage 5, D14),
+// NOTE: The original and the redacted view of a working copy (D14),
 // computed here in the browser with the same domain functions the server uses
 // when a section is shared (`redactedSectionOf`, `redactorFor`), so what the
 // author reads is the text that will be stored for the redacted roles. Every
@@ -46,22 +46,6 @@ export const labelledPeople = (
     name: person.label,
     aliases: [],
   }))
-
-// NOTE: What a redacted role reads of one top-level section.
-export const redactedContents = (
-  input: PreviewInput,
-): Readonly<Record<string, SectionContent>> =>
-  Object.fromEntries(
-    Array.map(topLevelSections(input.template), section => [
-      section.id,
-      redactedSectionOf(
-        input.template,
-        input.people,
-        section.id,
-        input.contents[section.id] ?? EMPTY_SECTION,
-      ),
-    ]),
-  )
 
 export const redactedCaseTitle = (
   people: ReadonlyArray<Person>,

@@ -13,7 +13,7 @@ import {
 } from './theme.screen.fixtures'
 import { view } from './view'
 
-// NOTE: Stage 9d, as seen on the page: the contrast problem is beside the
+// NOTE: As seen on the page: the contrast problem is beside the
 // colour, the refusal is stated, a good theme is saved, the page applies it.
 
 describe('the theme screen', () => {

@@ -5,7 +5,6 @@ import {
   type RichTextDoc,
   canonicalRichText,
   decodeRichText,
-  isRichTextEmpty,
   offsetsOfProseMirrorRange,
 } from '@case-desk/domain'
 
@@ -54,8 +53,6 @@ export const richTextForItem = (maybeDoc: Option.Option<RichTextDoc>): string =>
     onNone: () => EMPTY_RICH_TEXT_JSON,
     onSome: serializeRichText,
   })
-
-export const isDocumentEmpty = isRichTextEmpty
 
 // NOTE: The anchor of the editor's selection, in the text offsets shared with
 // the read-only view (`richtext-offsets.ts` in the domain), from the editor's

@@ -12,7 +12,7 @@ import {
 import { TemplateId } from '../template'
 
 // NOTE: Audit log, notification inbox, WhatsApp link data and downloads
-// metadata (stages 6 to 8).
+// metadata.
 
 // ---- Audit ---------------------------------------------------------------------------------
 

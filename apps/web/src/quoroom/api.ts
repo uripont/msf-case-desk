@@ -9,7 +9,7 @@ import {
   QuoroomRpcs,
 } from '@case-desk/domain'
 
-// NOTE: The iteration 3 clients. The session cookie is set by the Worker and
+// NOTE: The API clients. The session cookie is set by the Worker and
 // the browser sends it; no token is ever read or written here. A link token
 // is only sent in the body of `InspectLink` and `ConsumeLink`, never in a URL.
 const makeSigned = RpcClient.make(QuoroomRpcs)

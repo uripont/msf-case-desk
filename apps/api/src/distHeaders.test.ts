@@ -11,7 +11,6 @@ import { describe, expect, test } from 'vitest'
 // built app does, for `app` and for the pilot stack (Alchemy reads it from the
 // assets directory). A link token sits in the `/link#token` fragment, and
 // this is what keeps the page from telling another site where it came from.
-// The live check comes in stage 10.
 describe('built app', () => {
   test('dist carries Referrer-Policy: no-referrer for every path', () => {
     const out = mkdtempSync(join(tmpdir(), 'quoroom-dist-'))

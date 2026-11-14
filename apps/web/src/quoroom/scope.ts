@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 
-// NOTE: The identity of the page that started a Command (stage 4 review). A
+// NOTE: The identity of the page that started a Command. A
 // Command's answer can arrive after the page was left, entered again for
 // another report, or reset. Every Command of the report, share and history
 // screens is started with the scope of its Model and its answer carries it

@@ -20,10 +20,10 @@ import type {
 import type { Item, Section, Template } from './template'
 import type { Theme } from './theme'
 
-// NOTE: The PDF document description (D4, stage 8). A pure function from a
+// NOTE: The PDF document description (D4). A pure function from a
 // template, content (the original, or the already redacted content of a
 // redacted role), the theme and the version's metadata to a renderer-neutral
-// description: parts with blocks. Stage 8 maps it to pdfmake; nothing here
+// description: parts with blocks. `packages/pdf` maps it to pdfmake; nothing here
 // imports a PDF library, a font file or an image.
 //
 // - The description is complete without the renderer: headings carry their

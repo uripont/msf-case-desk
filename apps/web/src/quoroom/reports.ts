@@ -31,7 +31,7 @@ import {
 } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: The authors' reports (stage 4a): their reports in a unit by state and
+// NOTE: The authors' reports: their reports in a unit by state and
 // case file, with paging; the unit's case files, which authors of a report on
 // one can retitle; and a new report from a published template version, which
 // starts at Draft 0, the empty template, and makes its creator its first

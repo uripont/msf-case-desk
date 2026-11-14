@@ -82,7 +82,7 @@ button {
   }
 }
 
-/* The rich-text editor element (stage 4c). It draws its own toolbar. */
+/* The rich-text editor element. It draws its own toolbar. */
 .quoroom-editor {
   display: flex;
   min-width: 0;

@@ -15,7 +15,7 @@ import { type FontDefinition, definitionOf, fontName } from './fonts'
 import { type Script, splitByScript } from './scripts'
 
 // NOTE: The pure mapping from the document description of `packages/domain`
-// to a pdfmake document definition (D4, stage 8). It has no PDF library, no
+// to a pdfmake document definition (D4). It has no PDF library, no
 // font file and no image in it: fonts are named (`fonts`, `fontFiles`) and the
 // images arrive as data URIs, both supplied by an adapter (the browser's or
 // Node's), so the same function runs in both and the same text comes out.

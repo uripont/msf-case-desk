@@ -19,7 +19,7 @@ const caseDesk :Workerd.Worker = (
   bindings = [
     (name = "ASSETS", service = "assets"),
     (name = "DATABASE", durableObjectNamespace = "LocalDatabase"),
-    # The notification pass (stage 7). `POST /api/tick` needs `TICK_SECRET` (unset: the
+    # The notification pass. `POST /api/tick` needs `TICK_SECRET` (unset: the
     # route answers 404); a host cron calls it, because workerd fires no Cron Triggers.
     # The timings, in minutes, are optional (D12).
     (name = "TICK_SECRET", fromEnvironment = "TICK_SECRET"),

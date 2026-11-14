@@ -12,7 +12,7 @@ import type { NotificationJob } from './notifications'
 import type { ReportState } from './report-flow'
 import type { RepositoryError } from './repository'
 
-// NOTE: The storage contract of iteration 3 (stage 2b). One Effect service,
+// NOTE: The storage contract of iteration 3. One Effect service,
 // two implementations (SQL in apps/api, in memory in `testing/report-repository-memory.ts`)
 // and one contract suite (`testing/reportRepositoryContract.ts`) that both
 // pass. It is storage only: no authorization and no rules. Handlers read, ask
@@ -20,7 +20,7 @@ import type { RepositoryError } from './repository'
 //
 // Conventions.
 // - JSON (content, people, template definitions, theme) is text the handler
-//   parses only where it must look inside (spike 3). The repository never
+//   parses only where it must look inside. The repository never
 //   interprets it, except `image_refs` and the job and participant lists,
 //   which SQLite expands with `json_each`.
 // - Time and IDs come in as arguments; the domain has no clock.
@@ -226,7 +226,7 @@ export type ReportRecord = Readonly<{
   latestRevision: number | null
 }>
 
-// NOTE: what the notification pass reads of a report (stage 7), in one round
+// NOTE: what the notification pass reads of a report, in one round
 // trip. It is the same data as `getReport`, `listMembers`, `listRounds`,
 // `listReviews` and `listRevisions`, trimmed: no person's name is read (`name`
 // is empty in the members and participants), and `latestDraft` and
@@ -597,12 +597,6 @@ export type StagedSectionInput = Readonly<{
   now: number
 }>
 
-export type JobInput = Readonly<{
-  roundId: string | null
-  job: NotificationJob
-  now: number
-}>
-
 export type ParticipantInput = Readonly<{ userId: string; roleId: string }>
 
 export type PublishInput = Readonly<{
@@ -831,7 +825,7 @@ export type DecideOutcome =
 // ---- The service --------------------------------------------------------------------------------
 
 export interface ReportRepositoryApi {
-  // -- units, accounts, grants, links (stage 3 builds screens on these)
+  // -- units, accounts, grants, links
   readonly createUnit: (
     unit: UnitRecord,
   ) => Eff<Readonly<{ _tag: 'Created' }> | Refused<'duplicate'>>
@@ -1381,7 +1375,7 @@ export interface ReportRepositoryApi {
   >
 
   // -- notification jobs, inbox, events, audit
-  // NOTE: the state machine of a job (stage 7):
+  // NOTE: the state machine of a job:
   //   pending -> claimed (lease) -> done | skipped | failed
   //   claimed -> claimed        when the lease has run out (a pass stopped halfway;
   //                             counts a deferral, not an attempt)

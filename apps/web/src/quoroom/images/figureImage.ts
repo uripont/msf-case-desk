@@ -3,7 +3,7 @@ import { Option } from 'effect'
 import { loadImage } from './read'
 import { IMAGE_TAG, imageContextToken, parseImageContext } from './spec'
 
-// NOTE: The element that shows one stored image (stage 4d), in the editor and in
+// NOTE: The element that shows one stored image, in the editor and in
 // the read-only rich-text view. It fetches the image through the image route
 // with the session cookie (never a public address), shows the picture in an
 // `<img>` through an object URL, and revokes that URL and stops the request

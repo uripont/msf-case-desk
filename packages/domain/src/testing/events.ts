@@ -4,7 +4,7 @@ import { latestRound } from '../report-flow'
 import type { ReportEvent } from '../round-events'
 import { AUTHOR_IDS, type Run } from './reports'
 
-// NOTE: Test support: the event log a stage 2 server would have written for a
+// NOTE: Test support: the event log the server would have written for a
 // generated run of the report lifecycle. Every successful event leaves its
 // facts: a shared draft, a published revision with everyone told at once, a
 // review (with comments on every second one). Times are the run's own.

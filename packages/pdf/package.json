@@ -6,9 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
-    "./node": "./src/node.ts",
-    "./testing": "./src/testing/extract.ts",
-    "./testing/documents": "./src/testing/documents.ts"
+    "./testing": "./src/testing/extract.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

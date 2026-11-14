@@ -21,8 +21,8 @@ import {
 } from './richtext'
 import type { Item, Section, Template } from './template'
 
-// NOTE: Three-way comparison of two drafts against their common base (stage 1d,
-// used by sharing in stage 4g). "Ours" is the working copy being shared,
+// NOTE: Three-way comparison of two drafts against their common base, used
+// when a working copy is shared. "Ours" is the working copy being shared,
 // "theirs" the draft shared in the meantime, "base" the draft both started
 // from.
 //
@@ -100,8 +100,6 @@ export type DraftConflict =
       titles?: Readonly<Record<string, string>>
     }> &
       Sides<ReadonlyArray<string>>)
-
-export type ConflictKind = DraftConflict['kind']
 
 // NOTE: `edited` is allowed only for a `value` conflict whose `richText` is
 // true: the author's own version of the rich text item.

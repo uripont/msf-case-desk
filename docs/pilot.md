@@ -95,7 +95,7 @@ At the end of the pilot, the authors download what they need, then the operator 
 **Look without reading data.**
 
 - `pnpm smoke https://pilot.<subdomain>.workers.dev` checks the app, the health route and that the API refuses requests without a session. It reads no data.
-- The Worker's logs keep errors and the counts of each notification pass, never request bodies or report text (checked in stage 10 by searching a test environment's logs for invented text). Read them in the dashboard: *Workers & Pages*, `pilot`, *Logs*. New kinds of errors also arrive by e-mail if the alerts stack is deployed ([`self-hosting.md`](self-hosting.md)).
+- The Worker's logs keep errors and the counts of each notification pass, never request bodies or report text (checked by searching a test environment's logs for invented text, see [`decisions.md`](decisions.md), "Logs and CPU"). Read them in the dashboard: *Workers & Pages*, `pilot`, *Logs*. New kinds of errors also arrive by e-mail if the alerts stack is deployed ([`self-hosting.md`](self-hosting.md)).
 - Usage: *Workers & Pages* and *D1* in the dashboard show requests, CPU and rows against the free plan's daily limits. When a limit is reached the Worker stops until 00:00 UTC.
 
 **Reproduce with invented data**, never with pilot data.
@@ -112,13 +112,12 @@ On a test environment of the pilot stack (real Cloudflare, short reminder timing
 pnpm -s grant-admin --env test-<name> --email admin@example.org --name "Admin Example" \
   --origin https://test-<name>-pilot.<subdomain>.workers.dev > /tmp/admin-link.txt
 pnpm test-env:up test_<name> --fast
-node apps/api/scripts/live-run.mjs pilot https://test-<name>-pilot.<subdomain>.workers.dev \
-  --admin-link-file /tmp/admin-link.txt --out /tmp/live-run
+pnpm rehearsal https://test-<name>-pilot.<subdomain>.workers.dev --admin-link-file /tmp/admin-link.txt
 pnpm test-env:down test_<name>
 rm /tmp/admin-link.txt
 ```
 
-`live-run` drives one report through every step with invented text. It refuses any address that is not local or a test Worker. Only one test environment at a time, and always destroy it afterwards.
+The rehearsal drives the pilot script through the web UI with invented people and text. It refuses any address that is not local or a test Worker. Only one test environment at a time, and always destroy it afterwards.
 
 **Roll back the code.** Migrations only ever add (see [`compatibility.md`](compatibility.md)), so an earlier commit runs on the current database:
 

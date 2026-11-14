@@ -22,7 +22,7 @@ import * as Report from './quoroom/report'
 import { REPORT_ID, SCOPE, detailOf, loadedReport } from './report.fixtures'
 import { view } from './view'
 
-// NOTE: Stage 5: the original and redacted views on the drafting screen, and
+// NOTE: The original and redacted views on the drafting screen, and
 // the people and names screen. Names are invented.
 
 const PEOPLE = [

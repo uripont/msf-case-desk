@@ -1,4 +1,4 @@
-import { Effect, Layer } from 'effect'
+import { Effect } from 'effect'
 
 import type { NotificationJob } from '../notifications'
 import type { ReportState } from '../report-flow'
@@ -14,7 +14,6 @@ import {
   type EventRecord,
   type FinishShareOutcome,
   type GrantRecord,
-  type ImageChunkInput,
   type ImageOwnerRef,
   type ImageRecord,
   type InvitationRecord,
@@ -26,7 +25,6 @@ import {
   type DecideRoundInput,
   type ReplyRecord,
   type ReportRecord,
-  ReportRepository,
   type ReportRepositoryApi,
   type StoreReviewRecord,
   type RevisionRecord,
@@ -41,7 +39,7 @@ import {
 } from '../report-repository'
 import { normaliseEmail } from '../user'
 
-// NOTE: the in-memory twin of the SQL repository (stage 2b). It follows the
+// NOTE: the in-memory twin of the SQL repository. It follows the
 // same rules as the guarded batches, one by one, so the contract suite gives
 // the same answers on both. Everything is synchronous, so each operation is
 // atomic by construction; the SQL version gets the same from `runBatch`.
@@ -3201,12 +3199,3 @@ export const makeMemoryReportRepository = (
 
     return api
   })
-
-export const layerMemoryReport = (
-  options: {
-    readonly sessions?: Array<MemorySession>
-    // NOTE: test seam for the 400 MB guard: bytes already stored.
-    readonly initialImageBytes?: number
-  } = {},
-): Layer.Layer<ReportRepository> =>
-  Layer.effect(ReportRepository, makeMemoryReportRepository(options))

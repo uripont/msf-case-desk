@@ -3,7 +3,7 @@ import { Option } from 'effect'
 import { MAX_INPUT_BYTES, MAX_INPUT_PIXELS, type Size, fitWithin } from './plan'
 
 // NOTE: Reading the size of a picture from its first bytes, before anything is
-// decoded (stage 4 review). A phone or a scanner can make a file of 100 MB or
+// decoded. A phone or a scanner can make a file of 100 MB or
 // of hundreds of megapixels that would use gigabytes of memory when decoded; a
 // small file can too (a compressed PNG of a blank sheet). So `encode.ts` reads
 // the first `HEADER_BYTES` of the file, asks `readHeader` for the pixel size

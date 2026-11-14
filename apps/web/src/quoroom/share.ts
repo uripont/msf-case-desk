@@ -64,8 +64,8 @@ import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { alertText, checkboxField, loadingText, panel, statusText } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: Sharing the author's working copy as the next draft (stage 4g), at
-// `/r/:id/share`. The browser drives the sequence (spike 3): one
+// NOTE: Sharing the author's working copy as the next draft, at
+// `/r/:id/share`. The browser drives the sequence: one
 // `ShareSection` per section, then a guarded `FinishShare`. Progress is shown
 // and a failure can be resumed at the section it stopped on, with the same
 // share ID, so nothing already staged is sent twice. If a draft was shared in

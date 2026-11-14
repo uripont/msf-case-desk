@@ -9,7 +9,7 @@ import {
 } from './richtext'
 
 // NOTE: One coordinate scheme for comment anchors in rich text (iteration 3,
-// D14, stages 4g and 6). The editor's selection and the read-only view's
+// D14). The editor's selection and the read-only view's
 // selection both report anchors in it, so the same words give the same
 // `{ from, to, quoted }`.
 //

@@ -9,7 +9,7 @@ import { authorModel } from './quoroom.fixtures'
 import * as Notifications from './quoroom/notifications'
 import { view } from './view'
 
-// NOTE: Stage 7: the in-app notifications, with invented reports. The lines
+// NOTE: The in-app notifications, with invented reports. The lines
 // are the generic words of D12 and D19, never a case title.
 
 type Entry = typeof NotificationEntry.Type

@@ -1,6 +1,6 @@
 import { MAX_COLWIDTH } from '@case-desk/domain'
 
-// NOTE: Column widths by buttons (stage 4d). ProseMirror's resize handle
+// NOTE: Column widths by buttons. ProseMirror's resize handle
 // needs a mouse or a pen, so on a phone the toolbar widens or narrows the
 // column the caret is in by a fixed step. The step and the limits are pure so
 // they are tested without a browser. The smallest width is the one the editor

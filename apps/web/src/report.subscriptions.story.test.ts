@@ -4,7 +4,7 @@ import { clickedLinkTo, clickedPage } from './fixtures'
 import { subscriptions, update } from './main'
 import { authorModel } from './quoroom.fixtures'
 
-// NOTE: Stage 4 review: the timers of a screen run only while that screen is
+// NOTE: The timers of a screen run only while that screen is
 // shown, and the farewell of an editor is heard on every route.
 
 const dependenciesOf = (name: string, model: typeof authorModel) =>

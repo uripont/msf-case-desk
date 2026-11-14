@@ -1,4 +1,4 @@
-// NOTE: A minimal zip writer for "Download all" (D4, stage 8). Entries are
+// NOTE: A minimal zip writer for "Download all" (D4). Entries are
 // stored, not compressed: a PDF is already compressed, and a store-only writer
 // is about sixty lines and a dependency fewer. It writes the local headers,
 // the central directory and the end record (no zip64: a report's PDFs are a

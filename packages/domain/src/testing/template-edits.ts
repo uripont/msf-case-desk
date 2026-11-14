@@ -2,7 +2,7 @@ import { blankTemplate } from '../blank-template'
 import { type FormEdit } from '../template-form-edit'
 import { type TemplateForm, templateToForm } from '../template-form'
 
-// NOTE: Test support for the template editor (stage 9): the edits a person
+// NOTE: Test support for the template editor: the edits a person
 // would make to build the invented panel template (`PANEL_TEMPLATE`) from a
 // blank draft, one by one. Every ID is given, so the result is the same each
 // time and the template that comes out equals the one in `templates.ts`.

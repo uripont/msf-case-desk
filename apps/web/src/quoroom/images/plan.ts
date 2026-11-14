@@ -7,7 +7,7 @@ import {
   IMAGE_REPORT_LIMIT_BYTES,
 } from '@case-desk/domain'
 
-// NOTE: The pure part of image handling in the browser (stage 4d): how large
+// NOTE: The pure part of image handling in the browser: how large
 // an image may be, what format it is saved in, whether a result is accepted,
 // how it is cut into chunks and what a refusal says. It touches no browser
 // API, so it is unit tested. The parts that do (`encode.ts`, `upload.ts`) only

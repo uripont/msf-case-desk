@@ -46,7 +46,7 @@ Secrets never go into the repository, a log, a URL or a chat. Only their names a
 | `TICK_SECRET` | `workerd` only | In the environment of the `workerd` process (the config reads it with `fromEnvironment`). Generate it with `openssl rand -hex 24` and keep it in a file only the host user can read. Unset, `/api/tick` answers 404 |
 | Cloudflare credentials | Your machine, for Alchemy | `pnpm exec alchemy profile edit --add Cloudflare` stores them in `~/.alchemy`, outside the repository. The pilot commands always use the profile `default` |
 
-On Cloudflare the pilot and demo stacks have no Worker secret today: a Cron Trigger runs the notification pass, so `/api/tick` stays unset (404) there. The WhatsApp credentials of a later stage will be Worker secrets set through Alchemy from the environment.
+On Cloudflare the pilot and demo stacks have no Worker secret today: a Cron Trigger runs the notification pass, so `/api/tick` stays unset (404) there. The WhatsApp credentials, once WhatsApp is built, will be Worker secrets set through Alchemy from the environment.
 
 Non-secret settings are plain variables: the notification timings in minutes `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES` (defaults 0, 2880 and 240: the request at once, reminders 48 h and 4 h before a deadline).
 

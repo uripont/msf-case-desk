@@ -4,7 +4,7 @@ import { IMAGE_ROUTE, ImageChunkRead } from '@case-desk/domain'
 
 import { type ImageContext, imageReadQuery } from './spec'
 
-// NOTE: Reading an image back (stage 4d). The route answers one chunk at a
+// NOTE: Reading an image back. The route answers one chunk at a
 // time as base64 text; the browser decodes it, joins the chunks and makes an
 // object URL for an `<img>`. The request carries the session cookie, so the
 // route authorizes it like the RPC (D5): the image must be referenced by the

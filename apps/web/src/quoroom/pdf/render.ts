@@ -1,7 +1,7 @@
 import type { DocumentDescription } from '@case-desk/domain'
 import { renderPdfInBrowser } from '@case-desk/pdf/browser'
 
-// NOTE: The PDF chunk (stage 8). Only a Command imports this module, with
+// NOTE: The PDF chunk. Only a Command imports this module, with
 // `import()`, so pdfmake and its fonts are fetched the first time someone
 // asks for a PDF and never before. The font files are static `.woff` assets
 // of the `@fontsource` packages; each is fetched when a document needs it.

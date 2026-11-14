@@ -4,7 +4,7 @@ import { Template, TemplateId } from '../template'
 import { Theme } from '../theme'
 import { ApiId, DisplayName, EpochMs, Problem } from './common'
 
-// NOTE: Templates and the theme (stage 9). Template procedures need the
+// NOTE: Templates and the theme. Template procedures need the
 // template editor capability; they give no access to any report. A template
 // version is immutable once published, so a client may cache one by
 // `(templateId, version)`.

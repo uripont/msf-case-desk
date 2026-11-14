@@ -1,6 +1,6 @@
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
-// NOTE: Test support (stage 8): what a reader of a PDF sees, read with
+// NOTE: Test support: what a reader of a PDF sees, read with
 // `pdfjs-dist`, an implementation independent of the one that wrote it.
 
 export const extractPages = async (

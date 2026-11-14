@@ -23,7 +23,7 @@ import { topLevelSections } from '../draftText'
 import { base64ToBytes, loadImage } from '../images/read'
 import type { ImageContext } from '../images/spec'
 
-// NOTE: What a PDF is made from (stage 8): the same requests the reading
+// NOTE: What a PDF is made from: the same requests the reading
 // screens make, never a new one. An author reads a draft or a revision
 // through its draft (original or as stored for redacted roles); a reviewer
 // reads the revision, in the view the server chose for the role. The content

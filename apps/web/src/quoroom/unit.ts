@@ -30,7 +30,7 @@ import {
   textField,
 } from './ui'
 
-// NOTE: The author's unit screens (D13, stage 3a and 3b). Co-authors of a
+// NOTE: The author's unit screens (D13). Co-authors of a
 // report are existing authors of its unit, chosen by ID: an author cannot
 // create one here, and an administrator grants the author capability. What an
 // author can do here is invite a person to take part in the unit's reviews,

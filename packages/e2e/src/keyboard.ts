@@ -1,4 +1,4 @@
-// Stage 10a: keyboard use and a session that ends in the middle of work. Every
+// Keyboard use and a session that ends in the middle of work. Every
 // step is driven with the keyboard alone (no click) where it says so.
 import { strict as assert } from 'node:assert'
 

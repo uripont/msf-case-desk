@@ -1,6 +1,6 @@
 import { Duration, Effect, Option, Stream } from 'effect'
 
-// NOTE: How the unread count is polled (stage 7 review). Every open tab asks
+// NOTE: How the unread count is polled. Every open tab asks
 // for the count, and each ask is a query against the Free plan's budget, so
 // the poll is quiet when nobody is looking: it waits while the tab is hidden,
 // slows from 30 seconds to 5 minutes while the count does not change, and asks

@@ -17,7 +17,7 @@ import {
   sendToTheme,
 } from './theme.screen.fixtures'
 
-// NOTE: Stage 9d as a person would drive it, checked on the Model and the
+// NOTE: As a person would drive it, checked on the Model and the
 // Commands: a colour that makes text unreadable is shown beside the colour and
 // refused on saving, a fix is saved, and the app applies the saved theme
 // without a reload.

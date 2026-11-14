@@ -12,7 +12,7 @@ import {
 } from './common'
 
 // NOTE: Session, accounts, capabilities, units, unit membership, the reviewer
-// registry and committees (stage 3). Sign-in and links are in the public
+// registry and committees. Sign-in and links are in the public
 // group: the Worker sets or clears the session cookie itself, and the token
 // never appears in a response body.
 

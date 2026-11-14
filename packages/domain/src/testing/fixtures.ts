@@ -12,7 +12,7 @@ import {
   type Template,
 } from '../index'
 
-// NOTE: A fixture that fills every item of a template (stage 4e). It is
+// NOTE: A fixture that fills every item of a template. It is
 // deterministic: the same template always gives the same JSON, with entry IDs
 // `e1`, `e2`, ... in document order. Text is `Synthetic text for <item ID>`,
 // so a scan can tell it from any instruction text of the template.

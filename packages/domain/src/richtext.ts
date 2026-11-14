@@ -3,7 +3,7 @@ import { Result, Schema, SchemaIssue } from 'effect'
 // NOTE: The rich text of a report (D3) is our own strict subset of the Tiptap
 // JSON document. This file does not import Tiptap. Anything outside the subset,
 // an unknown node, an unknown mark or an unknown attribute, is refused by
-// `decodeRichText`. The editor wrapper (stage 4) must configure Tiptap to
+// `decodeRichText`. The editor wrapper must configure Tiptap to
 // produce exactly these nodes.
 //
 // Conventions:
@@ -16,8 +16,6 @@ import { Result, Schema, SchemaIssue } from 'effect'
 export const MAX_HEADING_LEVEL = 4
 export const MAX_COLSPAN = 50
 export const MAX_COLWIDTH = 2000
-export const LINK_PROTOCOLS = ['http:', 'https:', 'mailto:', 'tel:'] as const
-
 // NOTE: Link attributes other than `href` and `title` are Tiptap's defaults
 // and nothing more: fixed values only, so a free string can never carry a name
 // past redaction (D14). `canonicalRichText` drops all three.

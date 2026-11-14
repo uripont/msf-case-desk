@@ -122,7 +122,7 @@ import {
 } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: The drafting screen (stage 4b), at `/r/:id`. An author works on their
+// NOTE: The drafting screen, at `/r/:id`. An author works on their
 // own working copy, one top-level section at a time (`SaveSection`): a change
 // to any field saves its section, one save at a time, because the working copy
 // has one save counter and a second request with an old counter is refused.
@@ -131,17 +131,17 @@ import { LoadState } from './unit'
 // content on every change, so a branch that ends the report, and the answer
 // that restores it, show at once.
 //
-// Rich text is edited in the editor element (stage 4c), loaded lazily the
+// Rich text is edited in the editor element, loaded lazily the
 // first time a section with a rich-text item is shown. Its changes arrive as
 // canonical JSON text with a version, are decoded again here, and are saved
 // through the same per-section save as every other item.
 //
-// Stage 4e: repeatable subsections and repeated items are edited here (add,
+// Repeatable subsections and repeated items are edited here (add,
 // remove after a confirmation, reorder, an author title for a subsection,
 // limits with messages), and an item or a section that is optional with a
 // reason can be marked not applicable, with its reason.
 //
-// Stage 4f: saving is a small state machine shown to the author: Saving,
+// Saving is a small state machine shown to the author: Saving,
 // Saved at a time, Not saved and retrying, Offline, and Stale. A save carries
 // the working copy's save counter; if the same author's other tab saved first
 // the server refuses it, nothing is overwritten, the local edit stays on this
@@ -1506,7 +1506,7 @@ const updateCurrent = (model: Model, message: Message) =>
       }),
     }),
 
-    // -- Saving (stage 4f)
+    // -- Saving
     SucceededSaveSection: ({ saveCounter, savedAt }) =>
       startSave(
         modifyFields(model, {
@@ -1773,7 +1773,7 @@ const updateCurrent = (model: Model, message: Message) =>
     }),
     CompletedFocusConfirmation: () => ({ model }),
 
-    // -- Entries (stage 4e)
+    // -- Entries
     ClickedAddEntry: ({ target }) =>
       withTemplate(model, template =>
         Option.match(addRefusal(template, model.contents, target), {

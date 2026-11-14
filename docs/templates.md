@@ -362,28 +362,9 @@ Unnumbered section after the body, required. "Prepared by":
 | **Abbreviations and acronyms** | Optional section, "to be used only in complex reports". Repeatable entry "Abbreviation n" with two text items: the short form and its meaning. Alphabetical order is up to the author |
 | **List of exhibits** | Optional section, repeatable entry "Exhibit n" with items: type (select: document, record of an interview, transcript of an interview; the source gives these three examples, so the list is open), from (text), to (text, optional), people reference (one, optional, for interview records), date (day) and subject (text). The source gives the line pattern "type from sender to addressee, dated …, about …", which the PDF renders from the items. Exhibits are references; no files are attached (plan, section 1) |
 
-## Gaps found
+## How the model covers both forms
 
-D23 had gaps for ten elements. Each is now fixed in the D23 row of the plan. None touches D18, D3, D4 or the role model.
-
-| # | Gap | Element | Fix in D23 |
-| --- | --- | --- | --- |
-| 1 | Numbering was one style per template | The investigation numbers four levels in different styles (upper roman, upper letters, arabic, lower letter with bracket). Front matter and the intake's context part have no number | Numbering is set per level: arabic, roman or letters, upper or lower case, suffix `.` or `)`, or none |
-| 2 | Repeated entries held items only | An allegation is a titled, numbered subsection with its own facts and findings, appears in the contents and nests further | A subsection can be repeatable, with an author-written title, its own number and place in the contents, holding items or subsections |
-| 3 | Entries had no label | "Allegation 1", "Witness 2", "Exhibit 3" | Repeated entries show a numbered label |
-| 4 | No way to show case-file data in a template | Case number on both forms, and on the cover | A read-only case-file value item (reference, unit or title) |
-| 5 | Date items had no precision | Issue date of the investigation is month and year | Date items have day or month precision |
-| 6 | Select and people reference were single answers; options had no code | Several subjects; a complainant choice; recommendation options A to F | Select and people reference may take several answers; select options have a label and an optional code |
-| 7 | Branching allowed one ending answer and ended every later required section | Two jurisdiction questions can each end the report, and the sign-off must still be completed | One or more select items can have an end answer; the template may list sections that stay in force |
-| 8 | Cover and header and footer text were bare strings | The cover is built from items and case data; the legend repeats with page number and case reference; the cover page has a different header | Cover made of lines from fixed text, items or case-file values; header and footer tokens `{page}`, `{pages}`, `{case}`, `{title}`; optionally different on the cover; the template's text overrides the theme's default |
-| 9 | No contents or front matter | Contents with page numbers to three levels; the page count restarts after the front matter | An optional table of contents to a chosen depth; sections marked front matter; page numbering restarts at 1 after them |
-| 10 | No signature element | "Prepared by", the investigator and the case manager sign | A signature block: a name and a date, printed with a signature line. No digital signature |
-
-Not gaps, and why:
-
-- **Executive summary** (optional, in parts), **abbreviations**, **interviewee codes**, **exhibits**, **committee conclusion**: all fit existing constructs once gaps 1 to 10 are fixed.
-- **Different headers per document part** in the investigation's Word file (several header and footer variants for the cover, contents and body): reduced to one header and footer, with a different cover page, as the PDF does not need more.
-- **Letter and roman lists inside rich text**: not reproduced (see above).
+Both forms fit the template model of D23 without special cases: numbering per level (the investigation uses four styles), repeatable titled subsections (an allegation with its facts and findings), numbered entry labels ("Allegation 1"), read-only case-file values, dates with month precision, multiple answers and option codes, several ending answers with sections that stay in force, covers built from items, a table of contents with front matter, and signature blocks. Two things are simplified: the investigation's several header and footer variants become one, with a different cover page, and letter or roman lists inside rich text are not reproduced.
 
 ## Defaults chosen
 

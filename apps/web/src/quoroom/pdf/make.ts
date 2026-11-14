@@ -3,7 +3,7 @@ import { Effect } from 'effect'
 import { type Built, type ImageCache, imagesOf } from './source'
 
 // NOTE: Making a file from a described document and handing it to the
-// browser (stage 8). The PDF library is imported here, when first needed.
+// browser. The PDF library is imported here, when first needed.
 
 export type Made = Readonly<{ name: string; bytes: Uint8Array<ArrayBuffer> }>
 

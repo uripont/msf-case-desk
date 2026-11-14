@@ -25,8 +25,3 @@ export const textButtonClassName = clsx(
   'cursor-pointer text-msf-ink underline decoration-msf-line decoration-1 underline-offset-[6px] transition-colors hover:decoration-msf-red',
   focusRing,
 )
-
-export const outlineButtonClassName = clsx(
-  'inline-flex h-10 min-w-14 cursor-pointer items-center justify-center border border-msf-line px-3 tabular-nums text-msf-ink transition-colors hover:border-msf-red hover:text-msf-red active:bg-msf-mist',
-  focusRing,
-)

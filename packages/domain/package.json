@@ -8,7 +8,6 @@
     "./testing": "./src/testing/repositoryContract.ts",
     "./testing/templates": "./src/testing/templates.ts",
     "./testing/template-edits": "./src/testing/template-edits.ts",
-    "./testing/content": "./src/testing/content.ts",
     "./testing/fixtures": "./src/testing/fixtures.ts",
     "./testing/reports": "./src/testing/reports.ts",
     "./testing/drafts": "./src/testing/drafts.ts",

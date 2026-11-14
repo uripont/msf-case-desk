@@ -24,7 +24,7 @@ import { LoadState } from './unit'
 import { pollUnread } from './unreadPoll'
 import { deadlineText } from './zoned'
 
-// NOTE: The in-app notifications (stage 7): what Quoroom told the account, the
+// NOTE: The in-app notifications: what Quoroom told the account, the
 // newest first, each with a link to the revision or screen it is about. The
 // number not yet read is kept here too, because the navigation shows it on
 // every screen; a poll refreshes it while signed in, slower while nothing changes and

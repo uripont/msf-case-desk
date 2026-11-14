@@ -8,7 +8,7 @@ import { authorModel } from './quoroom.fixtures'
 import * as Inbox from './quoroom/inbox'
 import { view } from './view'
 
-// NOTE: Stage 6b: the reviewer's inbox, with invented reports. Deadlines are
+// NOTE: The reviewer's inbox, with invented reports. Deadlines are
 // told in the reader's own time zone and name the zone they were set in.
 
 const item = (

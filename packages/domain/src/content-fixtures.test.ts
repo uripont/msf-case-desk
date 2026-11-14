@@ -12,7 +12,7 @@ import {
 import { fullContent, instructionTexts } from './testing/fixtures'
 import { PANEL_TEMPLATE } from './testing/templates'
 
-// NOTE: A report that fills every item of a template (stage 4e) is valid,
+// NOTE: A report that fills every item of a template is valid,
 // complete everywhere, and holds none of the instruction texts. The JSON files
 // the browser check compares with are checked in `apps/api` (they need files).
 

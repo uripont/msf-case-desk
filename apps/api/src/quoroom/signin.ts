@@ -4,7 +4,6 @@ import {
   type AccountRecord,
   InvalidCredentials,
   Repository,
-  StorageUnavailable,
   Throttled,
   THROTTLE_WINDOW_MS,
   normaliseEmail,
@@ -18,6 +17,7 @@ import {
   QuoroomNetwork,
   type Store,
   clientAddress,
+  fromRepository,
   store,
 } from './core'
 
@@ -25,13 +25,6 @@ import {
 // is throttled before any hashing. An unknown email, a wrong password, an account without a password
 // and a deactivated account all fail the same way and cost the same hashing.
 // The outcome is recorded either way.
-
-const fromRepository = <A>(
-  effect: Effect.Effect<A, { readonly message: string }>,
-): Effect.Effect<A, StorageUnavailable> =>
-  effect.pipe(
-    Effect.mapError(error => new StorageUnavailable({ message: error.message })),
-  )
 
 // NOTE: attempts older than the window no longer count, so they are removed,
 // a bounded number at a time (one query), whenever one is recorded.

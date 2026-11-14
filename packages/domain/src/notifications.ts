@@ -302,7 +302,7 @@ export const notificationJobs = (
   )
 }
 
-// NOTE: The recheck of the pass (stage 7): a claimed job is delivered only if
+// NOTE: The recheck of the pass: a claimed job is delivered only if
 // the rules still want it. A reminder for someone who has since decided, a job
 // of a round that was superseded or decided, and one for a deadline that was
 // extended all fail.

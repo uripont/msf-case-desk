@@ -16,7 +16,7 @@ import {
 } from './template'
 import { type TemplateProblem, validateTemplate } from './template-validation'
 
-// NOTE: The flat form model of the template editor (stage 9). Every record
+// NOTE: The flat form model of the template editor. Every record
 // is a plain row with only strings, numbers and booleans, so an editor can
 // change one field by ID. Trees become lists with a `parentId`, and the order
 // of siblings is the order in the list. An absent text is '' and an absent

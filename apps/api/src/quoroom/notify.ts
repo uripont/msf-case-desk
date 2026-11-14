@@ -35,7 +35,7 @@ import {
   store,
 } from './core'
 
-// NOTE: The notification pass (stage 7, D12, D17, D19).
+// NOTE: The notification pass (D12, D17, D19).
 //
 // Rules decide what should be sent (`packages/domain`, pure); this module
 // decides when it was sent and records it, in bounded steps that fit one
@@ -62,8 +62,8 @@ import {
 //   that was killed never makes a job fail for good by itself.
 // - The in-app inbox needs no delivery step: the inbox is the list of the
 //   recipient's `done` jobs, so finishing the job is writing the inbox item,
-//   and a job cannot be delivered twice. A channel outside the app (WhatsApp,
-//   stage 11) is at-least-once: a pass that stops after sending and before
+//   and a job cannot be delivered twice. A channel outside the app (WhatsApp)
+//   is at-least-once: a pass that stops after sending and before
 //   finishing sends again once the lease has run out. It receives the job's
 //   idempotency key and the attempt number so it can guard against that.
 // - Every claimed job is rechecked against fresh state before it is sent.
@@ -90,7 +90,7 @@ export class NotificationChannels extends Context.Service<
   NotificationChannels,
   Readonly<{
     inbox: NotificationChannel
-    // NOTE: Stage 11.
+    // NOTE: WhatsApp, not built yet.
     whatsapp?: NotificationChannel
   }>
 >()('NotificationChannels') {}

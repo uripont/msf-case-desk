@@ -4,7 +4,7 @@ import { type DocumentInput, documentDescription } from '@case-desk/domain'
 
 import { renderPdfInNode } from './node'
 
-// NOTE: The Node runner (stage 8, D4): renders the version a job file
+// NOTE: The Node runner (D4): renders the version a job file
 // describes, with the same pure definition and fonts as the browser. The job
 // is `{ document, images }`: the input of `documentDescription` as JSON and
 // the images it names as data URIs. Run through `scripts/render.mjs`, which

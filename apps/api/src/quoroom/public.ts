@@ -5,7 +5,6 @@ import {
   type QuoroomPublicRpcs,
   LinkInvalid,
   Repository,
-  StorageUnavailable,
 } from '@case-desk/domain'
 
 import { hashPassword } from '../password'
@@ -13,7 +12,7 @@ import { SESSION_DAYS, hashToken, sessionCookie } from '../session'
 import { meFor } from './accounts'
 import { authenticate } from './signin'
 import { setCookie } from './cookies'
-import { QuoroomClock, randomToken, store } from './core'
+import { QuoroomClock, fromRepository, randomToken, store } from './core'
 
 // NOTE: The public group (D13): no session. Sign-in is throttled before the
 // password is hashed. An unknown email, a wrong password and an account
@@ -25,13 +24,6 @@ import { QuoroomClock, randomToken, store } from './core'
 type PublicHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomPublicRpcs>>
 
 const SESSION_MS = SESSION_DAYS * 24 * 3_600_000
-
-const fromRepository = <A>(
-  effect: Effect.Effect<A, { readonly message: string }>,
-): Effect.Effect<A, StorageUnavailable> =>
-  effect.pipe(
-    Effect.mapError(error => new StorageUnavailable({ message: error.message })),
-  )
 
 const startSession = (
   headers: Readonly<Record<string, string | undefined>>,

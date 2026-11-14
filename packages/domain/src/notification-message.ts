@@ -1,8 +1,8 @@
 import { type NotificationKind, MINUTE } from './notifications'
 
 // NOTE: What a notification says and how delivery is retried, as pure data
-// and functions (stage 7). The in-app inbox, the web app and the channel for
-// WhatsApp (stage 11) all read this one table, so the words of D12 and D19
+// and functions. The in-app inbox, the web app and the channel for
+// WhatsApp all read this one table, so the words of D12 and D19
 // are written once.
 //
 // Messages never name the case or the report and never carry report text

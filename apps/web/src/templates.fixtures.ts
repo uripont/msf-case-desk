@@ -16,7 +16,7 @@ import { signedInAs, withGrants } from './quoroom.fixtures'
 import * as TemplateEditor from './quoroom/templateEditor'
 import * as Templates from './quoroom/templates'
 
-// NOTE: Stage 9, with invented data: a template editor, the template list,
+// NOTE: With invented data: a template editor, the template list,
 // and the editor opened on a draft of the blank template.
 
 export const EDITOR_ME = withGrants([{ capability: 'template_editor' }])

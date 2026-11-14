@@ -13,7 +13,6 @@ import {
   checkPublishable,
   chooseParticipants,
   publishProblems,
-  roleChoices,
   ruleCanBeMet,
   ruleMet,
   standingDecisions,
@@ -541,34 +540,5 @@ describe('choosing people', () => {
     expect(codes).toContain('unknown_role')
     expect(codes).toContain('person_is_author')
     expect(codes).toContain('person_in_two_roles')
-  })
-
-  test('the dialog shows the view and the rule of every reviewing role', () => {
-    expect(roleChoices(PANEL_TEMPLATE)).toEqual([
-      {
-        roleId: 'chair',
-        name: 'Chair',
-        view: 'full',
-        votes: true,
-        comments: true,
-        rule: { kind: 'majority' },
-      },
-      {
-        roleId: 'members',
-        name: 'Panel members',
-        view: 'redacted',
-        votes: true,
-        comments: true,
-        rule: { kind: 'at_least', count: 2 },
-      },
-      {
-        roleId: 'observer',
-        name: 'Observer',
-        view: 'redacted',
-        votes: false,
-        comments: true,
-        rule: undefined,
-      },
-    ])
   })
 })

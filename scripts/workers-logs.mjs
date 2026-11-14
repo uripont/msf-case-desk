@@ -1,7 +1,7 @@
 // Reads the Workers Logs of one test Worker through the Workers observability
 // API, with the credentials of the Alchemy profile `default`. Never prints the
-// token or the account ID. Used by the log test and the CPU measurements of
-// stage 10 (docs/decisions.md, "Stage 10: log test and CPU").
+// token or the account ID. Used for the log test and the CPU measurements
+// (docs/decisions.md, "Logs and CPU").
 //
 //   node scripts/workers-logs.mjs events <worker> --from <ms|ISO> [--to <ms|ISO>] --out <file.json>
 //       every event of the window, written to a file (the events can hold

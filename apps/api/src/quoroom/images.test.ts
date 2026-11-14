@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { SCENARIOS, TEXT, type PersonName, type World, makeWorld, richContent, withFigure } from './testkit'
 import { exifSegment, makeJpeg, makePng, pngChunk, pngIhdr, pngSignature } from './imageFixtures'
 
-// NOTE: The `/api/images` route (stage 4 review): what an upload may carry,
+// NOTE: The `/api/images` route: what an upload may carry,
 // and which version an image is read through. Synthetic pictures built by hand.
 
 const worlds: Array<World> = []

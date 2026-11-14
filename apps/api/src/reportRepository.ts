@@ -55,7 +55,7 @@ import {
   runBatch,
 } from './sql'
 
-// NOTE: the D1 implementation of `ReportRepository` (stage 2b), on the SQL
+// NOTE: the D1 implementation of `ReportRepository`, on the SQL
 // seam. Every write that must be atomic is one `runBatch` with guards; a
 // refused guard rolls the whole batch back and the operation answers a
 // `Refused` value after at most one diagnosing read. `QUERY_BUDGET` (domain)

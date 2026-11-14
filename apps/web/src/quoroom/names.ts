@@ -36,7 +36,7 @@ import { alertText, loadingText, panel, statusText, submitButton } from './ui'
 import { LoadState } from './unit'
 import './images/figureImage'
 
-// NOTE: People, names and pictures of a report (stage 5), at `/r/:id/names`:
+// NOTE: People, names and pictures of a report, at `/r/:id/names`:
 // the people list with their aliases and spellings (saved through
 // `SavePeople`, part of the working copy and of every shared draft), the
 // suggestions of names that look like people and are not in the list yet

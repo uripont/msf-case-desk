@@ -4,7 +4,6 @@ import {
   type ApprovalRule,
   type Role,
   type Template,
-  reviewingRolesOf,
   votingRolesOf,
 } from './template'
 
@@ -279,29 +278,6 @@ export type ChooseContext = Readonly<{
   // committee is made).
   registry: ReadonlyArray<string>
 }>
-
-// NOTE: What the publish dialog shows for each reviewing role, so a `full`
-// role is never chosen unknowingly.
-export type RoleChoice = Readonly<{
-  roleId: string
-  name: string
-  view: Role['view']
-  votes: boolean
-  comments: boolean
-  rule: ApprovalRule | undefined
-}>
-
-export const roleChoices = (template: Template): ReadonlyArray<RoleChoice> =>
-  reviewingRolesOf(template).map(role => ({
-    roleId: role.id,
-    name: role.name,
-    view: role.view,
-    votes: role.permissions.includes('vote'),
-    comments: role.permissions.includes('comment'),
-    rule: role.permissions.includes('vote')
-      ? (role.approval ?? DEFAULT_RULE)
-      : undefined,
-  }))
 
 // NOTE: Fills each reviewing role from committees of the report's unit and
 // individual accounts. A committee of another unit and an unknown committee

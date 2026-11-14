@@ -1,6 +1,6 @@
 import { Array, Order, pipe } from 'effect'
 
-// NOTE: Comment highlights in a read-only text (stage 6b). A comment on
+// NOTE: Comment highlights in a read-only text. A comment on
 // selected text carries `{ from, to, quoted }` in the text-offset scheme of
 // the domain (`richtext-offsets.ts`). Pure: the text and the ranges go in, the
 // parts of the text with the comments that cover each come out.

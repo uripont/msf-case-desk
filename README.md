@@ -50,7 +50,7 @@ Plus Tiptap for rich text, pdfmake for PDFs, Vite 8, Tailwind 4, Vitest 5, fast-
 ├── apps/
 │   ├── api/                # the Worker: RPC API, authorization, redaction, notifications, D1
 │   │   ├── migrations/     # expand-only SQL migrations
-│   │   └── scripts/        # grant-admin, the workerd build, live checks
+│   │   └── scripts/        # grant-admin, users:add, the workerd build
 │   └── web/                # Foldkit single-page app
 ├── packages/
 │   ├── domain/             # pure rules: templates, report flow, approval, redaction, the API contract
@@ -101,8 +101,10 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 - [`docs/self-hosting.md`](docs/self-hosting.md): `workerd`, the pilot and demo stacks, secrets, the host cron.
 - [`docs/pilot.md`](docs/pilot.md): running a pilot, from the first administrator to backups and failures.
 - [`docs/templates.md`](docs/templates.md): building a template, and the two built-in ones.
+- [`docs/rpc.md`](docs/rpc.md): the API contract, procedure by procedure, and the image route.
 - [`docs/compatibility.md`](docs/compatibility.md): how versions share one database, and how a version is frozen.
 - [`docs/decisions.md`](docs/decisions.md): decisions and measurements, including the two pinned Effect versions.
+- [`docs/context.md`](docs/context.md): who Quoroom is for and where it stops.
 
 > [!NOTE]
 > Alchemy v2 and Foldkit are both in beta. Versions are pinned exactly.

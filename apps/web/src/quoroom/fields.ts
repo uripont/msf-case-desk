@@ -68,7 +68,7 @@ export type RichTextContext<M> = Readonly<{
     range: Readonly<{ from: number; to: number; text: string }>,
   ) => M
   onRetryLoad: M
-  // NOTE: Images (stage 4d): the report they belong to, the bytes of image
+  // NOTE: Images: the report they belong to, the bytes of image
   // space left (-1 when unknown), the line that says what is used, and what an
   // uploaded image reports.
   reportId: string
@@ -77,7 +77,7 @@ export type RichTextContext<M> = Readonly<{
   onImage: () => M
 }>
 
-// NOTE: Editing the entries of a repeated item (stage 4e). The handlers name
+// NOTE: Editing the entries of a repeated item. The handlers name
 // the list by the steps above it and its item; removing asks first.
 export type EntryHandlers<M> = Readonly<{
   onAdd: (steps: ReadonlyArray<ItemStep>, itemId: string) => M

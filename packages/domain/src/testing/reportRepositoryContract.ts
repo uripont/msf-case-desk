@@ -2859,7 +2859,7 @@ export const reportRepositoryContract = (
       expect(after.reportBytes).toBe(before.reportBytes - 1000)
     })
 
-    // ---- whole-document reads and rebasing (stage 2c) --------------------------------
+    // ---- whole-document reads and rebasing --------------------------------
     test('the batched reads return exactly what the separate reads return', async () => {
       const s = await setup()
       const { r } = s
@@ -2980,7 +2980,7 @@ export const reportRepositoryContract = (
       ).toEqual({ _tag: 'Refused', reason: 'no_draft' })
     })
 
-    // ---- stage 2c: exact unshared marker, confirmation guard, paging ---------------------
+    // ---- exact unshared marker, confirmation guard, paging ---------------------
     test('the unshared marker is exact: a save sets it, a share clears it, a later save sets it again', async () => {
       const s = await setup()
       await shareDraft1(s)
@@ -3299,7 +3299,7 @@ export const reportRepositoryContract = (
       expect(older).toHaveLength(1)
       expect(older[0]?.id).toBe(theme[1]?.id)
     })
-    // ---- stage 2 review fixes -------------------------------------------------------------
+    // ---- regressions --------------------------------------------------------------------
     test("the registry entry is the unit's own: updating it never touches the account", async () => {
       const { r } = await setup()
       await run(

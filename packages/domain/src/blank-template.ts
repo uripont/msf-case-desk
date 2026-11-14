@@ -4,7 +4,7 @@ import {
   TEMPLATE_SCHEMA_VERSION,
 } from './template'
 
-// NOTE: The template a new draft starts from (stage 9): one drafting role,
+// NOTE: The template a new draft starts from: one drafting role,
 // one reviewing role that votes, and one section. It is valid as it is.
 
 const SHORT_NAME_MAX = 24

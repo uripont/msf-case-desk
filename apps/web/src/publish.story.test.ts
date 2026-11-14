@@ -27,7 +27,7 @@ const publishScreen = (options: Parameters<typeof loaded>[0] = {}) =>
     }),
   ].reduce((model, message) => update(model, message).model, authorModel)
 
-// NOTE: Stage 6a: what the publishing screen sends and refuses, in Messages
+// NOTE: What the publishing screen sends and refuses, in Messages
 // and Commands. The server refuses the same things again.
 
 type Step = ReturnType<typeof update>

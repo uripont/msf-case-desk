@@ -12,7 +12,7 @@ import { NOW, revision } from './publish.fixtures'
 import type * as Review from './quoroom/review'
 import { REPORT_ID, detailOf } from './report.fixtures'
 
-// NOTE: Synthetic data for the reading view (stage 6b and 6c): one revision of
+// NOTE: Synthetic data for the reading view: one revision of
 // the intake template with a single rich-text paragraph, read by an invented
 // reviewer who may comment and vote.
 

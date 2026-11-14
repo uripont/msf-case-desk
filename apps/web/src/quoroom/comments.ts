@@ -22,7 +22,7 @@ import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { alertText, loadingText } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: What reviewers said about each revision, for the authors (stage 6c).
+// NOTE: What reviewers said about each revision, for the authors.
 // Every comment is read in the view it was written in; a comment of a `full`
 // reviewer shared with the committee also shows the text the redacted readers
 // were given. Authors reply (a reply is seen by whoever sees the comment) and

@@ -11,7 +11,7 @@ import { Path } from "effect/Path";
 //
 // Stages:
 //   pilot     the real pilot, Worker `pilot` (pilot.<subdomain>.workers.dev).
-//             Deployed by stage 10, with `pnpm pilot:deploy`.
+//             Deployed with `pnpm pilot:deploy`.
 //   test_<n>  a throwaway copy, Worker `test-<n>-pilot`, with a cron every
 //             minute. `pnpm test-env:up <name>` and `pnpm test-env:down <name>`.
 // Any other stage is refused here, so a stray `ALCHEMY_STAGE` in `.env` can
@@ -41,12 +41,12 @@ const FAST_TIMINGS = { requestDelay: 0, firstReminder: 10, finalReminder: 3 };
 // Workers Logs keep errors and drop what could hold report text: no invocation
 // logs (they record the request URL and headers), and no tracing. The code
 // writes no request bodies to the log. Workers Issues stays on for the error
-// alert in alchemy.alerts.run.ts. Plan stage 10 checks the logs of a test
+// alert in alchemy.alerts.run.ts. The log test checks the logs of a test
 // environment for invented report text.
 //
 // A test stage can turn invocation logs on with QUOROOM_INVOCATION_LOGS=1
 // (`pnpm test-env:up <name> --invocation-logs`): they carry the CPU time of
-// each request, which the CPU measurements of stage 10 read. The pilot stage
+// each request (see docs/decisions.md, "Logs and CPU"). The pilot stage
 // ignores it.
 const observabilityFor = (invocationLogs: boolean) => ({
   enabled: true,
@@ -100,12 +100,8 @@ export default Alchemy.Stack(
         NOTIFY_REQUEST_DELAY_MINUTES: String(timings.requestDelay),
         NOTIFY_FIRST_REMINDER_MINUTES: String(timings.firstReminder),
         NOTIFY_FINAL_REMINDER_MINUTES: String(timings.finalReminder),
-        // A test stage with invocation logs numbers the requests of each
-        // isolate in the answer (`x-seq`, `x-isolate`), so the CPU measurements
-        // can tell warm requests from cold ones. Never on the pilot.
-        ...(invocationLogs ? { REQUEST_SEQUENCE: "1" } : {}),
       },
-      // The notification pass (stage 7): `scheduled` in apps/api/src/worker.ts.
+      // The notification pass: `scheduled` in apps/api/src/worker.ts.
       // One Cron Trigger per Worker, every minute on the pilot and on test
       // stages: an idle run is one query. The Free plan allows 5 on the account.
       // `/api/tick` stays unset (no TICK_SECRET): the cron does the work.

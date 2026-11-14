@@ -53,8 +53,9 @@ export default Alchemy.Stack(
     // applies migrations, before its new code goes live.
     // Accounts come from `pnpm users:add`, which writes password hashes to a
     // git-ignored file. The synthetic triage cases follow it, so they can name
-    // the demo account; only the frozen `iter2` shows them (D20). Both are imported after the migrations, and the
-    // built-in templates (insert-if-absent, D22) before them.
+    // the demo account; only the frozen `iter2` shows them (D20). Both are
+    // imported after the migrations, and the built-in templates
+    // (insert-if-absent, D22) before them.
     // `pnpm grant-admin --env demo` writes the first administrator's grants
     // to .local/grants-demo.sql (idempotent statements, no password).
     const usersSql = path.resolve(root, ".local/users.sql");
@@ -88,14 +89,13 @@ export default Alchemy.Stack(
       assets: { runWorkerFirst: ["/api/*"] },
       // Quoroom only (D20): the same code as the pilot, on the demo data.
       env: { DB: database },
-      // The notification pass (stage 7, D12). Only `app` has a Cron Trigger:
+      // The notification pass (D12). Only `app` has a Cron Trigger:
       // the frozen Workers (`iter1`, `iter2`, and `iter3` later) have none and
       // no TICK_SECRET, so no message is ever sent twice. Production timings
       // (48 h and 4 h), a pass every minute: a run with nothing due is one
       // query and returns at once, and housekeeping runs in the first minute of
-      // each hour. Free plan: 5 Cron Triggers on
-      // the account; the demo, the pilot and one test environment use 3. This
-      // is an `App` update within D22; stage 10 deploys it.
+      // each hour. Free plan: 5 Cron Triggers on the account; the demo, the
+      // pilot and one test environment use 3.
       crons: ["* * * * *"],
       observability,
     });

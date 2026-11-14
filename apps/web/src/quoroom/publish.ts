@@ -35,7 +35,7 @@ import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { alertText, loadingText, panel } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: Publishing and rounds (stage 6a), at `/r/:id/publish`. The author
+// NOTE: Publishing and rounds, at `/r/:id/publish`. The author
 // publishes the latest shared draft as the next revision with a deadline and,
 // for every reviewing role, a committee or a list of people (D23). The screen
 // also shows the open round with its deadline and countdown, the revisions and

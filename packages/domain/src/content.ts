@@ -24,7 +24,7 @@ import {
 //   held, as the ended branches of D23 do. Renderers must skip the content of a
 //   section that is not applicable or ended.
 // - The conclusion section, if the template has one, is in `sections` like any
-//   other top-level section. Who may write it, and when, is a rule of stage 1c.
+//   other top-level section. Who may write it, and when, is a permission rule.
 
 export const CONTENT_SCHEMA_VERSION = 1
 
@@ -172,11 +172,6 @@ export const ReportContent = Schema.Struct({
   sections: Schema.Record(Schema.String, SectionContent),
 })
 export type ReportContent = typeof ReportContent.Type
-
-export const EMPTY_SECTION_CONTENT: SectionContent = {
-  values: {},
-  sections: {},
-}
 
 // NOTE: The content of a new report: nothing filled in yet.
 export const emptyContent = (template: Template): ReportContent => ({

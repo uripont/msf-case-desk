@@ -7,7 +7,7 @@ import { checkZipSize, zipParts } from '@case-desk/pdf'
 import { makeFailureOf, zipDateOf } from './downloads'
 import { type ImageCache, imagesOf } from './pdf/source'
 
-// NOTE: Stage 8+9 review, finding 10: "Download all" gives the same zip for
+// NOTE: "Download all" gives the same zip for
 // the same report, refuses one that is too large with a clear message, and
 // reads an image once across the versions.
 

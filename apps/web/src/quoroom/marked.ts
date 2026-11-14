@@ -37,7 +37,7 @@ export const markedChildren = <M>(
 
 export const COMMENT_HIGHLIGHT = 'comment-highlight'
 
-// NOTE: A text with the parts that comments are on marked (stage 6b): a
+// NOTE: A text with the parts that comments are on marked: a
 // background and an underline, not colour alone, and the IDs of the comments
 // on the part in a data attribute. `offset` is where the text starts in the
 // anchor text of its item; a redacted preview's marks still apply inside.

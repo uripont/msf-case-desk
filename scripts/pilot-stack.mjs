@@ -8,7 +8,7 @@
 //
 // --fast gives the test environment notification timings of minutes (D12).
 // --invocation-logs turns on the Workers invocation logs of the test Worker,
-// which record the CPU time of each request (the stage 10 CPU measurements);
+// which record the CPU time of each request (docs/decisions.md, "Logs and CPU");
 // the pilot never has them.
 // Extra flags for alchemy are an allowlist (--yes, -y, --dry-run, --detailed);
 // anything else is refused, --stage, --config, --env-file, --profile and -p

@@ -26,7 +26,7 @@ import {
   makeWorld,
 } from './testkit'
 
-// NOTE: Stage 5, the leak test of the "done when": for each built-in template
+// NOTE: The redaction leak test: for each built-in template
 // and the invented panel template, a draft whose people list has aliases in
 // every kind of text a report holds, and images not marked safe, is shared and
 // published to a `redacted` role. Then every procedure a reviewer can reach is

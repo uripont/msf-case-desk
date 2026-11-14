@@ -26,6 +26,7 @@ import {
   type Store,
   QuoroomClock,
   allowCapability,
+  fromRepository,
   idOf,
   randomToken,
   store,
@@ -33,7 +34,7 @@ import {
 } from './core'
 
 // NOTE: Session, accounts, capabilities, units, unit membership, the reviewer
-// registry and committees (stage 3a and 3b of the contract).
+// registry and committees.
 //
 // D13. A person invited with an email that already has an account is never
 // told so: the response has the same shape as for a new one, built from what
@@ -257,13 +258,7 @@ export const accountHandlers: Pick<
       const token = tokenFromCookies(headers['cookie'] ?? null)
       if (Option.isSome(token)) {
         const hash = yield* Effect.promise(() => hashToken(token.value))
-        yield* repository
-          .deleteSession(hash)
-          .pipe(
-            Effect.mapError(
-              error => new StorageUnavailable({ message: error.message }),
-            ),
-          )
+        yield* fromRepository(repository.deleteSession(hash))
       }
       setCookie(headers, clearedSessionCookie())
     }),

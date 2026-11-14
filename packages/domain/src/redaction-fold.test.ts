@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 
 import { foldForTest } from './redaction'
 
-// NOTE: the folding as it was before the ASCII fast path (stage 10, CPU), kept
+// NOTE: the folding as it was before the ASCII fast path (CPU), kept
 // here as the reference: the fast path must give the same text and the same
 // offsets for every input, in both modes.
 const SPECIAL: Readonly<Record<string, string>> = {

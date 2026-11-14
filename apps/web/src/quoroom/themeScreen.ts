@@ -59,7 +59,7 @@ import {
 } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: The theme screen of an administrator (stage 9d, D24): the
+// NOTE: The theme screen of an administrator (D24): the
 // organisation's name, the logo, the colours with the contrast check shown
 // beside each colour, the fonts from the bundled set, the PDF header and
 // footer text, a live preview of an app page and of a PDF page, and saving.
@@ -67,7 +67,7 @@ import { LoadState } from './unit'
 // places each problem beside its field. Saving never reloads the page: the
 // parent applies the saved theme (OutMessage), and the next PDF reads it
 // with `GetTheme`. The logo is an image owned by the theme; it is prepared
-// in the browser and sent in chunks like a report's pictures (stage 4d), and
+// in the browser and sent in chunks like a report's pictures, and
 // it is readable by signed-in accounts only (decisions.md).
 
 // MODEL

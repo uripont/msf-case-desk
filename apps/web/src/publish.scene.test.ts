@@ -37,7 +37,7 @@ const publishScreen = (options: Parameters<typeof loaded>[0] = {}) =>
     }),
   ].reduce((model, message) => update(model, message).model, authorModel)
 
-// NOTE: Stage 6a: the publishing dialog and the round display, with invented
+// NOTE: The publishing dialog and the round display, with invented
 // people. The screen is `/r/:id/publish`.
 
 const REVIEWERS = [

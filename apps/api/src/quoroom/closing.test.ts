@@ -13,7 +13,7 @@ import {
   richContent,
 } from './testkit'
 
-// NOTE: Stage 6d and 6e through the real RPC stack, with three accounts that
+// NOTE: Closing rounds through the real RPC stack, with three accounts that
 // are invented: an author (alice) and two reviewers (carol, dan), plus a chair
 // (erin) and an observer (ivy) in the panel template. Covers the closing path,
 // a round decided by its deadline, the template without a conclusion archived
@@ -462,7 +462,7 @@ describe('the grid shows each fact with its time', () => {
     const w = await make(intake)
     const { reportId } = await w.published()
     const start = w.clock.now()
-    // NOTE: the notification pass (stage 7) writes "told" and "reminded"; here
+    // NOTE: the notification pass writes "told" and "reminded"; here
     // it is stood in for with the facts it would record.
     const record = (kind: 'notified' | 'reminded', accountId: string, at: number, detail?: string) =>
       Effect.runPromise(
@@ -520,7 +520,7 @@ describe('the grid shows each fact with its time', () => {
   })
 })
 
-// NOTE: the review of stage 6 found that a closing revision was published with
+// NOTE: regression: a closing revision was published with
 // no check: a draft shared while the first round was open (an unreviewed change
 // to the summary) could become the closing revision, and a closing revision
 // could have no conclusion.
@@ -620,7 +620,7 @@ describe('removing a reviewer (D6)', () => {
     const round = await w.call('alice', c => c.RemoveReviewer({ reportId, revision: 1, accountId: 'dan' }))
     expect(round).toMatchObject({ status: 'decided', decidedBy: 'rule_met' })
     expect((await w.call('alice', c => c.GetReport({ reportId }))).summary.state).toBe('decided')
-    // NOTE: the pass that delivers jobs (stage 7) is stood in for here.
+    // NOTE: the pass that delivers jobs is stood in for here.
     const keys = await Effect.runPromise(w.repository.listJobKeys(reportId) as unknown as Effect.Effect<ReadonlyArray<string>>)
     expect(keys.filter(key => key.includes('removed_from_round'))).toHaveLength(1)
     const claimed = await Effect.runPromise(

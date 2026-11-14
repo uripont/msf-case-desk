@@ -26,6 +26,16 @@ const freePort = (): Promise<number> =>
     });
   });
 
+const stopGroup = (process_: ChildProcess) => {
+  try {
+    if (process_.pid !== undefined) {
+      process.kill(-process_.pid, "SIGTERM");
+    }
+  } catch {
+    // Already gone.
+  }
+};
+
 const CONFIG = (
   port: number,
   data: string,
@@ -124,7 +134,9 @@ export const startWorkerd = async (
     const candidate = spawn(
       binary,
       ["serve", join(dir, "worker.capnp"), "--experimental"],
-      { stdio: "ignore" },
+      // NOTE: `bin/workerd` is a Node launcher that starts the real binary;
+      // its own group lets `stopGroup` end both, or the binary outlives the run.
+      { stdio: "ignore", detached: true },
     );
     for (let attempt = 0; ; attempt++) {
       try {
@@ -137,7 +149,7 @@ export const startWorkerd = async (
         break;
       } catch (error) {
         if (candidate.exitCode !== null || attempt > 100) {
-          candidate.kill();
+          stopGroup(candidate);
           if (start >= 4) {
             throw error;
           }
@@ -173,7 +185,9 @@ export const startWorkerd = async (
   return {
     open,
     stop: async () => {
-      child?.kill();
+      if (child !== undefined) {
+        stopGroup(child);
+      }
       rmSync(dir, { recursive: true, force: true });
     },
   };

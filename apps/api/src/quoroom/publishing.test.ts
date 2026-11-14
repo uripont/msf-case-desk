@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { SCENARIOS, type World, makeWorld, PEOPLE } from './testkit'
 
-// NOTE: Publishing (stage 6a) through the real RPC stack: a revision replaces
+// NOTE: Publishing through the real RPC stack: a revision replaces
 // the open round and its reviewers are told, a choice that cannot meet the
 // approval rule is refused, a redacted role is refused without the confirmed
 // preview (on both publish paths), and the deadline keeps its time zone. All

@@ -1,9 +1,9 @@
 import { Schema } from 'effect'
 
-// NOTE: A template version is pure data (D23). Once stage 1 is done, changes
-// to this file are additive only: new optional fields or new variants behind a
-// new `schemaVersion`, never a rename or a new type for an existing field, so
-// the template editor cannot break the stages built on top of it.
+// NOTE: A template version is pure data (D23). Changes to this file are
+// additive only: new optional fields or new variants behind a new
+// `schemaVersion`, never a rename or a new type for an existing field, so
+// stored template versions keep decoding.
 
 export const TEMPLATE_SCHEMA_VERSION = 1
 
@@ -166,8 +166,6 @@ export const ITEM_TYPES = [
   'signature',
   'repeated',
 ] as const satisfies ReadonlyArray<Item['type']>
-export type ItemType = (typeof ITEM_TYPES)[number]
-
 export const RepeatRange = Schema.Struct({
   min: Count,
   max: Schema.optionalKey(Count),

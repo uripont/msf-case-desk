@@ -143,7 +143,7 @@ export class QuoroomPublicRpcs extends RpcGroup.make(
 // ---- Signed in -----------------------------------------------------------------------------------
 
 export class QuoroomRpcs extends RpcGroup.make(
-  // -- Session and accounts (stage 3a)
+  // -- Session and accounts
   Rpc.make('GetMe', { success: MeView, error: StorageError }),
   Rpc.make('SignOut', { error: StorageError }),
   Rpc.make('SetNotificationPreferences', {
@@ -186,7 +186,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: WriteError,
   }),
 
-  // -- Units and membership (stage 3a)
+  // -- Units and membership
   Rpc.make('ListUnits', { success: Schema.Array(Unit), error: StorageError }),
   Rpc.make('CreateUnit', {
     payload: { name: DisplayName, code: UnitCode },
@@ -209,7 +209,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: WriteError,
   }),
 
-  // -- Reviewer registry and committees (stage 3b)
+  // -- Reviewer registry and committees
   Rpc.make('ListReviewers', {
     payload: { unit: ApiId },
     success: Schema.Array(Reviewer),
@@ -276,7 +276,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: WriteError,
   }),
 
-  // -- Templates (stage 9)
+  // -- Templates
   Rpc.make('ListTemplates', {
     payload: {
       offset: Schema.optionalKey(Count),
@@ -350,7 +350,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: WriteError,
   }),
 
-  // -- Theme (stage 9d)
+  // -- Theme
   Rpc.make('GetTheme', { success: ThemeRecord, error: StorageError }),
   Rpc.make('UpdateTheme', {
     payload: { theme: Theme },
@@ -358,7 +358,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: WriteError,
   }),
 
-  // -- Case files and reports (stage 4a)
+  // -- Case files and reports
   Rpc.make('ListCaseFiles', {
     payload: { unit: ApiId },
     success: Schema.Array(CaseFileRecord),
@@ -407,7 +407,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: ReadError,
   }),
 
-  // -- Working copies (stage 4f)
+  // -- Working copies
   Rpc.make('StartWorkingCopy', {
     payload: {
       ...ReportId,
@@ -451,7 +451,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: ReadError,
   }),
 
-  // -- Sharing (stage 4g, spike 3)
+  // -- Sharing
   Rpc.make('ShareSection', {
     payload: {
       ...ReportId,
@@ -500,7 +500,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: StateError,
   }),
 
-  // -- Draft history and comparison (stage 4g)
+  // -- Draft history and comparison
   Rpc.make('GetHistory', {
     payload: ReportId,
     success: History,
@@ -527,7 +527,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: ReadError,
   }),
 
-  // -- Redaction and images (stage 5)
+  // -- Redaction and images
   Rpc.make('ConfirmRedaction', {
     payload: { ...ReportId, draft: DraftNumber, redactedHash: Schema.String },
     success: DraftHeader,
@@ -549,7 +549,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: StateError,
   }),
 
-  // -- Publishing and closing (stage 6a, 6e)
+  // -- Publishing and closing
   Rpc.make('GetPublishChoices', {
     payload: ReportId,
     success: PublishChoices,
@@ -586,7 +586,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: StateError,
   }),
 
-  // -- Reviewer: inbox, reading, comments, review (stage 6b, 6c)
+  // -- Reviewer: inbox, reading, comments, review
   Rpc.make('ListInbox', {
     payload: {
       // NOTE: Position in the list (newest deadline first); pass the page's
@@ -673,7 +673,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: TimedError,
   }),
 
-  // -- Authors: comments and replies (stage 4g, 6c)
+  // -- Authors: comments and replies
   Rpc.make('ListDraftComments', {
     payload: { ...ReportId, draft: DraftNumber },
     success: Schema.Array(AuthorCommentView),
@@ -705,7 +705,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: StateError,
   }),
 
-  // -- Grid and audit (stage 6d)
+  // -- Grid and audit
   Rpc.make('GetGrid', { payload: ReportId, success: GridView, error: ReadError }),
   Rpc.make('ListAuditEvents', {
     payload: {
@@ -720,7 +720,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: ReadError,
   }),
 
-  // -- Notifications and WhatsApp (stage 7)
+  // -- Notifications and WhatsApp
   Rpc.make('ListNotifications', {
     payload: { before: Schema.optionalKey(Count), limit: Limit },
     success: NotificationPage,
@@ -753,7 +753,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: TimedError,
   }),
 
-  // -- Downloads metadata (stage 8)
+  // -- Downloads metadata
   Rpc.make('GetDownloads', {
     payload: ReportId,
     success: DownloadSet,

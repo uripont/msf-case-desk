@@ -7,7 +7,7 @@ import { sha256Hex } from './content'
 import { cleanupStale } from './core'
 import { makePng } from './imageFixtures'
 
-// NOTE: Stage 2c: the Quoroom RPC through the real handler stack (the app, the
+// NOTE: The Quoroom RPC through the real handler stack (the app, the
 // RPC server, the middleware that reads the session cookie), on the in-memory
 // repository and on the real SQL one, with the built-in intake template and the
 // invented panel template. Accounts, grants, units and reports are invented.

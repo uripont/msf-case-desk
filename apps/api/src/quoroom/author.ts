@@ -338,7 +338,7 @@ export const authorHandlers: Pick<
 
   ListDrafting: ({ reportId }) =>
     Effect.gen(function* () {
-      const { loaded, db } = yield* member(reportId, { type: 'read_people' })
+      const { db } = yield* member(reportId, { type: 'read_people' })
       const drafting = yield* db.listDrafting(reportId)
       return drafting.map(entry => ({
         accountId: entry.userId,

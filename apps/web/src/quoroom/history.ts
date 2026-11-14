@@ -37,7 +37,7 @@ import { CommentSelection, readCommentSelection } from './selection'
 import { alertText, loadingText, panel, statusText } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: Draft history (stage 4g): the list of shared drafts with who shared
+// NOTE: Draft history: the list of shared drafts with who shared
 // them and when, a read-only view of any one (no editor; the rich text is
 // drawn by `richTextView`), the comparison of two drafts, and the comments the
 // authors leave on a draft for each other. Comments on a draft are never

@@ -21,7 +21,7 @@ import {
   canonicalRichText,
 } from './richtext'
 
-// NOTE: Redaction (D14, stage 1e). Pure functions: no clock, no I/O. The API
+// NOTE: Redaction (D14). Pure functions: no clock, no I/O. The API
 // calls them only for roles whose view is `redacted`; a `full` role reads the
 // original, so the `full` code path must never reach this file.
 //

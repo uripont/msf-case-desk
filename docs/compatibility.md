@@ -33,7 +33,7 @@ Changing the meaning of an existing value, or adding a new value to an enum, fol
 
 ## Freezing a version
 
-How `iter3` is frozen (plan, stage 11 step 5), as `iter2` was. `iter1` and `iter2` are already tags; nothing else changes for them.
+How a version such as `iter3` is frozen, as `iter2` was. `iter1` and `iter2` are already tags; nothing else changes for them.
 
 1. On the commit to freeze, check it: `pnpm check` and `pnpm compat:check HEAD`.
 2. Tag it: `git tag iter3`. The tag is local until the user pushes it.

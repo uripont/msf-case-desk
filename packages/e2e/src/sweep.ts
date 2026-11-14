@@ -1,4 +1,4 @@
-// Stage 10a: every route of the web app, at 375 px and 1280 px, in every
+// Every route of the web app, at 375 px and 1280 px, in every
 // browser engine that runs here, in its loaded, empty, loading and error
 // states. Nothing here names a route by hand for the list: the tags come from
 // the router (`AppRoute.members`), and a route without a sample fails the sweep,

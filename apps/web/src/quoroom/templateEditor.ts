@@ -53,7 +53,7 @@ import {
 } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: The template editor (stage 9b and 9c): the draft is held as the flat
+// NOTE: The template editor: the draft is held as the flat
 // form model of the domain, every change is one `FormEdit` applied by the
 // domain, and what is wrong is `formProblems`, shown next to the row it is
 // about. A draft is saved on request (it only has to fit the schema); it is
@@ -122,7 +122,7 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-// NOTE: Panels and section cards fold away (stage 9d): the long form is
+// NOTE: Panels and section cards fold away: the long form is
 // usable only if most of it is closed. Closed by default, except the sections
 // panel, and what is opened stays open. A panel or a section with a problem
 // is always shown open, so an error is never hidden.

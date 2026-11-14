@@ -25,7 +25,7 @@ import {
 } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: The template list of a template editor (stage 9a): every template
+// NOTE: The template list of a template editor: every template
 // with its state and versions, a new blank draft, a copy of any template
 // (built-ins too) as a new draft, the next version of a published template,
 // and retiring one. Retiring only stops new reports from starting on it;

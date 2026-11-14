@@ -38,7 +38,7 @@ import {
   normaliseLinkUrl,
 } from './toolbar'
 
-// NOTE: The rich-text editor as a custom element (stage 4c). It is plain DOM
+// NOTE: The rich-text editor as a custom element. It is plain DOM
 // code that owns everything inside it: Tiptap, the toolbar and the link box.
 // Foldkit sets the properties `content` (canonical JSON text), `version`,
 // `disabled`, `label`, `report` (the report whose images are shown and
@@ -46,7 +46,7 @@ import {
 // unknown), and listens to the events `change`, `selection` and `image`. It
 // never reaches inside.
 //
-// Images (stage 4d) are handled here, as plain DOM code: a picture chosen,
+// Images are handled here, as plain DOM code: a picture chosen,
 // pasted or dropped is prepared in the browser (`images/encode.ts`), uploaded
 // in chunks (`images/upload.ts`) and then inserted as a `figure` node after
 // the block the caret is in. Progress, refusals and a retry button are shown
@@ -664,7 +664,7 @@ class QuoroomEditor extends HTMLElement {
     }
   }
 
-  // ---- Images (stage 4d) -------------------------------------------------------------------
+  // ---- Images -------------------------------------------------------------------
 
   #imagePanel(): HTMLElement {
     const panel = create('div', 'quoroom-image-panel')

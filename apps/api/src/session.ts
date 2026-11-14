@@ -6,21 +6,17 @@ import {
   type User,
 } from '@case-desk/domain'
 
+import { sha256Hex } from './quoroom/content'
+
 // NOTE: the session format is shared with the frozen iteration 2 on the demo
 // database: the cookie name, the token (32 random bytes in hex) and its stored
 // SHA-256. Changing any of them signs everyone out of one of the two.
 export const SESSION_COOKIE = 'case_desk_session'
 export const SESSION_DAYS = 14
 
-const toHex = (bytes: ArrayBuffer): string =>
-  Array.from(new Uint8Array(bytes), byte =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
-
 // NOTE: only the SHA-256 of a session token is stored, so a copy of the
 // database cannot be used to sign in.
-export const hashToken = (token: string): Promise<string> =>
-  crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)).then(toHex)
+export const hashToken = sha256Hex
 
 export const sessionUser = (
   token: string,

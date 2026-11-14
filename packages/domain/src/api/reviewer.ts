@@ -15,7 +15,7 @@ import {
 } from './common'
 import { SectionRef } from './reports'
 
-// NOTE: The reviewer-facing procedures (stage 6) and the comments both sides
+// NOTE: The reviewer-facing procedures and the comments both sides
 // use. The rules the shapes enforce, checked structurally by tests:
 //
 // - The server, not the caller, chooses between redacted and original

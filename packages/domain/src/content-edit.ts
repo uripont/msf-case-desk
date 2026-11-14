@@ -44,9 +44,6 @@ const keyOf = (parts: ReadonlyArray<KeyPart>): string =>
 
 export const isEntryKey = (key: string): boolean => key.includes('#')
 
-export const sectionIdsOfKey = (key: string): ReadonlyArray<string> =>
-  keyParts(key).map(part => part.sectionId)
-
 export const topSectionIdOfKey = (key: string): string =>
   keyParts(key)[0]?.sectionId ?? key
 

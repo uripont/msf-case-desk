@@ -5,7 +5,7 @@ import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@case-desk/domain'
 
 import { PEOPLE, SCENARIOS, SECRET, type World, makeWorld } from './testkit'
 
-// NOTE: The rest of stage 2c through the real RPC stack: templates and the
+// NOTE: Activity through the real RPC stack: templates and the
 // theme, the capabilities that have no part in a report, the grid and the
 // audit log, the notification inbox, WhatsApp link data, downloads and the
 // report extras. All people and data are invented.
@@ -224,7 +224,7 @@ describe.each(SCENARIOS)('$name', scenario => {
     const after = await run(w.repository.listJobKeys(reportId))
     expect(after.some(key => key.includes('review_received'))).toBe(true)
 
-    // NOTE: the pass that sends them (stage 3) is stood in for here.
+    // NOTE: the pass that sends them is stood in for here.
     const claimed = await run(w.repository.claimDueJobs({ now: w.clock.now() + 1, limit: 100, leaseMs: 60_000, claimedBy: 'test' }))
     await run(w.repository.finishJobs({ claimedBy: 'test', done: claimed.map(job => job.id), skipped: [], now: w.clock.now() + 2 }))
 

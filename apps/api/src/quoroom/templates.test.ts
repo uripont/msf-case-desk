@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { SCENARIOS, type World, makeWorld } from './testkit'
 
-// NOTE: Stage 9: the template editor capability through the real RPC stack.
+// NOTE: The template editor capability through the real RPC stack.
 // All people and data are invented.
 
 const worlds: Array<World> = []

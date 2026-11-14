@@ -12,7 +12,7 @@ import {
 } from './tick'
 import { makeNodeSqlite } from './testing/nodeSqlite'
 
-// NOTE: `/api/tick` and the settings the stack gives the pass (stage 7).
+// NOTE: `/api/tick` and the settings the stack gives the pass.
 
 const database = async () => makeNodeSqlite()
 

@@ -10,13 +10,6 @@ import type { Script } from './scripts'
 
 export type Face = 'normal' | 'bold' | 'italics' | 'bolditalics'
 
-export const FACES: ReadonlyArray<Face> = [
-  'normal',
-  'bold',
-  'italics',
-  'bolditalics',
-]
-
 const SLUGS: Readonly<Record<FontFamily, string>> = {
   'Hanken Grotesk': 'hanken-grotesk',
   Inter: 'inter',

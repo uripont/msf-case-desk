@@ -18,7 +18,7 @@ import {
   staleSaveFacts,
 } from './report.fixtures'
 
-// NOTE: The regression tests of the stage 4 review: every answer carries the
+// NOTE: Regression tests: every answer carries the
 // identity of the page that asked, nothing leaves a report with unsaved edits
 // silently, and a save that only lost its answer is not a conflict.
 

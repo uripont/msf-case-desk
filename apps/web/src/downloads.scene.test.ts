@@ -13,7 +13,7 @@ import { Failure } from './quoroom/failure'
 import { REPORT_ID } from './report.fixtures'
 import { view } from './view'
 
-// NOTE: Stage 8, with invented data: the downloads screen lists every draft
+// NOTE: With invented data: the downloads screen lists every draft
 // and revision in the views the server allows, and asks for one PDF, the
 // approval record, or all of them as one zip, one at a time.
 

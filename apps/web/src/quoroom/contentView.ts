@@ -19,7 +19,7 @@ import { type HighlightRange, resolveRange } from './highlight'
 import { highlightedChildren, markedChildren } from './marked'
 import { richTextView } from './richTextView'
 
-// NOTE: A section of a shared draft, or one unit of it, read-only (stage 4g):
+// NOTE: A section of a shared draft, or one unit of it, read-only:
 // plain Foldkit views of the content, no editor and no Tiptap. Text that can
 // be commented on carries the data attributes the selection reader looks for
 // (`COMMENT_ATTRIBUTES`): the top-level section, the entries passed through
@@ -41,7 +41,7 @@ export type ViewContext = Readonly<{
   // NOTE: Strings the redacted preview highlights (labels in place of names,
   // the placeholder of a withheld image).
   marks?: ReadonlyArray<string>
-  // NOTE: Comments on selected text (stage 6b), by the item they are on
+  // NOTE: Comments on selected text, by the item they are on
   // (`itemKey`: the entry path and the item, joined with `/`).
   highlights?: ReadonlyArray<ItemHighlight>
   // NOTE: A reader without the people list (a reviewer) sees how many people

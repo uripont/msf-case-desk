@@ -13,7 +13,6 @@ import {
   canSeeComment,
   checkSave,
   redactorFor,
-  templateNodes,
 } from '@case-desk/domain'
 
 import { mapSectionDocs, parseSection, sectionFigures } from './content'
@@ -27,18 +26,13 @@ import {
   requireAuthor,
   validation,
 } from './core'
-import { peopleOfDraft, peopleOfRevision } from './reviewer'
+import { peopleOfDraft, peopleOfRevision, sectionKnown } from './reviewer'
 import { auditOf, member } from './support'
 import { roundViewOf, summaryOf } from './views'
 
 // NOTE: Author-side procedures for comments, rounds and images.
 
 type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
-
-const sectionKnown = (template: Loaded['template'], sectionId: string) =>
-  templateNodes(template).some(
-    entry => entry.kind === 'section' && entry.node.id === sectionId,
-  )
 
 // NOTE: events without a deadline cannot fail on one.
 const stateFailure = (

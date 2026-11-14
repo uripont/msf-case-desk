@@ -20,7 +20,7 @@ import {
 import { claimJobs, makeSqlReportRepository } from './reportRepository'
 import type { SqlStore } from './sql'
 
-// NOTE: Where the notification pass is started from (stage 7): the Cloudflare
+// NOTE: Where the notification pass is started from: the Cloudflare
 // `scheduled` handler, and `POST /api/tick` for hosts that have no Cron Trigger
 // (plain workerd, driven by a host `cron` with `curl`). Both run the same
 // `runNotificationPass`, which is safe to run twice at once or to stop halfway
@@ -143,13 +143,10 @@ export const runNotificationPass = async (
 export const scheduledPass = async (
   store: SqlStore,
   env: TickEnv,
-  // NOTE: on a test stage with invocation logs only: which isolate ran the
-  // pass and how many invocations it had handled (stage 10 CPU measurements).
-  tag?: Readonly<{ isolate: string; seq: number }>,
 ): Promise<void> => {
   try {
     const summary = await runNotificationPass(store, notificationConfigFrom(env))
-    console.log(JSON.stringify({ event: 'notification_pass', ...summary, ...tag }))
+    console.log(JSON.stringify({ event: 'notification_pass', ...summary }))
   } catch (error) {
     console.error(
       `notification pass failed: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown'}`,
