@@ -2542,6 +2542,93 @@ const main = async (): Promise<void> => {
       assert.ok((await textOf(record.bytes)).includes('Approval record'), 'the approval record PDF has no title')
       await shot(pia, 'downloads-3-approval-record-375')
     })
+
+    // NOTE: Stage 9, at 1280 px: a template editor copies the intake template,
+    // adds a section and a choice with an ending, meets a validation error next
+    // to its row, fixes it, previews and publishes after the differences; an
+    // author then starts a report from the new version. At 375 px the list
+    // opens without sideways scrolling. The pilot script's short run of a
+    // published template is covered in stage 10.
+    await step('a template editor copies the intake template, adds a section and an ending choice, fixes a validation error, previews and publishes; an author starts a report from the new version', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      await pia.goto(`${pilotUrl}/admin`)
+      await pia.getByRole('heading', { name: 'Administration' }).waitFor()
+      await pia.getByLabel('E-mail', { exact: true }).fill('pia.pilot@case-desk.test')
+      await pia.getByLabel('Name', { exact: true }).fill('Pia Pilot')
+      await pia.getByLabel('Capability', { exact: true }).selectOption('template_editor')
+      await pia.getByRole('button', { name: 'Give capability' }).click()
+      await pia.waitForFunction(() => /Template editor\s*Remove/.test(document.body.innerText))
+
+      await pia.setViewportSize({ width: 1280, height: 900 })
+      await pia.goto(`${pilotUrl}/templates`)
+      await pia.getByRole('heading', { name: 'Templates', level: 1 }).waitFor()
+      await shot(pia, 'templates-1-list-1280')
+      await pia.getByLabel('Template to copy', { exact: true }).selectOption({ label: 'Intake and initial assessment' })
+      await pia.getByLabel('Name of the copy', { exact: true }).fill('Pilot intake with a screening')
+      await pia.getByRole('button', { name: 'Copy into a new draft' }).click()
+      await pia.getByRole('link', { name: 'Open the draft' }).click()
+      await pia.getByRole('heading', { name: 'Edit Pilot intake with a screening', level: 1 }).waitFor()
+      await shot(pia, 'templates-2-editor-1280')
+
+      // A section, left without a title: the problem is shown by its row.
+      await pia.getByRole('button', { name: 'Add a section', exact: true }).first().click()
+      const section = pia.locator('[data-section-id="section-1"]')
+      await section.waitFor()
+      await section.locator('[id^="new-item-type-"]').selectOption('select')
+      await section.getByRole('button', { name: /^Add an item to/ }).click()
+      const item = section.locator('[data-item-id]').last()
+      await item.locator('[id^="item-"][id$="-label"]').first().fill('Screening result')
+      await item.getByRole('button', { name: /^Add an option to/ }).click()
+      await item.locator('[id^="option-"][id$="-label"]').first().fill('Out of scope')
+      await item.locator('[id^="option-"][id$="-end"]').first().check()
+      await section.locator('[id^="section-"][id$="-title"]').fill('')
+      await section.locator('[data-problems="here"]').first().waitFor()
+      assert.ok(
+        (await pia.getByText(/things? needs? fixing before this can be published/).count()) > 0,
+        'no problem count is shown',
+      )
+      await shot(pia, 'templates-3-problem-1280')
+      await pia.getByRole('button', { name: /^Publish version 1$/ }).click()
+      assert.equal(await pia.getByRole('region', { name: 'Publish this version' }).count(), 0, 'a template with problems was offered for publishing')
+
+      await section.locator('[id^="section-"][id$="-title"]').fill('Screening')
+      await pia.getByText('Nothing is marked: this can be published.').waitFor()
+      await pia.getByRole('button', { name: 'Preview', exact: true }).click()
+      await pia.getByRole('region', { name: 'Preview of a new report' }).waitFor()
+      await pia.getByRole('region', { name: 'Preview of a new report' }).getByText('Screening').first().waitFor()
+      await shot(pia, 'templates-4-preview-1280')
+      await pia.getByRole('button', { name: 'Back to editing' }).click()
+
+      await pia.getByRole('button', { name: /^Publish version 1$/ }).click()
+      const confirm = pia.getByRole('region', { name: 'Publish this version' })
+      await confirm.waitFor()
+      await confirm.getByRole('list', { name: 'Changes since the previous version' }).waitFor()
+      await shot(pia, 'templates-5-confirm-1280')
+      await confirm.getByRole('button', { name: 'Publish version 1' }).click()
+      await pia.getByText(/Published, version 1\./).first().waitFor()
+      await shot(pia, 'templates-6-published-1280')
+
+      // An author starts a report from the new version (Pia is also an author).
+      await pia.goto(`${pilotUrl}/reports`)
+      await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+      await pia
+        .getByLabel('Template', { exact: true })
+        .selectOption({ label: 'Pilot intake with a screening (version 1)' })
+      await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0101')
+      await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic case file for the new template')
+      await pia.getByRole('button', { name: 'Create report' }).click()
+      await pia.getByRole('link', { name: 'Open report PIL-0101' }).click()
+      await pia.getByRole('heading', { name: 'Pilot intake with a screening', level: 1 }).waitFor()
+      await shot(pia, 'templates-7-report-1280')
+
+      // At 375 px the list opens without sideways scrolling.
+      await pia.setViewportSize({ width: 375, height: 812 })
+      await pia.goto(`${pilotUrl}/templates`)
+      await pia.getByRole('heading', { name: 'Templates', level: 1 }).waitFor()
+      await pia.getByText('Pilot intake with a screening').first().waitFor()
+      await shot(pia, 'templates-8-list-375')
+    })
   } finally {
     await browser?.close()
     stop(server)

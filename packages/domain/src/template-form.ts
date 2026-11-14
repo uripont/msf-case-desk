@@ -1,19 +1,17 @@
-import { Result } from 'effect'
+import { Result, Schema } from 'effect'
 
 import {
-  type CaseValueField,
   type CoverPart,
-  type DatePrecision,
   type Item,
-  type ItemType,
-  type NumberStyle,
-  type NumberSuffix,
-  type PageNumbering,
-  type Permission,
-  type Requirement,
-  type RoleKind,
   type Section,
   type Template,
+  ITEM_TYPES,
+  NumberStyle,
+  NumberSuffix,
+  PageNumbering,
+  Permission,
+  Requirement,
+  RoleKind,
   TEMPLATE_SCHEMA_VERSION,
 } from './template'
 import { type TemplateProblem, validateTemplate } from './template-validation'
@@ -24,96 +22,107 @@ import { type TemplateProblem, validateTemplate } from './template-validation'
 // of siblings is the order in the list. An absent text is '' and an absent
 // number is null. `templateFromForm(templateToForm(t))` is `t`.
 
-export type FormNumberingLevel = Readonly<{
-  style: NumberStyle
-  letterCase: '' | 'upper' | 'lower'
-  suffix: NumberSuffix
-}>
+const Int = Schema.Int
+const MaybeInt = Schema.NullOr(Schema.Int)
 
-export type FormRole = Readonly<{
-  id: string
-  name: string
-  kind: RoleKind
-  view: 'full' | 'redacted'
-  permissions: ReadonlyArray<Permission>
-  approvalKind: '' | 'all' | 'at_least' | 'majority'
-  approvalCount: number | null
-}>
+export const FormNumberingLevel = Schema.Struct({
+  style: NumberStyle,
+  letterCase: Schema.Literals(['', 'upper', 'lower']),
+  suffix: NumberSuffix,
+})
+export type FormNumberingLevel = typeof FormNumberingLevel.Type
 
-export type FormSection = Readonly<{
-  id: string
-  parentId: string | null
-  isConclusion: boolean
-  title: string
-  instruction: string
-  requirement: Requirement
-  frontMatter: boolean
-  numbered: boolean
-  repeatable: boolean
-  repeatMin: number
-  repeatMax: number | null
-}>
+export const FormRole = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  kind: RoleKind,
+  view: Schema.Literals(['full', 'redacted']),
+  permissions: Schema.Array(Permission),
+  approvalKind: Schema.Literals(['', 'all', 'at_least', 'majority']),
+  approvalCount: MaybeInt,
+})
+export type FormRole = typeof FormRole.Type
 
-export type FormItem = Readonly<{
-  id: string
+export const FormSection = Schema.Struct({
+  id: Schema.String,
+  parentId: Schema.NullOr(Schema.String),
+  isConclusion: Schema.Boolean,
+  title: Schema.String,
+  instruction: Schema.String,
+  requirement: Requirement,
+  frontMatter: Schema.Boolean,
+  numbered: Schema.Boolean,
+  repeatable: Schema.Boolean,
+  repeatMin: Int,
+  repeatMax: MaybeInt,
+})
+export type FormSection = typeof FormSection.Type
+
+export const FormItem = Schema.Struct({
+  id: Schema.String,
   // NOTE: A section ID, or the ID of a repeated item.
-  parentId: string
-  type: ItemType
-  label: string
-  instruction: string
-  requirement: Requirement
-  precision: '' | DatePrecision
-  multiple: boolean
-  endOptionId: string
-  field: '' | CaseValueField
-  entryLabel: string
-  repeatMin: number
-  repeatMax: number | null
-}>
+  parentId: Schema.String,
+  type: Schema.Literals(ITEM_TYPES),
+  label: Schema.String,
+  instruction: Schema.String,
+  requirement: Requirement,
+  precision: Schema.Literals(['', 'day', 'month']),
+  multiple: Schema.Boolean,
+  endOptionId: Schema.String,
+  field: Schema.Literals(['', 'reference', 'unit', 'title']),
+  entryLabel: Schema.String,
+  repeatMin: Int,
+  repeatMax: MaybeInt,
+})
+export type FormItem = typeof FormItem.Type
 
-export type FormOption = Readonly<{
-  id: string
-  itemId: string
-  label: string
-  code: string
-}>
+export const FormOption = Schema.Struct({
+  id: Schema.String,
+  itemId: Schema.String,
+  label: Schema.String,
+  code: Schema.String,
+})
+export type FormOption = typeof FormOption.Type
 
-export type FormCoverLine = Readonly<{
-  emphasis: 'title' | 'subtitle' | 'normal'
-}>
+export const FormCoverLine = Schema.Struct({
+  emphasis: Schema.Literals(['title', 'subtitle', 'normal']),
+})
+export type FormCoverLine = typeof FormCoverLine.Type
 
-export type FormCoverPart = Readonly<{
-  lineIndex: number
-  kind: CoverPart['kind']
-  text: string
-  itemId: string
-  field: '' | CaseValueField
-}>
+export const FormCoverPart = Schema.Struct({
+  lineIndex: Int,
+  kind: Schema.Literals(['text', 'item', 'case_value']),
+  text: Schema.String,
+  itemId: Schema.String,
+  field: Schema.Literals(['', 'reference', 'unit', 'title']),
+})
+export type FormCoverPart = typeof FormCoverPart.Type
 
-export type TemplateForm = Readonly<{
-  schemaVersion: typeof TEMPLATE_SCHEMA_VERSION
-  id: string
-  version: number
-  name: string
-  shortName: string
-  description: string
-  caseReferenceLabel: string
-  numbering: ReadonlyArray<FormNumberingLevel>
-  roles: ReadonlyArray<FormRole>
-  sections: ReadonlyArray<FormSection>
-  items: ReadonlyArray<FormItem>
-  options: ReadonlyArray<FormOption>
-  endingOutcomeText: string
-  endingStaysInForce: ReadonlyArray<string>
-  coverLines: ReadonlyArray<FormCoverLine>
-  coverParts: ReadonlyArray<FormCoverPart>
-  contentsDepth: number | null
-  pageNumbering: PageNumbering
-  header: string
-  footer: string
-  coverHeader: string
-  coverFooter: string
-}>
+export const TemplateForm = Schema.Struct({
+  schemaVersion: Schema.Literal(TEMPLATE_SCHEMA_VERSION),
+  id: Schema.String,
+  version: Int,
+  name: Schema.String,
+  shortName: Schema.String,
+  description: Schema.String,
+  caseReferenceLabel: Schema.String,
+  numbering: Schema.Array(FormNumberingLevel),
+  roles: Schema.Array(FormRole),
+  sections: Schema.Array(FormSection),
+  items: Schema.Array(FormItem),
+  options: Schema.Array(FormOption),
+  endingOutcomeText: Schema.String,
+  endingStaysInForce: Schema.Array(Schema.String),
+  coverLines: Schema.Array(FormCoverLine),
+  coverParts: Schema.Array(FormCoverPart),
+  contentsDepth: MaybeInt,
+  pageNumbering: PageNumbering,
+  header: Schema.String,
+  footer: Schema.String,
+  coverHeader: Schema.String,
+  coverFooter: Schema.String,
+})
+export type TemplateForm = typeof TemplateForm.Type
 
 // NOTE: `{ [key]: value }` unless the text is absent, so optional fields stay
 // absent instead of becoming undefined.
@@ -290,9 +299,9 @@ const groupBy = <A>(
 // NOTE: Builds the template a form describes, then validates it like any
 // other template. Rows that point nowhere, or that no root reaches, are
 // reported as problems of the form.
-export const templateFromForm = (
+export const draftFromForm = (
   form: TemplateForm,
-): Result.Result<Template, ReadonlyArray<TemplateProblem>> => {
+): Readonly<{ raw: unknown; problems: ReadonlyArray<TemplateProblem> }> => {
   const problems: Array<TemplateProblem> = []
   const sectionsByParent = groupBy(form.sections, row => row.parentId)
   const itemsByParent = groupBy(form.items, row => row.parentId)
@@ -432,9 +441,6 @@ export const templateFromForm = (
       ),
     )
   }
-  if (problems.length > 0) {
-    return Result.fail(problems)
-  }
 
   const cover = form.coverLines.map((line, lineIndex) => ({
     emphasis: line.emphasis,
@@ -452,7 +458,7 @@ export const templateFromForm = (
       }),
   }))
 
-  return validateTemplate({
+  const raw = {
     schemaVersion: form.schemaVersion,
     id: form.id,
     version: form.version,
@@ -501,5 +507,48 @@ export const templateFromForm = (
       ...present('coverHeader', form.coverHeader),
       ...present('coverFooter', form.coverFooter),
     },
-  })
+  }
+  return { raw, problems }
 }
+
+// NOTE: The template a form describes, validated like any other. The rows
+// the form could not place are problems of the form and come first.
+export const templateFromForm = (
+  form: TemplateForm,
+): Result.Result<Template, ReadonlyArray<TemplateProblem>> => {
+  const { raw, problems } = draftFromForm(form)
+  return problems.length > 0 ? Result.fail(problems) : validateTemplate(raw)
+}
+
+// NOTE: Every text the author typed, trimmed, so a space at the end of a
+// title is not a problem of the template.
+export const trimmedForm = (form: TemplateForm): TemplateForm => ({
+  ...form,
+  name: form.name.trim(),
+  shortName: form.shortName.trim(),
+  description: form.description.trim(),
+  caseReferenceLabel: form.caseReferenceLabel.trim(),
+  roles: form.roles.map(role => ({ ...role, name: role.name.trim() })),
+  sections: form.sections.map(row => ({
+    ...row,
+    title: row.title.trim(),
+    instruction: row.instruction.trim(),
+  })),
+  items: form.items.map(row => ({
+    ...row,
+    label: row.label.trim(),
+    instruction: row.instruction.trim(),
+    entryLabel: row.entryLabel.trim(),
+  })),
+  options: form.options.map(row => ({
+    ...row,
+    label: row.label.trim(),
+    code: row.code.trim(),
+  })),
+  endingOutcomeText: form.endingOutcomeText.trim(),
+  coverParts: form.coverParts.map(part => ({ ...part, text: part.text.trim() })),
+  header: form.header.trim(),
+  footer: form.footer.trim(),
+  coverHeader: form.coverHeader.trim(),
+  coverFooter: form.coverFooter.trim(),
+})

@@ -74,6 +74,8 @@ import {
 } from './entryForm'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
+import * as TemplateEditor from './quoroom/templateEditor'
+import * as Templates from './quoroom/templates'
 import { withPublic, withQuoroom } from './quoroom/api'
 import { Failure, failureOf as quoroomFailureOf } from './quoroom/failure'
 import * as Audit from './quoroom/audit'
@@ -180,6 +182,8 @@ export const Model = Schema.Struct({
   maybeLink: Schema.Option(Link.Model),
   account: Account.Model,
   admin: Admin.Model,
+  templates: Templates.Model,
+  templateEditor: TemplateEditor.Model,
   unit: Unit.Model,
   reports: Reports.Model,
   report: Report.Model,
@@ -252,6 +256,8 @@ export const Message = defineMessageUnion({
   GotLinkMessage: { message: Link.Message },
   GotAccountMessage: { message: Account.Message },
   GotAdminMessage: { message: Admin.Message },
+  GotTemplatesMessage: { message: Templates.Message },
+  GotTemplateEditorMessage: { message: TemplateEditor.Message },
   GotUnitMessage: { message: Unit.Message },
   GotReportsMessage: { message: Reports.Message },
   GotReportMessage: { message: Report.Message },
@@ -373,6 +379,8 @@ export const initialModel = Model.make({
   maybeLink: Option.none(),
   account: Account.initialModel,
   admin: Admin.initialModel,
+  templates: Templates.initialModel,
+  templateEditor: TemplateEditor.initialModel,
   unit: Unit.initialModel,
   reports: Reports.initialModel,
   report: Report.initialModel,
@@ -762,6 +770,8 @@ const signedOut = (model: Model): Model =>
     session: () => Session.SignedOut(),
     account: () => Account.initialModel,
     admin: () => Admin.initialModel,
+    templates: () => Templates.initialModel,
+    templateEditor: () => TemplateEditor.initialModel,
     unit: () => Unit.initialModel,
     reports: () => Reports.initialModel,
     report: Report.cleared,
@@ -818,6 +828,22 @@ const foldLink = Update.foldChild({
           }
         },
     }),
+})
+
+const foldTemplates = Update.foldChild({
+  update: Templates.update,
+  read: (model: Model) => Option.some(model.templates),
+  write: (model, nextTemplates) =>
+    modifyFields(model, { templates: () => nextTemplates }),
+  toParentMessage: message => Message.GotTemplatesMessage({ message }),
+})
+
+const foldTemplateEditor = Update.foldChild({
+  update: TemplateEditor.update,
+  read: (model: Model) => Option.some(model.templateEditor),
+  write: (model, nextEditor) =>
+    modifyFields(model, { templateEditor: () => nextEditor }),
+  toParentMessage: message => Message.GotTemplateEditorMessage({ message }),
 })
 
 const foldAccount = Update.foldChild({
@@ -881,6 +907,29 @@ const enterAdmin = (origin: string) =>
     write: (model, nextAdmin) =>
       modifyFields(model, { admin: () => nextAdmin }),
     toParentMessage: message => Message.GotAdminMessage({ message }),
+  })
+
+const enterTemplates = (origin: string) =>
+  Update.foldChildStep({
+    update: (child: Templates.Model) => Templates.enter(child, origin),
+    read: (model: Model) => Option.some(model.templates),
+    write: (model, nextTemplates) =>
+      modifyFields(model, { templates: () => nextTemplates }),
+    toParentMessage: message => Message.GotTemplatesMessage({ message }),
+  })
+
+const enterTemplateEditor = (
+  origin: string,
+  templateId: string,
+  version: number,
+) =>
+  Update.foldChildStep({
+    update: (child: TemplateEditor.Model) =>
+      TemplateEditor.enter(origin, templateId, version, child.generation + 1),
+    read: (model: Model) => Option.some(model.templateEditor),
+    write: (model, nextEditor) =>
+      modifyFields(model, { templateEditor: () => nextEditor }),
+    toParentMessage: message => Message.GotTemplateEditorMessage({ message }),
   })
 
 const enterUnit = (origin: string) =>
@@ -1112,6 +1161,9 @@ const enterRoute = (
     Rules: () => ({ model }),
     Account: () => enterAccount(model),
     Admin: () => enterAdmin(model.origin)(model),
+    Templates: () => enterTemplates(model.origin)(model),
+    TemplateEditor: ({ templateId, version }) =>
+      enterTemplateEditor(model.origin, templateId, version)(model),
     Unit: () => enterUnit(model.origin)(model),
     Reports: () => enterReports(model),
     Link: () => ({ model }),
@@ -1476,6 +1528,9 @@ export const update = (model: Model, message: Message) =>
     GotLinkMessage: ({ message }) => foldLink(model, message),
     GotAccountMessage: ({ message }) => foldAccount(model, message),
     GotAdminMessage: ({ message }) => foldAdmin(model, message),
+    GotTemplatesMessage: ({ message }) => foldTemplates(model, message),
+    GotTemplateEditorMessage: ({ message }) =>
+      foldTemplateEditor(model, message),
     GotUnitMessage: ({ message }) => foldUnit(model, message),
     GotReportsMessage: ({ message }) => foldReports(model, message),
     GotReportMessage: ({ message }) =>

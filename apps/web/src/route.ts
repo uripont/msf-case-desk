@@ -20,6 +20,8 @@ export const AppRoute = defineRouteUnion({
   Unit: {},
   Reports: {},
   Admin: {},
+  Templates: {},
+  TemplateEditor: { templateId: Schema.String, version: Schema.Int },
   Inbox: {},
   Notifications: {},
   Link: {},
@@ -54,6 +56,17 @@ const reportsRouter = pipe(
   Route.mapTo(AppRoute.Reports),
 )
 const adminRouter = pipe(Route.literal('admin'), Route.mapTo(AppRoute.Admin))
+const templatesRouter = pipe(
+  Route.literal('templates'),
+  Route.mapTo(AppRoute.Templates),
+)
+const templateEditorRouter = pipe(
+  Route.literal('templates'),
+  Route.slash(Route.string('templateId')),
+  Route.slash(Route.literal('v')),
+  Route.slash(Route.int('version')),
+  Route.mapTo(AppRoute.TemplateEditor),
+)
 const inboxRouter = pipe(Route.literal('inbox'), Route.mapTo(AppRoute.Inbox))
 const notificationsRouter = pipe(
   Route.literal('notifications'),
@@ -137,6 +150,8 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     unitRouter,
     reportsRouter,
     adminRouter,
+    templateEditorRouter,
+    templatesRouter,
     inboxRouter,
     notificationsRouter,
     linkRouter,
@@ -164,6 +179,9 @@ export const pathOf = (route: AppRoute): string =>
     Unit: () => unitRouter(),
     Reports: () => reportsRouter(),
     Admin: () => adminRouter(),
+    Templates: () => templatesRouter(),
+    TemplateEditor: ({ templateId, version }) =>
+      templateEditorRouter({ templateId, version }),
     Inbox: () => inboxRouter(),
     Notifications: () => notificationsRouter(),
     Link: () => linkRouter(),
@@ -194,6 +212,8 @@ export const needsSession = (route: AppRoute): boolean =>
     Unit: () => true,
     Reports: () => true,
     Admin: () => true,
+    Templates: () => true,
+    TemplateEditor: () => true,
     Inbox: () => true,
     Notifications: () => true,
     Link: () => false,
@@ -222,6 +242,8 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Unit: () => false,
     Reports: () => false,
     Admin: () => false,
+    Templates: () => false,
+    TemplateEditor: () => false,
     Inbox: () => false,
     Notifications: () => false,
     Link: () => false,

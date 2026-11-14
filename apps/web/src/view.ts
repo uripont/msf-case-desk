@@ -38,6 +38,8 @@ import {
 } from './main'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
+import * as TemplateEditor from './quoroom/templateEditor'
+import * as Templates from './quoroom/templates'
 import { actionButton } from './quoroom/entryViews'
 import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
@@ -215,6 +217,9 @@ const pageLinksFor = (
     : []),
   ...(hasCapability(me, 'admin')
     ? [{ route: AppRoute.Admin(), label: 'Administration' }]
+    : []),
+  ...(hasCapability(me, 'template_editor')
+    ? [{ route: AppRoute.Templates(), label: 'Templates' }]
     : []),
   { route: AppRoute.Inbox(), label: 'Inbox' },
   {
@@ -829,6 +834,8 @@ const deskPageView = (
         Unit: () => loadedDesk(model, h),
         Reports: () => loadedDesk(model, h),
         Admin: () => loadedDesk(model, h),
+        Templates: () => loadedDesk(model, h),
+        TemplateEditor: () => loadedDesk(model, h),
         Link: () => loadedDesk(model, h),
         Report: () => loadedDesk(model, h),
         Share: () => loadedDesk(model, h),
@@ -1022,6 +1029,23 @@ const pageView = (
             model: model.admin,
             view: Admin.view,
             toParentMessage: message => Message.GotAdminMessage({ message }),
+          }),
+        ],
+        Templates: () => [
+          h.submodel({
+            slotId: 'templates',
+            model: model.templates,
+            view: Templates.view,
+            toParentMessage: message => Message.GotTemplatesMessage({ message }),
+          }),
+        ],
+        TemplateEditor: ({ templateId, version }) => [
+          h.submodel({
+            slotId: `template-${templateId}-${version}`,
+            model: model.templateEditor,
+            view: TemplateEditor.view,
+            toParentMessage: message =>
+              Message.GotTemplateEditorMessage({ message }),
           }),
         ],
         Link: () => [welcomePage(model, h)],
