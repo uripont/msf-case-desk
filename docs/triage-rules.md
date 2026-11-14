@@ -1,5 +1,7 @@
 # Triage rules (draft 0.1)
 
+> The scoring of the triage desk of iterations 1 and 2, which stays in the demo environment only. Quoroom does not use it.
+
 These rules are drafts. They exist so the team and the unit have something concrete to criticise, and they are kept as data in `packages/domain/src/rules.ts` so they can change without touching the engine.
 
 ## Inputs

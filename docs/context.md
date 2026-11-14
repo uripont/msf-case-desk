@@ -1,5 +1,7 @@
 # Context
 
+> Written for iterations 1 and 2, the triage desk called Case Desk, which stays in the demo environment. Quoroom (iteration 3) keeps the same boundary: it is internal, starts from a case reference, and takes no reports from reporters. Its decisions are in [`decisions.md`](decisions.md).
+
 ## Who this is for
 
 Case managers and committee members in MSF's ethics and behaviour functions, across all operational centres. The project started with the Ethics & Behaviour Unit, but the problem it addresses is shared: cases wait for a periodic meeting before anyone assesses them.

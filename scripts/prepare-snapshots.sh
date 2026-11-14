@@ -1,11 +1,13 @@
 #!/bin/sh
 # Extracts each frozen iteration from its git tag into .snapshots/<tag> and
 # installs its dependencies, so alchemy.run.ts can deploy it unchanged.
+# Without arguments, prepares every `iter*` tag.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
+tags=${*:-$(git -C "$root" tag --list 'iter*' | sort -V)}
 
-for tag in "$@"; do
+for tag in $tags; do
   target="$root/.snapshots/$tag"
   if [ -d "$target" ]; then
     echo "$tag: already prepared"

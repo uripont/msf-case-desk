@@ -1,161 +1,187 @@
 # Self-hosting
 
-Case Desk can run in two ways, both from this repository and with synthetic data only:
+Quoroom runs from this repository in three ways:
 
-- **A. Locally on plain `workerd`**, Cloudflare's open-source Workers runtime, with the database in a SQLite file on your disk. No account is needed.
-- **B. On your own Cloudflare account**, on the free plan, deployed with Alchemy.
+- **A. On plain `workerd`**, Cloudflare's open-source Workers runtime, on your own machine or server, with the database in a SQLite file. No Cloudflare account is needed.
+- **B. The pilot stack** on Cloudflare's free plan ([`alchemy.pilot.run.ts`](../alchemy.pilot.run.ts)): one Worker, its own EU database, no demo data. This is what a real pilot runs on.
+- **C. The demo stack** on Cloudflare ([`alchemy.run.ts`](../alchemy.run.ts)): the latest version (`app`) with the synthetic triage cases, next to the frozen iterations (`iter1`, `iter2`), on one shared database.
 
-Nothing in the repository is tied to one person's account. Account details come from your Alchemy profile, and accounts for signing in come from a git-ignored file you create.
+Running a pilot once it is deployed (first administrator, theme, units, backups, failures) is in [`pilot.md`](pilot.md).
 
 ## Prerequisites
 
 - Node 24.11.1 or later and pnpm 10 (`corepack enable` gives you the pinned version).
-- git, with the tags of the repository (`git fetch --tags` if you cloned with `--no-tags`).
+- git, with the tags of the repository (`git fetch --tags` if you cloned with `--no-tags`); only the demo stack needs them.
 - macOS, Linux or Windows (WSL) on x64 or arm64, where `workerd` runs.
 
 ```sh
-git clone <repository-url> case-desk
-cd case-desk
+git clone <repository-url> quoroom
+cd quoroom
 pnpm install
 ```
 
-## Create an account to sign in
-
-There is no sign-up page. Create each account from the command line:
-
-```sh
-pnpm users:add --email you@example.org --name "Your Name"
-```
-
-It prints a generated password once (or pass `--password` with at least 10 characters). The account is saved as a password hash in `.local/users.sql`, which is git-ignored. The file is imported again on every deploy and start, so it only adds an account whose e-mail is not there yet: running it again for an existing e-mail changes nothing, and it never replaces a password. Both paths below import this file. Quoroom accounts are made in the app. The first administrator of an environment comes from `pnpm grant-admin --env <demo|pilot|workerd|test-N> --email … --name …`, which prints a one-time activation link (72 hours) and never a password; it appends idempotent SQL to `.local/grants-<env>.sql`, which the stack imports (the `workerd` build embeds `grants-workerd.sql`). `--reset` issues a reset link for an account that has a password.
-
 ## Runtime mode
 
-The Worker reads the variable `RUNTIME_MODE`. It accepts exactly `demo` or `pilot`:
+The Worker reads the variable `RUNTIME_MODE`, which is exactly `demo` or `pilot`:
 
-- `pilot` (also what an unset or blank variable means, so a missing setting never opens the triage demo): the Quoroom features only. The legacy triage routes (`/api/login`, `/api/logout`, `/api/session` and the triage RPC) answer 404.
-- `demo`: the triage desk stays available next to Quoroom, with its synthetic cases. Ask for it explicitly. `alchemy.run.ts` sets it on `app`, and `pnpm workerd` sets it for the default mode.
-- anything else (`Demo`, `prod`, a typo): a configuration error. The Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request until it is fixed.
+- `pilot`, and also an unset or blank variable: Quoroom only. The triage desk of the earlier iterations is off and its routes (`/api/login`, `/api/logout`, `/api/session`, `/api/rpc`) answer 404.
+- `demo`: the triage desk with its synthetic cases stays next to Quoroom. The demo stack sets it on `app`; `pnpm workerd` sets it unless you ask for `--mode pilot`.
+- Anything else is a configuration error: the Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request until it is fixed.
 
-If you run your own `workerd` or your own stack, set it yourself (workerd takes it from the environment through the binding in `apps/api/workerd/case-desk.capnp`).
+## Accounts
 
-## Account guard for the pilot stack
-
-`pnpm pilot:*` and `pnpm test-env:*` refuse to run when `ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `ALCHEMY_CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY`, `CLOUDFLARE_EMAIL`, `CLOUDFLARE_ACCOUNT_EMAIL`, `CLOUDFLARE_AUTH_PROVIDER_NAME` or `ALCHEMY_HOME` is set, in the environment or in `.env`, to anything other than the default profile. Use the default Alchemy login. Only `--yes`, `--dry-run` and `--detailed` are passed on; `--profile` is refused.
-
-## A. Run locally on workerd
+There is no sign-up page and no password is ever printed. The operator creates the first administrator of an environment with a one-time link; everyone else is invited in the app (see [`pilot.md`](pilot.md)).
 
 ```sh
-pnpm workerd            # http://127.0.0.1:8787
-pnpm workerd 8790       # or choose a port
-pnpm workerd --mode pilot   # no demo cases; the built-in templates and the first administrator only
+pnpm grant-admin --env <demo|pilot|workerd|test-NAME> --email <email> --name "<name>" [--origin <address>]
+pnpm grant-admin --env <...> --email <email> --reset
 ```
 
-This builds the web app, bundles the Worker with the migrations, your accounts and the synthetic demo cases, and starts `workerd` with:
+It appends idempotent SQL to `.local/grants-<env>.sql` (git-ignored) and prints the link once, valid for 72 hours. The stack of that environment imports the file on its next deploy; the `workerd` build embeds `grants-workerd.sql` on its next start. `--origin` is the address of the app, so the printed link is complete (default for `workerd`: `http://127.0.0.1:8787`). The account gets the administrator and template editor capabilities. `--reset` makes a reset link for an account that already has a password.
+
+`pnpm users:add` creates accounts for the triage desk of the demo only (`.local/users.sql`). A pilot does not use it.
+
+## Secrets
+
+Secrets never go into the repository, a log, a URL or a chat. Only their names are listed here.
+
+| Name | Where | How to set it |
+| --- | --- | --- |
+| `TICK_SECRET` | `workerd` only | In the environment of the `workerd` process (the config reads it with `fromEnvironment`). Generate it with `openssl rand -hex 24` and keep it in a file only the host user can read. Unset, `/api/tick` answers 404 |
+| Cloudflare credentials | Your machine, for Alchemy | `pnpm exec alchemy profile edit --add Cloudflare` stores them in `~/.alchemy`, outside the repository. The pilot commands always use the profile `default` |
+
+On Cloudflare the pilot and demo stacks have no Worker secret today: a Cron Trigger runs the notification pass, so `/api/tick` stays unset (404) there. The WhatsApp credentials of a later stage will be Worker secrets set through Alchemy from the environment.
+
+Non-secret settings are plain variables: `RUNTIME_MODE`, and the notification timings in minutes `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES` (defaults 0, 2880 and 240: the request at once, reminders 48 h and 4 h before a deadline).
+
+## A. Run on workerd
+
+```sh
+pnpm workerd                    # demo mode, http://127.0.0.1:8787
+pnpm workerd --mode pilot       # pilot mode: built-in templates and the first administrator only
+pnpm workerd --mode pilot 8790  # choose a port
+```
+
+It builds the web app, bundles the Worker with the migrations and starts `workerd` with:
 
 - the same Worker code as on Cloudflare, serving the web app and the API under `/api`,
-- a SQLite database in `.local/workerd-data/`, created on first start, with the migrations applied in the same order as on Cloudflare,
-- the accounts and demo cases imported on every start (the demo cases move to the current time).
+- a SQLite database in `.local/workerd-data/` (demo) or `.local/workerd-data-pilot/` (pilot), created on the first start, with the migrations applied in the same order as on Cloudflare,
+- in demo mode, the accounts from `pnpm users:add` and the synthetic triage cases; in pilot mode, the built-in templates and `.local/grants-workerd.sql`.
+
+A pilot on `workerd`, from an empty folder:
+
+```sh
+pnpm grant-admin --env workerd --email admin@example.org --name "Admin Example"
+pnpm workerd --mode pilot       # then open the printed link
+```
 
 Check it from another terminal:
 
 ```sh
 pnpm smoke http://127.0.0.1:8787
-SMOKE_EMAIL=you@example.org SMOKE_PASSWORD=... pnpm smoke http://127.0.0.1:8787
 ```
 
-To start again from an empty database, stop `workerd` and delete `.local/workerd-data/`.
-
-### Reminders and decisions on plain workerd (stage 7)
-
-Quoroom's notifications (the request, the reminders 48 and 4 hours before a deadline, the decision at the deadline) are sent by a pass that runs once a minute or every few minutes. On Cloudflare a Cron Trigger starts it. Plain `workerd` has none, so start the pass from the host:
-
-```sh
-export TICK_SECRET=$(openssl rand -hex 24)   # set before `pnpm workerd`, and keep it
-# crontab: every minute
-* * * * * curl -fsS -X POST -H "Authorization: Bearer $TICK_SECRET" http://127.0.0.1:8787/api/tick
-```
-
-`/api/tick` answers 404 to every request unless `TICK_SECRET` is set and the request is a POST carrying it (the route is never revealed), and then 200 with the counts of the pass otherwise. Running it twice at once is safe. The timings come from `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES` (defaults: 0, 2880, 240).
+To start again from an empty database, stop `workerd` and delete the data folder of that mode.
 
 > [!NOTE]
-> The local run keeps the database in a small Durable Object with SQLite storage, because plain `workerd` has no D1. It implements the calls the Worker uses on D1 (`prepare`, `bind`, `all`, `first` and `run`), so the storage code is the same. On Cloudflare the database is D1.
+> Plain `workerd` has no D1, so the database is a single Durable Object with SQLite storage that implements the D1 calls the Worker uses. On Cloudflare the database is D1. Either way there is one database per deployment.
 
-For development with live reload use `pnpm infra:dev` instead. It runs every Worker of the stack on your machine with a local D1, and prints their addresses.
+### Notifications: `/api/tick` from a host cron
 
-## B. Deploy to your own Cloudflare account
+The notification pass sends review requests and reminders, and decides rounds whose deadline has passed. On Cloudflare a Cron Trigger starts it every minute. `workerd` fires no Cron Triggers, so a host `cron` calls `/api/tick`:
 
-Everything fits in Cloudflare's free plan. No payment card is needed, and without one nothing can be charged: when a daily limit is reached the Workers stop until 00:00 UTC (see the limits in [`decisions.md`](decisions.md)).
+```sh
+openssl rand -hex 24 > ~/.quoroom-tick-secret && chmod 600 ~/.quoroom-tick-secret
+TICK_SECRET=$(cat ~/.quoroom-tick-secret) pnpm workerd --mode pilot
+```
 
-1. **Create a Cloudflare account** at dash.cloudflare.com on the free plan.
-2. **Choose your workers.dev subdomain first.** In the dashboard, open *Workers & Pages* once and accept or set the subdomain (for example `my-case-desk`). Alchemy cannot deploy before it exists. Pick the final name now: renaming it later breaks Alchemy's cached state (see the pitfalls below).
-3. **Connect Alchemy to the account:**
+```crontab
+* * * * * curl -fsS -X POST -H "Authorization: Bearer $(cat $HOME/.quoroom-tick-secret)" http://127.0.0.1:8787/api/tick >/dev/null
+```
+
+`/api/tick` answers 404 to every request unless `TICK_SECRET` is set and the request is a POST with `Authorization: Bearer <secret>`; then 200 with the counts of the pass. Running it twice at once is safe. Deadlines are also checked on every read and write, so a late pass never lets a review in after the deadline.
+
+Put `workerd` behind your own HTTPS proxy before anyone else uses it; it listens on `127.0.0.1` only.
+
+## B. The pilot stack on Cloudflare
+
+Everything fits in the free plan. No payment card is needed; when a daily limit is reached the Worker stops until 00:00 UTC (limits in [`decisions.md`](decisions.md)).
+
+1. **Create a Cloudflare account** on the free plan, and open *Workers & Pages* once in the dashboard to choose the workers.dev subdomain. Pick the final name: renaming it later breaks Alchemy's cached state (see the pitfalls below).
+2. **Connect Alchemy**, with OAuth and the basic scopes:
    ```sh
    pnpm exec alchemy profile edit --add Cloudflare
    ```
-   Choose OAuth and the basic scopes. The login lasts about an hour; `pnpm exec alchemy profile refresh` renews it. Your credentials stay in `~/.alchemy`, outside the repository.
-4. **Extract the frozen iterations** that the stack also deploys (`iter1`, `iter2`, ...):
+3. **Grant the first administrator** (writes `.local/grants-pilot.sql`):
    ```sh
-   pnpm snapshots:prepare
+   pnpm grant-admin --env pilot --email <email> --name "<name>" --origin https://pilot.<subdomain>.workers.dev
    ```
-5. **Preview** what will be created:
+4. **Plan and deploy:**
    ```sh
-   pnpm exec alchemy --no-input plan
+   pnpm pilot:plan
+   pnpm pilot:deploy
    ```
-   The first plan on a new account creates Alchemy's own state store (a Worker called `alchemy-state-store`), so it is not purely read-only. Expect to see the D1 database and one Worker per version.
-6. **Deploy:**
-   ```sh
-   pnpm exec alchemy --no-input deploy --yes
-   ```
-   The database is created, the migrations run, your accounts and the demo cases are imported, and then the Workers go live. The output lists the addresses:
-   - `https://app.<your-subdomain>.workers.dev`, the latest version,
-   - `https://iter1.<your-subdomain>.workers.dev`, `https://iter2...`, the frozen iterations.
+   It creates the Worker `pilot` (`https://pilot.<subdomain>.workers.dev`) and its D1 database in the EU jurisdiction, applies the migrations, imports the built-in templates (only if absent) and the grants file, and adds a Cron Trigger every minute. There are no demo cases and no frozen versions.
+5. **Check it:** `pnpm smoke https://pilot.<subdomain>.workers.dev`, then open the activation link.
 
-   A new workers.dev address can answer with error 1042 for a few minutes after the first deploy, until it has propagated.
-7. **Check it:**
-   ```sh
-   SMOKE_EMAIL=you@example.org SMOKE_PASSWORD=... pnpm smoke https://app.<your-subdomain>.workers.dev
-   ```
+`pnpm pilot:destroy` deletes the Worker and the database with all its data.
 
-Alchemy names the deployment stage after your system user (`live_<user>`). The Worker names are fixed (`app`, `iter1`, ...) so the addresses stay stable, which means one Cloudflare account holds one deployment of the stack. For a second deployment on the same account, give it its own stage and a prefix for its Worker names:
+What the pilot stack holds fixed:
+
+- **Stages.** `alchemy.pilot.run.ts` deploys only the stage `pilot` or a `test_<name>` stage and throws for anything else, so a stray `ALCHEMY_STAGE` can never send it elsewhere.
+- **Guards.** `pnpm pilot:*` and `pnpm test-env:*` always use the Alchemy profile `default`. They pass on only `--yes`, `-y`, `--dry-run` and `--detailed`, and refuse to run when an account-selecting variable (`ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and the others in [`scripts/pilot-guards.mjs`](../scripts/pilot-guards.mjs)) is set in the environment or in `.env`.
+- **EU jurisdiction.** Set before the first deploy and never changed: changing it replaces the database.
+- **Logs.** Workers Logs keep what the code writes (errors, and the counts of each notification pass). Invocation logs, which record URLs, and traces are off; no request body is logged. Workers Issues is on.
+
+### Test environments
+
+A throwaway copy of the pilot stack, for checking a change on real Cloudflare before it reaches the pilot. At most one at a time (the free plan allows 10 databases and 5 Cron Triggers per account), always destroyed after use.
+
+```sh
+pnpm test-env:up test_<name> --fast   # Worker test-<name>-pilot, reminders after minutes instead of hours
+pnpm test-env:down test_<name>        # deletes it, and .local/grants-test-<name>.sql
+```
+
+`--invocation-logs` turns on invocation logs, for CPU measurements; the pilot never has them. `pnpm grant-admin --env test-<name>` grants its first administrator.
+
+## C. The demo stack on Cloudflare
+
+The demo stack serves the latest version as `app` (in demo mode, with a Cron Trigger) and every delivered iteration, frozen at its git tag, on one shared database. Only `app` applies migrations; the rules that keep the frozen versions working are in [`compatibility.md`](compatibility.md).
+
+```sh
+pnpm snapshots:prepare            # extract the frozen iterations from their tags
+pnpm infra:plan                   # preview changes
+pnpm infra:deploy                 # deploy
+pnpm smoke https://app.<subdomain>.workers.dev
+```
+
+Alchemy names the stage after your system user (`live_<user>`) unless `ALCHEMY_STAGE` is set. The Worker names are fixed (`app`, `iter1`, `iter2`), so one account holds one demo deployment. For a second one on the same account, set a stage and a prefix for the Worker names:
 
 ```sh
 export CASE_DESK_WORKER_PREFIX=test-     # test-app, test-iter1, ...
 pnpm exec alchemy --no-input plan --stage test
 ```
 
-Each stage gets its own database.
+`pnpm infra:dev` runs every Worker of the stack locally with a local D1 and live reload. `pnpm exec alchemy --no-input destroy --yes` deletes the stack and its database.
 
-### Updating
+## Usage and error alerts
 
-Add or change accounts with `pnpm users:add`, refresh the demo cases with `pnpm demo:refresh`, then deploy again. Only the `app` deployment applies new migrations; the snapshots read the same database. Read [`compatibility.md`](compatibility.md) before changing the schema.
+The Workers Free plan has no usage-based alerts. It has:
 
-### Removing everything
-
-```sh
-pnpm exec alchemy --no-input destroy --yes
-```
-
-This deletes the Workers and the database with all its data. The error alert, if you created it, lives in a separate stack and stays (`pnpm alerts:destroy` removes it).
-
-### Usage and error alerts
-
-The Workers Free plan has no alerts based on usage (Cloudflare's usage-based billing alert needs a paid plan). What it does have:
-
-- **Built-in usage notifications**, on by default for free Workers accounts: a weekly summary of requests and CPU time, and a usage report when a Worker's CPU time rises well above its weekly average. Check they are on in the dashboard under *Notifications*, and that they go to an address you read.
-- **An alert for new errors**, from [`alchemy.alerts.run.ts`](../alchemy.alerts.run.ts). It is a separate stack, so destroying the app never removes it. The `app` Worker has Workers Issues turned on, and the stack e-mails you when a new kind of error appears, for example after a deploy that broke the API:
+- **Built-in usage notifications**, on by default: a weekly summary, and a report when a Worker's CPU time rises well above its weekly average. Check them under *Notifications* in the dashboard.
+- **An alert for new errors**, from [`alchemy.alerts.run.ts`](../alchemy.alerts.run.ts), a separate stack that e-mails you when a new kind of error appears in Workers Issues:
   ```sh
   ALERT_EMAIL=you@example.org pnpm alerts:plan
   ALERT_EMAIL=you@example.org pnpm alerts:deploy
   ```
-  The variables are listed in [`.env.example`](../.env.example). Workers Issues is free while it is in beta; if Cloudflare refuses the policy on your plan, rely on the two notifications above.
-- **A manual check**: in the dashboard, *Workers & Pages*, *Overview* shows the requests of the day against the 100,000 daily limit, and *Storage & Databases*, *D1* shows rows read and written against 5 million and 100,000 a day.
+- **A manual check**: *Workers & Pages* shows the requests of the day against the 100,000 daily limit, and *Storage & Databases*, *D1* the rows read and written.
 
-## Pitfalls found while setting this up
+## Pitfalls
 
-- **The workers.dev subdomain must exist before the first `plan`.** Otherwise the plan fails. Open *Workers & Pages* in the dashboard once.
-- **Renaming the subdomain breaks the cached state-store address.** Alchemy then hangs on `plan`. Delete `.alchemy/state/CloudflareStateStore` in the repository and `~/.alchemy/profiles/<profile>/state-stores/cloudflare.json`, then run `plan` again.
-- **`plan` bootstraps the state store** on a new account, so the first `plan` already creates a Worker.
-- **`deploy` needs `--yes`** when it runs without a terminal (`--no-input`), or it stops at the approval prompt.
-- **A missing snapshot stops the stack** with "Snapshot iterN is missing". Run `pnpm snapshots:prepare`, which needs the git tags.
-- **"OwnedBySomeoneElse: Cannot adopt resource"** means a Worker with the same name already exists on the account, from another stage or another copy of the repository. Use `CASE_DESK_WORKER_PREFIX` as above, or remove the other deployment first.
+- **The workers.dev subdomain must exist before the first plan.** Open *Workers & Pages* in the dashboard once.
+- **The first plan bootstraps Alchemy's state store** (a Worker called `alchemy-state-store`), so it already creates something.
+- **Renaming the subdomain breaks the cached state-store address**, and `plan` hangs. Delete `~/.alchemy/profiles/<profile>/state-stores/cloudflare.json` (and `.alchemy/state/CloudflareStateStore` in the repository, if it exists), then plan again.
+- **`deploy` needs `--yes`** when it runs without a terminal (`--no-input`).
+- **"Snapshot iterN is missing"** stops the demo stack. Run `pnpm snapshots:prepare`, which needs the git tags.
+- **"OwnedBySomeoneElse: Cannot adopt resource"** means a Worker with that name already exists on the account. Use `CASE_DESK_WORKER_PREFIX`, or remove the other deployment first.
+- **A new workers.dev address can answer error 1042** for a few minutes after the first deploy.

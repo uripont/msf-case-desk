@@ -1,6 +1,96 @@
-# The two ethics report templates
+# Report templates
 
-This is the inventory of the two report templates of the MSF ethics unit, the first users of Quoroom. It is written in our own words from the two blank Word forms the unit gave us. The forms themselves are not in the repository, and neither is their text: section names are paraphrased and the guidance texts are summarised. Stage 1a turns this inventory into the two built-in templates, as data (D23 in [`decisions.md`](decisions.md)).
+A template describes a kind of report: its sections and items, its numbering, cover and page text, the roles of a report and how approval is reached. Templates are data (D23 in [`decisions.md`](decisions.md)), so nothing about one is built into the code. This file explains how to build one, then gives the inventory of the two built-in templates of the MSF ethics unit, Quoroom's first users.
+
+## How to build a template
+
+### In the app
+
+Template editors (a capability an administrator gives in *Administration*) open **Templates**. The list shows published templates, drafts and retired ones. From there:
+
+- **New blank template**, or **Copy a template** into a new draft. Built-in templates cannot be edited, only copied.
+- **Edit the draft**: the form has folding panels. *About this template* (name, short name for PDF file names, description, the label of the case reference), *Roles and approval*, *Numbering* (one level per depth of numbered sections), *Sections* (sections, subsections and their items), *Conclusion* (*Add a conclusion*), *Ending the report early (branching)*, *Cover page*, and *Contents, page numbers, header and footer*.
+- Each problem is shown under the row it is about, and its panel stays open. **Save draft** keeps a draft with problems; **Preview** shows a new report made from it with invented content.
+- **Publish version N** is offered only when nothing is marked. It first shows what changed since the previous version, to confirm. A published version never changes: new reports use the latest published version, and existing reports keep the one they started with. The next change is a new draft of the next version.
+- **Retire** hides a template from new reports; **Restore** brings it back. Nothing is ever deleted.
+
+What validation insists on (`packages/domain/src/template-validation.ts`):
+
+- Exactly one drafting role, with the full view and at least `edit`, `share`, `publish` and `manage_people`; with a conclusion, also `write_conclusion`. Reviewing roles may have `comment` and `vote` only.
+- At least one role votes, and each voting role has an approval rule: all voters, at least N (1 to 50), or a majority. A role that does not vote has no rule.
+- IDs are unique. Numbered sections need as many numbering levels as their depth (at most 5). Roman and letter styles take upper or lower case; arabic takes none.
+- Only subsections repeat; a required repeat needs a minimum of 1. No section or repeated entry is empty.
+- Front matter sections are top-level and come first; restarting page numbers after the front matter needs some.
+- A select with an end answer is a fixed item of the body, and the template then has an ending with its outcome text. Header and footer text uses only `{page}`, `{pages}`, `{case}` and `{title}`.
+
+### The JSON shape, for built-in templates
+
+A built-in template is a `Template` value (`packages/domain/src/template.ts`, `schemaVersion` 1) in `packages/domain/src/builtin-templates.ts`, written with the helpers of `template-builders.ts`. A small one that passes validation:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "example-review",
+  "version": 1,
+  "name": "Example review",
+  "shortName": "example",
+  "caseReferenceLabel": "Case reference",
+  "numbering": [
+    { "style": "arabic", "suffix": "." },
+    { "style": "letters", "letterCase": "lower", "suffix": ")" }
+  ],
+  "roles": [
+    {
+      "id": "authors", "name": "Authors", "kind": "drafting", "view": "full",
+      "permissions": ["edit", "share", "publish", "manage_people", "comment_drafts", "reply"]
+    },
+    {
+      "id": "committee", "name": "Committee", "kind": "reviewing", "view": "redacted",
+      "permissions": ["comment", "vote"], "approval": { "kind": "all" }
+    }
+  ],
+  "sections": [
+    {
+      "id": "summary", "title": "Summary", "requirement": "required",
+      "frontMatter": false, "numbered": true, "sections": [],
+      "items": [
+        { "id": "received", "label": "Date received", "requirement": "required", "type": "date", "precision": "day" },
+        {
+          "id": "account", "label": "What happened", "requirement": "required", "type": "rich_text",
+          "instruction": "A short account. Guidance only, never stored in the report."
+        }
+      ]
+    },
+    {
+      "id": "findings", "title": "Findings", "requirement": "required",
+      "frontMatter": false, "numbered": true, "items": [],
+      "sections": [
+        {
+          "id": "finding", "title": "Finding", "requirement": "required",
+          "frontMatter": false, "numbered": true, "repeat": { "min": 1 }, "sections": [],
+          "items": [{ "id": "facts", "label": "Facts", "requirement": "required", "type": "rich_text" }]
+        }
+      ]
+    }
+  ],
+  "pageNumbering": "continuous",
+  "furniture": { "footer": "Confidential, {case}, page {page} of {pages}" }
+}
+```
+
+- **Items** have `id`, `label`, `requirement` (`required`, `optional`, `optional_with_reason`), an optional `instruction`, and a `type`: `text`, `date` (`precision` `day` or `month`), `select` (`multiple`, `options` of `{ id, label, code? }`, optional `endOptionId`), `people` (`multiple`), `rich_text`, `case_value` (`field` `reference`, `unit` or `title`), `signature`, or `repeated` (`entryLabel`, `min`, optional `max`, nested `items`).
+- **Sections** have `id`, `title`, `requirement`, `frontMatter`, `numbered`, an optional `repeat` (`{ min, max? }`, subsections only), `items` and `sections`. The optional `conclusion` is a section too.
+- **Optional parts of the template**: `description`, `conclusion`, `ending` (`{ outcomeText, staysInForce: [section IDs] }`), `cover` (`{ lines: [{ emphasis, parts }] }`, a part being fixed text, an item or a case-file value), `contentsDepth` (1 to 5), `pageNumbering` (`continuous` or `restart_after_front_matter`), and `furniture` (`header`, `footer`, `coverHeader`, `coverFooter`).
+
+To ship a new or changed built-in template:
+
+1. Add it to `BUILT_IN_TEMPLATES` in `builtin-templates.ts`. A change to a published one is a new `version`: environments import built-ins only if absent, by ID and version, so an edited version 1 would never reach them.
+2. Regenerate the import file and check: `pnpm --filter @case-desk/api templates:sql`, then `pnpm check`. The tests validate every built-in template and fail if `apps/api/seed/builtin-templates.sql` is out of date.
+3. Deploy. The stacks and `pnpm workerd` import that file.
+
+## The ethics unit's two templates
+
+The inventory below was written in our own words from the two blank Word forms the unit gave us. The forms themselves are not in the repository, and neither is their text: section names are paraphrased and the guidance texts are summarised. `builtin-templates.ts` implements it.
 
 Both forms are blank. No names, cases or personal data are described here.
 
@@ -9,9 +99,7 @@ Both forms are blank. No names, cases or personal data are described here.
 | **Intake / initial assessment** | A preliminary review of a complaint: is it in scope, is it worth investigating. Ends with a recommendation per allegation and, afterwards, the conclusion of the behaviour committee | `intake` |
 | **Investigation report** | The report of a full investigation: background, facts and findings per allegation, conclusion, recommendations, lists of interviewees and exhibits. It has no committee conclusion step | `investigation` |
 
-Which file is which was decided from content. The attachment ending `778dead8-…` is the intake; the one ending `2d3c084c-…` is the investigation report.
-
-## How to read the mapping
+### How to read the mapping
 
 - **Section** and **subsection** are D23 sections. *Numbering* is the per-level style (arabic, roman, letters, case, suffix, or none).
 - **Item types** are the D23 ones: text, date, select, people reference, rich text, case-file value, signature block, repeated entry.
@@ -297,9 +385,9 @@ Not gaps, and why:
 - **Different headers per document part** in the investigation's Word file (several header and footer variants for the cover, contents and body): reduced to one header and footer, with a different cover page, as the PDF does not need more.
 - **Letter and roman lists inside rich text**: not reproduced (see above).
 
-## Decisions needed
+## Defaults chosen
 
-These do not block stage 1a; the agent's default is given, and it can be tuned later in the template editor.
+The built-in templates apply the default given for each. A template editor can change any of them in a copy.
 
 1. **Which parts of the intake stay in force after an early end.** Default: only the sign-off. The source says to leave "the remaining parts" blank, without saying whether the recommendation is one.
 2. **Which answer of the materiality question ends the intake.** The source's second question is worded so that "yes" can mean misconduct is likely or that it is mere oversight; the rule "if no, stop" fits only the first reading. Default: **no** ends the report for both questions, with the second question reworded in our own words as "would the allegations be misconduct if proven, and is it more than oversight?".

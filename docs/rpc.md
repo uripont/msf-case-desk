@@ -1,6 +1,6 @@
 # RPC contract (iteration 3)
 
-The contract lives in `packages/domain/src/api/`. `CaseDeskRpcs` (iteration 2, `src/rpc.ts`) is untouched and stays in use until stage 3 switches the apps over. Two new groups sit beside it: `QuoroomPublicRpcs` (no session: sign-in and links) and `QuoroomRpcs` (signed in, behind the same `Authentication` middleware). `procedures.ts` holds the table below as data; a test checks every procedure has exactly one row.
+The contract lives in `packages/domain/src/api/`. `CaseDeskRpcs` (iteration 2, `src/rpc.ts`, at `/api/rpc`) still serves the triage desk of the demo and answers 404 in a pilot. Quoroom has two groups, at `/api/q/public` and `/api/q/rpc`: `QuoroomPublicRpcs` (no session: sign-in and links) and `QuoroomRpcs` (signed in, behind the same `Authentication` middleware). `procedures.ts` holds the table below as data; a test checks every procedure has exactly one row.
 
 ## Rules of the contract
 
