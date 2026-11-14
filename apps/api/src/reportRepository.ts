@@ -47,6 +47,7 @@ import {
 
 import {
   type GuardedStep,
+  type SqlBatcher,
   type SqlStore,
   type SqlValue,
   claim,
@@ -361,6 +362,16 @@ const revisionOf = (r: Row): RevisionRecord => ({
   publishedAt: n(r['published_at']),
 })
 
+const reviewRecordOf = (r: Row): StoreReviewRecord => ({
+  id: s(r['id']),
+  roundId: s(r['round_id']),
+  revision: n(r['revision_number']),
+  reviewerId: s(r['reviewer_id']),
+  decision: s(r['decision']) as StoreReviewRecord['decision'],
+  hasComments: b(r['has_comments']),
+  sentAt: n(r['sent_at']),
+})
+
 const roundOf = (r: Row): RoundRecord => ({
   id: s(r['id']),
   reportId: s(r['report_id']),
@@ -427,8 +438,12 @@ const jobOf = (r: Row): JobRecord => ({
   claimedBy: sn(r['claimed_by']),
   leaseUntil: nn(r['lease_until']),
   attempts: n(r['attempts']),
+  deferrals: n(r['deferrals']),
+  deadlineZone: sn(r['deadline_zone']),
   providerMessageId: sn(r['provider_message_id']),
   deliveryStatus: sn(r['delivery_status']),
+  retryAt: nn(r['retry_at']),
+  lastError: sn(r['last_error']),
   createdAt: n(r['created_at']),
   doneAt: nn(r['done_at']),
   readAt: nn(r['read_at']),
@@ -1570,6 +1585,94 @@ const ops: Impl = {
   getReport: async (db, reportId) => {
     const found = await row(db, `${REPORT_SELECT} WHERE r.id = ?`, reportId)
     return found === null ? null : reportOf(found)
+  },
+  // NOTE: the whole read of a report for the notification pass in one batch
+  // (one round trip). No users join, no correlated subqueries: the latest
+  // draft and revision are taken from the revisions read in the same batch.
+  readReport: async (db, reportId, options) => {
+    const outcome = await runBatch(db, [
+      {
+        sql: `SELECT r.id, r.case_file_id, r.template_id, r.template_version,
+          r.state, r.deadline_at, r.deadline_zone, r.created_by, r.created_at, r.updated_at,
+          f.unit_id AS f_unit_id, f.reference AS f_reference, f.title AS f_title,
+          f.created_at AS f_created_at, f.updated_at AS f_updated_at
+          FROM reports r JOIN case_files f ON f.id = r.case_file_id WHERE r.id = ?`,
+        values: [reportId],
+      },
+      options.template
+        ? {
+            sql: `SELECT v.state, json_extract(v.definition, '$.roles') AS roles,
+              json_type(v.definition, '$.conclusion') AS conclusion
+              FROM template_versions v WHERE v.template_id = (SELECT template_id FROM reports WHERE id = ?)
+              AND v.version = (SELECT template_version FROM reports WHERE id = ?)`,
+            values: [reportId, reportId],
+          }
+        : { sql: 'SELECT 1 WHERE 0', values: [] },
+      {
+        sql: `SELECT user_id, role_id, added_at FROM report_members WHERE report_id = ?
+          ORDER BY added_at, user_id`,
+        values: [reportId],
+      },
+      {
+        sql: 'SELECT * FROM review_rounds WHERE report_id = ? ORDER BY revision_number',
+        values: [reportId],
+      },
+      {
+        sql: `SELECT p.round_id, p.user_id, p.role_id, p.added_at, p.removed_at, p.removed_by
+          FROM round_participants p JOIN review_rounds r ON r.id = p.round_id
+          WHERE r.report_id = ? ORDER BY p.added_at, p.user_id`,
+        values: [reportId],
+      },
+      {
+        sql: `SELECT v.*, r.revision_number FROM reviews v JOIN review_rounds r ON r.id = v.round_id
+          WHERE r.report_id = ? ORDER BY v.sent_at, v.id`,
+        values: [reportId],
+      },
+      {
+        sql: 'SELECT * FROM revisions WHERE report_id = ? ORDER BY number',
+        values: [reportId],
+      },
+    ])
+    if (outcome._tag !== 'Committed') throw new Error('readReport: batch not committed')
+    const [report, template, members, roundRows, participantRows, reviewRows, revisionRows] =
+      outcome.results.map(result => result.rows)
+    const found = report?.[0]
+    if (found === undefined) return null
+    const revisions = (revisionRows ?? []).map(revisionOf)
+    const participants = (participantRows ?? []).map(r =>
+      participantOf({ ...r, name: '' }),
+    )
+    const first = template?.[0]
+    return {
+      record: {
+        ...reportOf({ ...found, latest_draft: null, latest_revision: null }),
+        latestDraft: revisions.reduce((m, r) => Math.max(m, r.draftNumber), 0),
+        latestRevision: revisions.reduce<number | null>(
+          (m, r) => (m === null ? r.number : Math.max(m, r.number)),
+          null,
+        ),
+      },
+      template:
+        first === undefined
+          ? null
+          : {
+              state: s(first['state']) as 'draft' | 'published' | 'retired',
+              roles: s(first['roles']),
+              hasConclusion: first['conclusion'] !== null,
+            },
+      members: (members ?? []).map(r => ({
+        userId: s(r['user_id']),
+        name: '',
+        roleId: s(r['role_id']),
+        addedAt: n(r['added_at']),
+      })),
+      rounds: (roundRows ?? []).map(roundOf).map(round => ({
+        round,
+        participants: participants.filter(p => p.roundId === round.id),
+      })),
+      reviews: (reviewRows ?? []).map(reviewRecordOf),
+      revisions,
+    }
   },
   listReportsForMember: async (db, userId) =>
     (
@@ -2782,15 +2885,7 @@ const ops: Impl = {
           WHERE r.report_id = ? ORDER BY v.sent_at, v.id`,
         reportId,
       )
-    ).map((r): StoreReviewRecord => ({
-      id: s(r['id']),
-      roundId: s(r['round_id']),
-      revision: n(r['revision_number']),
-      reviewerId: s(r['reviewer_id']),
-      decision: s(r['decision']) as StoreReviewRecord['decision'],
-      hasComments: b(r['has_comments']),
-      sentAt: n(r['sent_at']),
-    })),
+    ).map(reviewRecordOf),
   addDraftComment: async (db, input) => {
     const inserted = await rows(
       db,
@@ -2892,37 +2987,99 @@ const ops: Impl = {
   },
 
   // -- jobs, inbox, events, audit
-  claimDueJobs: async (db, input) =>
-    (
-      await claim(db, {
-        table: 'notification_jobs',
-        set: `state = 'claimed', claimed_by = ?, lease_until = ?, attempts = attempts + 1`,
-        setValues: [input.claimedBy, input.now + input.leaseMs],
-        where: `(state = 'pending' AND due_at <= ?) OR (state = 'claimed' AND lease_until < ?)`,
-        whereValues: [input.now, input.now],
-        orderBy: 'due_at, id',
-        limit: input.limit,
-      })
-    )
-      .map(jobOf)
-      .sort(byDue),
+  claimDueJobs: (db, input) => claimJobs(db, input),
+  // NOTE: every statement changes only jobs still claimed by this pass. The
+  // events come first, from the rows as they are before they become `done`.
   finishJobs: async (db, input) => {
+    const mine = `state = 'claimed' AND claimed_by = ?`
     const steps = compact<GuardedStep>([
       input.done.length === 0
         ? null
         : {
-            sql: `UPDATE notification_jobs SET state = 'done', done_at = ?
-              WHERE state = 'claimed' AND claimed_by = ?
-              AND id IN (SELECT value FROM json_each(?))`,
+            sql: `INSERT INTO report_events (report_id, kind, account_id, draft_number,
+              revision_number, at, detail)
+              SELECT report_id,
+                CASE kind WHEN 'review_request' THEN 'notified' ELSE 'reminded' END,
+                recipient_id, NULL, revision_number, ?,
+                CASE kind WHEN 'review_request' THEN NULL ELSE kind END
+              FROM notification_jobs
+              WHERE ${mine} AND recipient_id IS NOT NULL
+                AND kind IN ('review_request', 'reminder_first', 'reminder_final')
+                AND id IN (SELECT value FROM json_each(?))`,
             values: [input.now, input.claimedBy, JSON.stringify(input.done)],
+          },
+      input.done.length === 0
+        ? null
+        : {
+            sql: `UPDATE notification_jobs SET state = 'done', done_at = ?, lease_until = NULL
+              WHERE ${mine} AND id IN (SELECT value FROM json_each(?))`,
+            values: [input.now, input.claimedBy, JSON.stringify(input.done)],
+          },
+      input.delivered === undefined || input.delivered.length === 0
+        ? null
+        : {
+            sql: `UPDATE notification_jobs SET
+                provider_message_id = (SELECT json_extract(d.value, '$.providerMessageId')
+                  FROM json_each(?) d WHERE json_extract(d.value, '$.id') = notification_jobs.id),
+                delivery_status = (SELECT json_extract(d.value, '$.deliveryStatus')
+                  FROM json_each(?) d WHERE json_extract(d.value, '$.id') = notification_jobs.id)
+              WHERE state = 'done' AND done_at = ?
+                AND id IN (SELECT json_extract(value, '$.id') FROM json_each(?))`,
+            values: [
+              JSON.stringify(input.delivered),
+              JSON.stringify(input.delivered),
+              input.now,
+              JSON.stringify(input.delivered),
+            ],
           },
       input.skipped.length === 0
         ? null
         : {
-            sql: `UPDATE notification_jobs SET state = 'skipped', done_at = ?
-              WHERE state = 'claimed' AND claimed_by = ?
-              AND id IN (SELECT value FROM json_each(?))`,
+            sql: `UPDATE notification_jobs SET state = 'skipped', done_at = ?, lease_until = NULL
+              WHERE ${mine} AND id IN (SELECT value FROM json_each(?))`,
             values: [input.now, input.claimedBy, JSON.stringify(input.skipped)],
+          },
+      input.failed === undefined || input.failed.length === 0
+        ? null
+        : {
+            sql: `UPDATE notification_jobs SET state = 'failed', lease_until = NULL,
+                attempts = attempts + 1,
+                retry_at = (SELECT json_extract(f.value, '$.retryAt') FROM json_each(?) f
+                  WHERE json_extract(f.value, '$.id') = notification_jobs.id),
+                last_error = (SELECT json_extract(f.value, '$.error') FROM json_each(?) f
+                  WHERE json_extract(f.value, '$.id') = notification_jobs.id)
+              WHERE ${mine} AND id IN (SELECT json_extract(value, '$.id') FROM json_each(?))`,
+            values: [
+              JSON.stringify(input.failed),
+              JSON.stringify(input.failed),
+              input.claimedBy,
+              JSON.stringify(input.failed),
+            ],
+          },
+      input.deferred === undefined || input.deferred.length === 0
+        ? null
+        : {
+            sql: `UPDATE notification_jobs SET state = 'failed', lease_until = NULL,
+                deferrals = deferrals + 1,
+                retry_at = (SELECT json_extract(f.value, '$.retryAt') FROM json_each(?) f
+                  WHERE json_extract(f.value, '$.id') = notification_jobs.id),
+                last_error = (SELECT json_extract(f.value, '$.error') FROM json_each(?) f
+                  WHERE json_extract(f.value, '$.id') = notification_jobs.id)
+              WHERE ${mine} AND id IN (SELECT json_extract(value, '$.id') FROM json_each(?))`,
+            values: [
+              JSON.stringify(input.deferred),
+              JSON.stringify(input.deferred),
+              input.claimedBy,
+              JSON.stringify(input.deferred),
+            ],
+          },
+      input.released === undefined || input.released.length === 0
+        ? null
+        : {
+            sql: `UPDATE notification_jobs SET state = 'pending', claimed_by = NULL,
+                lease_until = NULL
+              WHERE ${mine} AND id IN (SELECT value FROM json_each(?))`,
+            values: [input.claimedBy, JSON.stringify(input.released)],
           },
     ])
     if (steps.length > 0) await runBatch(db, steps)
@@ -2939,9 +3096,11 @@ const ops: Impl = {
     (
       await rows(
         db,
-        `SELECT * FROM notification_jobs WHERE recipient_id = ? AND channel = 'inbox'
-          AND state = 'done'${before === undefined ? '' : ' AND id < ?'}
-          ORDER BY id DESC LIMIT ?`,
+        `SELECT j.*, r.deadline_zone FROM notification_jobs j
+          LEFT JOIN review_rounds r ON r.id = j.round_id
+          WHERE j.recipient_id = ? AND j.channel = 'inbox'
+          AND j.state = 'done'${before === undefined ? '' : ' AND j.id < ?'}
+          ORDER BY j.id DESC LIMIT ?`,
         userId,
         ...(before === undefined ? [] : [before]),
         limit,
@@ -3382,6 +3541,47 @@ export interface QueryCountOptions {
   // NOTE: called after every operation with the number of D1 queries it made.
   readonly onQueries?: (operation: string, queries: number) => void
 }
+
+// NOTE: the claim of the notification pass as plain SQL, one statement, with no
+// Effect around it: the cron handler runs it first and returns at once when
+// nothing is due (an idle run is one query). Taking over a claim whose lease
+// has run out counts a deferral, not an attempt.
+export const claimJobs = async (
+  db: SqlBatcher,
+  input: Readonly<{
+    now: number
+    limit: number
+    leaseMs: number
+    claimedBy: string
+    reportIds?: ReadonlyArray<string>
+  }>,
+): Promise<ReadonlyArray<JobRecord>> =>
+  (
+    await claim(db, {
+      table: 'notification_jobs',
+      set: `state = 'claimed', claimed_by = ?, lease_until = ?, deferrals = deferrals + (state = 'claimed'), retry_at = NULL`,
+      setValues: [input.claimedBy, input.now + input.leaseMs],
+      where: `((state = 'pending' AND due_at <= ?)
+        OR (state = 'claimed' AND lease_until < ?)
+        OR (state = 'failed' AND retry_at IS NOT NULL AND retry_at <= ?))${
+          input.reportIds === undefined
+            ? ''
+            : ' AND report_id IN (SELECT value FROM json_each(?))'
+        }`,
+      whereValues: [
+        input.now,
+        input.now,
+        input.now,
+        ...(input.reportIds === undefined
+          ? []
+          : [JSON.stringify(input.reportIds)]),
+      ],
+      orderBy: 'due_at, id',
+      limit: input.limit,
+    })
+  )
+    .map(jobOf)
+    .sort(byDue)
 
 const counting = (
   store: SqlStore,

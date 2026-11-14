@@ -11,6 +11,12 @@ import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'
 import { modeOf } from './runtimeMode'
+import {
+  TICK_PATH,
+  type TickEnv,
+  handleTick,
+  notificationConfigFrom,
+} from './tick'
 import { layerSql } from './d1Repository'
 import { type NetworkPolicy, QuoroomServicesFor } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
@@ -25,7 +31,7 @@ import {
 
 type Row = Record<string, SqlValue>
 
-export type Env = {
+export type Env = TickEnv & {
   readonly ASSETS: Fetcher
   readonly DATABASE: DurableObjectNamespace<LocalDatabase>
   // NOTE: the header a proxy in front of this server sets to the caller's
@@ -180,6 +186,11 @@ export default {
       return withReferrerPolicy(await serveAssets(request, env))
     }
     const database = localDatabase(env)
+    // NOTE: plain workerd fires no Cron Triggers: a host `cron` calls this with
+    // `TICK_SECRET`. Without the secret the route does not exist.
+    if (new URL(request.url).pathname === TICK_PATH) {
+      return handleTick(request, env, database)
+    }
     const proxyHeader = (env.TRUSTED_PROXY_HEADER ?? '').trim()
     const network: NetworkPolicy =
       proxyHeader === ''
@@ -191,7 +202,7 @@ export default {
     }
     const app = makeApp(
       layerSql(database),
-      Layer.mergeAll(layerSqlReport(database), QuoroomServicesFor(network)),
+      Layer.mergeAll(layerSqlReport(database), QuoroomServicesFor(network, notificationConfigFrom(env))),
       mode.mode,
     )
     try {

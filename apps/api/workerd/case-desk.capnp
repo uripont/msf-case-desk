@@ -22,6 +22,13 @@ const caseDesk :Workerd.Worker = (
     # The runtime mode, `demo` or `pilot` (D20). Unset means `pilot`; anything else but
     # `demo` is refused by the Worker (every API request answers 500).
     (name = "RUNTIME_MODE", fromEnvironment = "RUNTIME_MODE"),
+    # The notification pass (stage 7). `POST /api/tick` needs `TICK_SECRET` (unset: the
+    # route answers 404); a host cron calls it, because workerd fires no Cron Triggers.
+    # The timings, in minutes, are optional (D12).
+    (name = "TICK_SECRET", fromEnvironment = "TICK_SECRET"),
+    (name = "NOTIFY_REQUEST_DELAY_MINUTES", fromEnvironment = "NOTIFY_REQUEST_DELAY_MINUTES"),
+    (name = "NOTIFY_FIRST_REMINDER_MINUTES", fromEnvironment = "NOTIFY_FIRST_REMINDER_MINUTES"),
+    (name = "NOTIFY_FINAL_REMINDER_MINUTES", fromEnvironment = "NOTIFY_FINAL_REMINDER_MINUTES"),
   ],
   durableObjectNamespaces = [
     (className = "LocalDatabase", uniqueKey = "case-desk-local-database", enableSql = true),

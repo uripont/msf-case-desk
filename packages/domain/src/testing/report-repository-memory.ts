@@ -298,8 +298,12 @@ export const makeMemoryReportRepository = (
           claimedBy: null,
           leaseUntil: null,
           attempts: 0,
+          deferrals: 0,
+          deadlineZone: null,
           providerMessageId: null,
           deliveryStatus: null,
+          retryAt: null,
+          lastError: null,
           createdAt: now,
           doneAt: null,
           readAt: null,
@@ -1397,6 +1401,77 @@ export const makeMemoryReportRepository = (
         Effect.sync(() => {
           const row = reports.find(r => r.id === reportId)
           return row === undefined ? null : reportRecord(row)
+        }),
+      readReport: (reportId, options) =>
+        Effect.sync(() => {
+          const row = reports.find(r => r.id === reportId)
+          if (row === undefined) return null
+          const list = revisions
+            .filter(r => r.reportId === reportId)
+            .sort(byKey(r => r.number))
+          const version = versions.find(
+            v => v.templateId === row.templateId && v.version === row.templateVersion,
+          )
+          const definition =
+            options.template && version !== undefined
+              ? (JSON.parse(version.definition) as {
+                  roles: unknown
+                  conclusion?: unknown
+                })
+              : undefined
+          return {
+            record: {
+              ...reportRecord(row),
+              latestDraft: list.reduce((m, r) => Math.max(m, r.draftNumber), 0),
+              latestRevision: list.reduce<number | null>(
+                (m, r) => (m === null ? r.number : Math.max(m, r.number)),
+                null,
+              ),
+            },
+            template:
+              definition === undefined || version === undefined
+                ? null
+                : {
+                    state: version.state,
+                    roles: JSON.stringify(definition.roles),
+                    hasConclusion: definition.conclusion !== undefined,
+                  },
+            members: members
+              .filter(m => m.reportId === reportId)
+              .sort(
+                byKey(
+                  m => m.addedAt,
+                  m => m.userId,
+                ),
+              )
+              .map(m => ({
+                userId: m.userId,
+                name: '',
+                roleId: m.roleId,
+                addedAt: m.addedAt,
+              })),
+            rounds: rounds
+              .filter(r => r.reportId === reportId)
+              .sort(byKey(r => r.revision))
+              .map(withParticipants)
+              .map(entry => ({
+                ...entry,
+                participants: entry.participants.map(p => ({ ...p, name: '' })),
+              })),
+            reviews: reviews
+              .filter(r =>
+                rounds.some(
+                  round => round.id === r.roundId && round.reportId === reportId,
+                ),
+              )
+              .sort(
+                byKey(
+                  r => r.sentAt,
+                  r => r.id,
+                ),
+              ),
+            revisions: list,
+          }
         }),
       listReportsForMember: userId =>
         Effect.sync(() =>
@@ -2530,10 +2605,15 @@ export const makeMemoryReportRepository = (
           const due = jobs
             .filter(
               j =>
-                (j.state === 'pending' && j.dueAt <= input.now) ||
-                (j.state === 'claimed' &&
-                  j.leaseUntil !== null &&
-                  j.leaseUntil < input.now),
+                (input.reportIds === undefined ||
+                  input.reportIds.includes(j.reportId)) &&
+                ((j.state === 'pending' && j.dueAt <= input.now) ||
+                  (j.state === 'claimed' &&
+                    j.leaseUntil !== null &&
+                    j.leaseUntil < input.now) ||
+                  (j.state === 'failed' &&
+                    j.retryAt !== null &&
+                    j.retryAt <= input.now)),
             )
             .sort(
               byKey(
@@ -2548,7 +2628,8 @@ export const makeMemoryReportRepository = (
               state: 'claimed',
               claimedBy: input.claimedBy,
               leaseUntil: input.now + input.leaseMs,
-              attempts: job.attempts + 1,
+              deferrals: job.deferrals + (job.state === 'claimed' ? 1 : 0),
+              retryAt: null,
             }
             jobs[jobs.indexOf(job)] = claimed
             return claimed
@@ -2556,14 +2637,82 @@ export const makeMemoryReportRepository = (
         }),
       finishJobs: input =>
         Effect.sync(() => {
+          const detail = (id: number) =>
+            input.delivered?.find(entry => entry.id === id)
+          const failure = (id: number) =>
+            input.failed?.find(entry => entry.id === id)
           jobs.forEach((job, index) => {
             if (job.state !== 'claimed' || job.claimedBy !== input.claimedBy) {
               return
             }
             if (input.done.includes(job.id)) {
-              jobs[index] = { ...job, state: 'done', doneAt: input.now }
+              const told = detail(job.id)
+              jobs[index] = {
+                ...job,
+                state: 'done',
+                doneAt: input.now,
+                leaseUntil: null,
+                ...(told === undefined
+                  ? {}
+                  : {
+                      providerMessageId: told.providerMessageId,
+                      deliveryStatus: told.deliveryStatus,
+                    }),
+              }
+              const noted =
+                job.kind === 'review_request'
+                  ? 'notified'
+                  : job.kind === 'reminder_first' ||
+                      job.kind === 'reminder_final'
+                    ? 'reminded'
+                    : undefined
+              if (noted !== undefined && job.recipientId !== null) {
+                eventSeq += 1
+                events.push({
+                  id: eventSeq,
+                  reportId: job.reportId,
+                  kind: noted,
+                  accountId: job.recipientId,
+                  draftNumber: null,
+                  revisionNumber: job.revision,
+                  detail: noted === 'reminded' ? job.kind : null,
+                  at: input.now,
+                })
+              }
             } else if (input.skipped.includes(job.id)) {
-              jobs[index] = { ...job, state: 'skipped', doneAt: input.now }
+              jobs[index] = {
+                ...job,
+                state: 'skipped',
+                doneAt: input.now,
+                leaseUntil: null,
+              }
+            } else if (failure(job.id) !== undefined) {
+              const failed = failure(job.id)
+              jobs[index] = {
+                ...job,
+                state: 'failed',
+                attempts: job.attempts + 1,
+                retryAt: failed?.retryAt ?? null,
+                lastError: failed?.error ?? null,
+                leaseUntil: null,
+              }
+            } else if (input.deferred?.some(entry => entry.id === job.id) === true) {
+              const deferred = input.deferred.find(entry => entry.id === job.id)
+              jobs[index] = {
+                ...job,
+                state: 'failed',
+                deferrals: job.deferrals + 1,
+                retryAt: deferred?.retryAt ?? null,
+                lastError: deferred?.error ?? null,
+                leaseUntil: null,
+              }
+            } else if (input.released?.includes(job.id) === true) {
+              jobs[index] = {
+                ...job,
+                state: 'pending',
+                claimedBy: null,
+                leaseUntil: null,
+              }
             }
           })
         }),
@@ -2585,7 +2734,12 @@ export const makeMemoryReportRepository = (
                 (before === undefined || j.id < before),
             )
             .sort(byKey(j => -j.id))
-            .slice(0, limit),
+            .slice(0, limit)
+            .map(j => ({
+              ...j,
+              deadlineZone:
+                rounds.find(r => r.id === j.roundId)?.deadlineZone ?? null,
+            })),
         ),
       countUnread: userId =>
         Effect.sync(

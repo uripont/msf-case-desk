@@ -225,6 +225,27 @@ export type ReportRecord = Readonly<{
   latestRevision: number | null
 }>
 
+// NOTE: what the notification pass reads of a report (stage 7), in one round
+// trip. It is the same data as `getReport`, `listMembers`, `listRounds`,
+// `listReviews` and `listRevisions`, trimmed: no person's name is read (`name`
+// is empty in the members and participants), and `latestDraft` and
+// `latestRevision` come from the published revisions (the drafts are not
+// read), which is all the rules of a round look at. `template` is the report's
+// template version cut down to its roles and whether it has a conclusion.
+export type ReportBundle = Readonly<{
+  record: ReportRecord
+  template: Readonly<{
+    state: 'draft' | 'published' | 'retired'
+    // NOTE: the `roles` array of the definition, as JSON.
+    roles: string
+    hasConclusion: boolean
+  }> | null
+  members: ReadonlyArray<MemberRecord>
+  rounds: ReadonlyArray<RoundWithParticipants>
+  reviews: ReadonlyArray<StoreReviewRecord>
+  revisions: ReadonlyArray<RevisionRecord>
+}>
+
 export type MemberRecord = Readonly<{
   userId: string
   name: string
@@ -417,9 +438,18 @@ export type JobRecord = Readonly<{
   state: JobState
   claimedBy: string | null
   leaseUntil: number | null
+  // NOTE: real failures of the channel only. A pass that stopped halfway, or a
+  // storage error, is counted in `deferrals`, never here.
   attempts: number
+  deferrals: number
+  // NOTE: the time zone of the round's deadline, read with the inbox only.
+  deadlineZone: string | null
   providerMessageId: string | null
   deliveryStatus: string | null
+  // NOTE: set on a failed job that may be tried again: it is claimable from
+  // this time. A failed job with no retry time is final.
+  retryAt: number | null
+  lastError: string | null
   createdAt: number
   doneAt: number | null
   readAt: number | null
@@ -997,6 +1027,12 @@ export interface ReportRepositoryApi {
     | Refused<'duplicate_reference' | 'no_case_file'>
   >
   readonly getReport: (reportId: string) => Eff<ReportRecord | null>
+  // NOTE: one batch of seven statements, for the
+  // notification pass. See `ReportBundle`.
+  readonly readReport: (
+    reportId: string,
+    options: Readonly<{ template: boolean }>,
+  ) => Eff<ReportBundle | null>
   readonly listReportsForMember: (
     userId: string,
   ) => Eff<ReadonlyArray<ReportRecord>>
@@ -1280,19 +1316,52 @@ export interface ReportRepositoryApi {
   >
 
   // -- notification jobs, inbox, events, audit
+  // NOTE: the state machine of a job (stage 7):
+  //   pending -> claimed (lease) -> done | skipped | failed
+  //   claimed -> claimed        when the lease has run out (a pass stopped halfway;
+  //                             counts a deferral, not an attempt)
+  //   failed (retry time) -> claimed when the retry time has come
+  //   claimed -> pending        released unprocessed (`released`)
+  // A claim is one `UPDATE ... RETURNING`, so two passes never get the same
+  // job. `reportIds` limits the claim to those reports.
   readonly claimDueJobs: (
     input: Readonly<{
       now: number
       limit: number
       leaseMs: number
       claimedBy: string
+      reportIds?: ReadonlyArray<string>
     }>,
   ) => Eff<ReadonlyArray<JobRecord>>
+  // NOTE: one atomic batch. Only jobs still claimed by `claimedBy` change, so a
+  // pass whose lease ran out and was taken over cannot overwrite the new owner.
+  // A job that becomes `done` records who was told (`notified` for a review
+  // request, `reminded` for a reminder) for the grid, in the same batch.
   readonly finishJobs: (
     input: Readonly<{
       claimedBy: string
       done: ReadonlyArray<number>
       skipped: ReadonlyArray<number>
+      // NOTE: the provider's message ID and delivery status, for jobs sent
+      // through a channel outside the app.
+      delivered?: ReadonlyArray<
+        Readonly<{
+          id: number
+          providerMessageId: string | null
+          deliveryStatus: string | null
+        }>
+      >
+      // NOTE: a failure of the channel: counts an attempt. `retryAt: null` is
+      // a final failure.
+      failed?: ReadonlyArray<
+        Readonly<{ id: number; retryAt: number | null; error: string }>
+      >
+      // NOTE: not the job's fault (storage was unavailable): tried again at
+      // `retryAt`, counted in `deferrals` and not in `attempts`.
+      deferred?: ReadonlyArray<
+        Readonly<{ id: number; retryAt: number; error: string }>
+      >
+      released?: ReadonlyArray<number>
       now: number
     }>,
   ) => Eff<void>
@@ -1433,6 +1502,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   retitleCaseFile: 5,
   createReport: 9,
   getReport: 1,
+  readReport: 7,
   listReportsForMember: 1,
   listMembers: 1,
   getMembership: 1,
@@ -1483,7 +1553,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   setCommentResolved: 1,
   listComments: 2,
   claimDueJobs: 1,
-  finishJobs: 2,
+  finishJobs: 7,
   listJobKeys: 1,
   listInbox: 1,
   countUnread: 1,

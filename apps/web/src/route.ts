@@ -21,6 +21,7 @@ export const AppRoute = defineRouteUnion({
   Reports: {},
   Admin: {},
   Inbox: {},
+  Notifications: {},
   Link: {},
   Report: { reportId: Schema.String },
   Share: { reportId: Schema.String },
@@ -53,6 +54,10 @@ const reportsRouter = pipe(
 )
 const adminRouter = pipe(Route.literal('admin'), Route.mapTo(AppRoute.Admin))
 const inboxRouter = pipe(Route.literal('inbox'), Route.mapTo(AppRoute.Inbox))
+const notificationsRouter = pipe(
+  Route.literal('notifications'),
+  Route.mapTo(AppRoute.Notifications),
+)
 const linkRouter = pipe(Route.literal('link'), Route.mapTo(AppRoute.Link))
 const reportRouter = pipe(
   Route.literal('r'),
@@ -126,6 +131,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     reportsRouter,
     adminRouter,
     inboxRouter,
+    notificationsRouter,
     linkRouter,
     revisionRouter,
     commentsRouter,
@@ -151,6 +157,7 @@ export const pathOf = (route: AppRoute): string =>
     Reports: () => reportsRouter(),
     Admin: () => adminRouter(),
     Inbox: () => inboxRouter(),
+    Notifications: () => notificationsRouter(),
     Link: () => linkRouter(),
     Report: ({ reportId }) => reportRouter({ reportId }),
     Share: ({ reportId }) => shareRouter({ reportId }),
@@ -179,6 +186,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Reports: () => true,
     Admin: () => true,
     Inbox: () => true,
+    Notifications: () => true,
     Link: () => false,
     Report: () => true,
     Share: () => true,
@@ -205,6 +213,7 @@ export const isTriageRoute = (route: AppRoute): boolean =>
     Reports: () => false,
     Admin: () => false,
     Inbox: () => false,
+    Notifications: () => false,
     Link: () => false,
     Report: () => false,
     Share: () => false,

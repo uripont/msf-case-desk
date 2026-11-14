@@ -81,6 +81,7 @@ import * as Comments from './quoroom/comments'
 import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
+import * as Notifications from './quoroom/notifications'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
 import * as Publish from './quoroom/publish'
@@ -185,6 +186,7 @@ export const Model = Schema.Struct({
   names: Names.Model,
   history: History.Model,
   inbox: Inbox.Model,
+  notifications: Notifications.Model,
   review: Review.Model,
   comments: Comments.Model,
   grid: Grid.Model,
@@ -255,6 +257,7 @@ export const Message = defineMessageUnion({
   GotNamesMessage: { message: Names.Message },
   GotHistoryMessage: { message: History.Message },
   GotInboxMessage: { message: Inbox.Message },
+  GotNotificationsMessage: { message: Notifications.Message },
   GotReviewMessage: { message: Review.Message },
   GotCommentsMessage: { message: Comments.Message },
   GotGridMessage: { message: Grid.Message },
@@ -374,6 +377,7 @@ export const initialModel = Model.make({
   names: Names.initialModel,
   history: History.initialModel,
   inbox: Inbox.initialModel,
+  notifications: Notifications.initialModel,
   review: Review.initialModel,
   comments: Comments.initialModel,
   grid: Grid.initialModel,
@@ -761,6 +765,7 @@ const signedOut = (model: Model): Model =>
     names: Names.cleared,
     history: History.cleared,
     inbox: Inbox.cleared,
+    notifications: Notifications.cleared,
     review: Review.cleared,
     comments: Comments.cleared,
     grid: Grid.cleared,
@@ -908,6 +913,20 @@ const foldInbox = Update.foldChild({
   read: (model: Model) => Option.some(model.inbox),
   write: (model, nextInbox) => modifyFields(model, { inbox: () => nextInbox }),
   toParentMessage: message => Message.GotInboxMessage({ message }),
+})
+
+const foldNotifications = Update.foldChild({
+  update: Notifications.update,
+  read: (model: Model) => Option.some(model.notifications),
+  write: (model, next) => modifyFields(model, { notifications: () => next }),
+  toParentMessage: message => Message.GotNotificationsMessage({ message }),
+})
+
+const enterNotifications = Update.foldChildStep({
+  update: Notifications.enter,
+  read: (model: Model) => Option.some(model.notifications),
+  write: (model, next) => modifyFields(model, { notifications: () => next }),
+  toParentMessage: message => Message.GotNotificationsMessage({ message }),
 })
 
 const enterInbox = (origin: string) =>
@@ -1082,6 +1101,7 @@ const enterRoute = (
     Draft: ({ reportId, draft }) =>
       enterHistory(model.origin, reportId, Option.some(draft))(model),
     Inbox: () => enterInbox(model.origin)(model),
+    Notifications: () => enterNotifications(model),
     Comments: ({ reportId }) => enterComments(model.origin, reportId)(model),
     Grid: ({ reportId }) => enterGrid(model.origin, reportId)(model),
     Audit: ({ reportId }) => enterAudit(model.origin, reportId)(model),
@@ -1441,6 +1461,8 @@ export const update = (model: Model, message: Message) =>
     GotHistoryMessage: ({ message }) => foldHistory(model, message),
     GotPublishMessage: ({ message }) => foldPublish(model, message),
     GotInboxMessage: ({ message }) => foldInbox(model, message),
+    GotNotificationsMessage: ({ message }) =>
+      foldNotifications(model, message),
     GotReviewMessage: ({ message }) => foldReview(model, message),
     GotCommentsMessage: ({ message }) => foldComments(model, message),
     GotGridMessage: ({ message }) => foldGrid(model, message),
@@ -1647,8 +1669,19 @@ const reviewSubscriptions = Subscription.lift(Review.subscriptions)<
   when: model => AppRoute.guards.Revision(model.route),
 })
 
+// NOTE: The unread count in the navigation is asked for as soon as an account
+// is signed in and every 30 seconds after, on every screen.
+const notificationsSubscriptions = Subscription.lift(
+  Notifications.subscriptions,
+)<Model, Message>({
+  read: model => Option.some(model.notifications),
+  toParentMessage: message => Message.GotNotificationsMessage({ message }),
+  when: model => Session.guards.SignedIn(model.session),
+})
+
 export const subscriptions = Subscription.aggregate(
   appSubscriptions,
+  notificationsSubscriptions,
   reportSubscriptions,
   historySubscriptions,
   publishSubscriptions,

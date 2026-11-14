@@ -96,9 +96,11 @@ export default Alchemy.Stack(
         NOTIFY_FIRST_REMINDER_MINUTES: String(timings.firstReminder),
         NOTIFY_FINAL_REMINDER_MINUTES: String(timings.finalReminder),
       },
-      // The notification pass (stage 7). Until then `scheduled` does nothing.
-      // One Cron Trigger per Worker; the Free plan allows 5 on the account.
-      crons: [isPilot ? "*/5 * * * *" : "* * * * *"],
+      // The notification pass (stage 7): `scheduled` in apps/api/src/worker.ts.
+      // One Cron Trigger per Worker, every minute on the pilot and on test
+      // stages: an idle run is one query. The Free plan allows 5 on the account.
+      // `/api/tick` stays unset (no TICK_SECRET): the cron does the work.
+      crons: ["* * * * *"],
       observability,
     });
 

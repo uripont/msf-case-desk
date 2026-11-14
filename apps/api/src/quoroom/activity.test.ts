@@ -236,7 +236,8 @@ describe.each(SCENARIOS)('$name', scenario => {
 
     const requests = await w.call('dan', c => c.ListNotifications({ limit: 10 }))
     expect(requests.items.map(item => item.kind)).toContain('review_request')
-    expect(requests.items[0]?.caseReference).toMatch(/^REF-/)
+    // NOTE: no row carries the case (D17).
+    expect(JSON.stringify(requests)).not.toMatch(/REF-|caseReference/)
     expect(requests.next).toBeUndefined()
 
     // NOTE: paging by cursor gives every notification once.

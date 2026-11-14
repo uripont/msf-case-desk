@@ -89,6 +89,15 @@ export default Alchemy.Stack(
       // The demo is asked for explicitly: a Worker with no RUNTIME_MODE is a
       // pilot (D20). Iteration 2 above is frozen and does not read it.
       env: { DB: database, RUNTIME_MODE: "demo" },
+      // The notification pass (stage 7, D12). Only `app` has a Cron Trigger:
+      // the frozen Workers (`iter1`, `iter2`, and `iter3` later) have none and
+      // no TICK_SECRET, so no message is ever sent twice. Production timings
+      // (48 h and 4 h), a pass every minute: a run with nothing due is one
+      // query and returns at once, and housekeeping runs in the first minute of
+      // each hour. Free plan: 5 Cron Triggers on
+      // the account; the demo, the pilot and one test environment use 3. This
+      // is an `App` update within D22; stage 10 deploys it.
+      crons: ["* * * * *"],
       observability,
     });
 

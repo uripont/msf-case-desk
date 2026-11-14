@@ -66,6 +66,18 @@ SMOKE_EMAIL=you@example.org SMOKE_PASSWORD=... pnpm smoke http://127.0.0.1:8787
 
 To start again from an empty database, stop `workerd` and delete `.local/workerd-data/`.
 
+### Reminders and decisions on plain workerd (stage 7)
+
+Quoroom's notifications (the request, the reminders 48 and 4 hours before a deadline, the decision at the deadline) are sent by a pass that runs once a minute or every few minutes. On Cloudflare a Cron Trigger starts it. Plain `workerd` has none, so start the pass from the host:
+
+```sh
+export TICK_SECRET=$(openssl rand -hex 24)   # set before `pnpm workerd`, and keep it
+# crontab: every minute
+* * * * * curl -fsS -X POST -H "Authorization: Bearer $TICK_SECRET" http://127.0.0.1:8787/api/tick
+```
+
+`/api/tick` answers 404 to every request unless `TICK_SECRET` is set and the request is a POST carrying it (the route is never revealed), and then 200 with the counts of the pass otherwise. Running it twice at once is safe. The timings come from `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES` (defaults: 0, 2880, 240).
+
 > [!NOTE]
 > The local run keeps the database in a small Durable Object with SQLite storage, because plain `workerd` has no D1. It implements the calls the Worker uses on D1 (`prepare`, `bind`, `all`, `first` and `run`), so the storage code is the same. On Cloudflare the database is D1.
 

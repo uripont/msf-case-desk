@@ -83,7 +83,6 @@ export const NotificationEntry = Schema.Struct({
   readAt: Schema.optionalKey(EpochMs),
   reportId: Schema.optionalKey(ApiId),
   revision: Schema.optionalKey(Count),
-  caseReference: Schema.optionalKey(Schema.String),
   deadline: Schema.optionalKey(Deadline),
 })
 

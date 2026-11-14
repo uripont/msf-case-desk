@@ -26,7 +26,6 @@ import {
   eventsOf,
   flowFailure,
   jobsFor,
-  loadTemplates,
   roundOf,
   store,
   timeZoneOk,
@@ -131,18 +130,38 @@ const metaOf = (text: string): Record<string, string | number | boolean> => {
 
 // ---- WhatsApp ----------------------------------------------------------------------------------
 
-// NOTE: never throws, whatever was stored: a time or a zone `Intl` cannot
-// format reads as a plain "its deadline".
-export const when = (at: number, zone: string): string => {
+// NOTE: building an `Intl.DateTimeFormat` loads the zone's data and costs
+// milliseconds on Workers, so one is built per zone and kept for the isolate
+// (`null`: `Intl` cannot format that zone).
+const formatters = new Map<string, Intl.DateTimeFormat | null>()
+
+const formatterFor = (zone: string): Intl.DateTimeFormat | null => {
+  const known = formatters.get(zone)
+  if (known !== undefined) return known
+  let made: Intl.DateTimeFormat | null
   try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
+    made = new Intl.DateTimeFormat('en-GB', {
       timeZone: zone,
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
       hourCycle: 'h23',
-    }).formatToParts(at)
+    })
+  } catch {
+    made = null
+  }
+  // NOTE: the zone is stored text; bound what a caller can make us keep.
+  if (formatters.size < 64) formatters.set(zone, made)
+  return made
+}
+
+// NOTE: never throws, whatever was stored: a time or a zone `Intl` cannot
+// format reads as a plain "its deadline".
+export const when = (at: number, zone: string): string => {
+  try {
+    const parts = formatterFor(zone)?.formatToParts(at)
+    if (parts === undefined) return 'its deadline'
     const part = (type: string) => parts.find(entry => entry.type === type)?.value ?? ''
     const city = (zone.split('/').pop() ?? zone).replaceAll('_', ' ')
     return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')} ${city} time`
@@ -531,9 +550,10 @@ export const activityHandlers: Pick<
       }
     }),
 
-  // NOTE: generic by design (D17): the case reference at most, never a title.
-  // The reference and time zone come from the rounds the caller takes part in
-  // or the reports they are a member of (two reads).
+  // NOTE: generic by design (D17): the kind, the report's ID and revision (for
+  // the link), the deadline in its own time zone. No case reference, no case
+  // title, no report name, for any role: a row holds nothing a redacted reader
+  // could not already see, and nothing is read from the report. One query.
   ListNotifications: ({ before, limit }) =>
     Effect.gen(function* () {
       const user = yield* CurrentUser
@@ -541,54 +561,18 @@ export const activityHandlers: Pick<
       const rows = yield* db.listInbox(user.id, limit + 1, before)
       const page = rows.slice(0, limit)
       const unread = yield* db.countUnread(user.id)
-      const rounds = yield* db.listReviewerRounds(user.id, {
-        offset: 0,
-        limit: 100,
-        openOnly: false,
-        pendingOnly: false,
-      })
-      const reports = yield* db.listReportsForMember(user.id)
-      const reference = new Map<string, string>()
-      for (const report of reports) reference.set(report.id, report.caseFile.reference)
-      // NOTE: a reviewer's reference is the one their role may read: the
-      // redacted twin of the draft for a redacted role (D14).
-      const templates = yield* loadTemplates(
-        db,
-        rounds.map(round => ({
-          templateId: round.templateId,
-          version: round.templateVersion,
-        })),
-      )
-      for (const round of rounds) {
-        const role = templates
-          .get(`${round.templateId}@${round.templateVersion}`)
-          ?.roles.find(entry => entry.id === round.roleId)
-        reference.set(
-          round.reportId,
-          role?.view === 'full' ? round.caseReference : round.caseReferenceRedacted,
-        )
-      }
-      const zone = new Map(
-        rounds.map(round => [`${round.reportId}/${round.revision}`, round.deadlineZone]),
-      )
       return {
-        items: page.map(job => {
-          const timeZone = zone.get(`${job.reportId}/${job.revision}`)
-          return {
-            id: String(job.id),
-            kind: job.kind,
-            at: job.doneAt ?? job.dueAt,
-            ...(job.readAt === null ? {} : { readAt: job.readAt }),
-            reportId: job.reportId,
-            revision: job.revision,
-            ...(reference.has(job.reportId)
-              ? { caseReference: reference.get(job.reportId) as string }
-              : {}),
-            ...(job.deadline !== null && timeZone !== undefined
-              ? { deadline: { at: job.deadline, timeZone } }
-              : {}),
-          }
-        }),
+        items: page.map(job => ({
+          id: String(job.id),
+          kind: job.kind,
+          at: job.doneAt ?? job.dueAt,
+          ...(job.readAt === null ? {} : { readAt: job.readAt }),
+          reportId: job.reportId,
+          revision: job.revision,
+          ...(job.deadline !== null && job.deadlineZone !== null
+            ? { deadline: { at: job.deadline, timeZone: job.deadlineZone } }
+            : {}),
+        })),
         unread,
         ...(rows.length > limit && page.length > 0
           ? { next: page[page.length - 1]?.id as number }

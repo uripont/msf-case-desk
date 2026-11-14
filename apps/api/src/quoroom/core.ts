@@ -22,6 +22,7 @@ import {
   ReportRepository,
   type ReportRepositoryApi,
   type ReportAccess,
+  type ReportBundle,
   type ReportEvent,
   type ReportFlow,
   type ReportRecord,
@@ -119,15 +120,19 @@ export const QuoroomConfigLive = Layer.succeed(
 
 // NOTE: the services for Cloudflare. Anywhere else, `QuoroomServicesFor`
 // names where addresses can be trusted from.
-export const QuoroomServicesFor = (network: NetworkPolicy) =>
+export const QuoroomServicesFor = (
+  network: NetworkPolicy,
+  config: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG,
+) =>
   Layer.mergeAll(
     QuoroomClockLive,
     QuoroomIdsLive,
-    QuoroomConfigLive,
+    Layer.succeed(QuoroomConfig, config),
     Layer.succeed(QuoroomNetwork, network),
   )
 
-export const QuoroomServicesLive = QuoroomServicesFor({ kind: 'cloudflare' })
+export const QuoroomServicesLive = (config?: NotificationConfig) =>
+  QuoroomServicesFor({ kind: 'cloudflare' }, config)
 
 // NOTE: a clock the tests move by hand.
 export const makeTestClock = (start: number) => {
@@ -281,6 +286,11 @@ export type Loaded = Readonly<{
   reviews: ReadonlyArray<StoreReviewRecord>
   revisions: ReadonlyArray<RevisionRecord>
   now: number
+  // NOTE: false when the round was settled in this view (its deadline has
+  // passed or its rule is met) but the store refused to record the decision
+  // every time it was tried. Handlers still act on the settled view; the
+  // notification pass leaves the job pending.
+  decisionStored: boolean
 }>
 
 export const flowOf = (
@@ -419,18 +429,77 @@ export const jobsFor = (
 
 // NOTE: a decision that the store refuses (a deadline extended or a person
 // removed in between) is made again from a fresh read; after this many tries
-// the settled view is returned without being stored.
+// the settled view is returned without being stored (`decisionStored` is then
+// false). The notification pass makes one try: it has a budget of queries, and
+// leaves the job pending for the next run instead.
 const MAX_SETTLE_ATTEMPTS = 3
 
-const loadRaw = (
+export type LoadOptions = Readonly<{
+  // NOTE: the notification pass: one round trip for the whole read, a cut-down
+  // template (roles and whether there is a conclusion), one settle try.
+  pass?: boolean
+}>
+
+// NOTE: the template of the pass: only what the rules of a round read (the
+// roles, and whether the template has a conclusion). The sections are never
+// read by the pass, so they are not decoded. Immutable once published, so
+// cached per isolate like the full template.
+const slimCache = new Map<string, Template>()
+
+const slimTemplate = (
+  key: string,
+  templateId: string,
+  version: number,
+  bundle: NonNullable<ReportBundle['template']>,
+): Effect.Effect<Template, StorageUnavailable> =>
+  Effect.try({
+    try: () => {
+      // NOTE: not decoded with the Schema: the roles were validated when the
+      // version was published, versions never change, and building the decoder
+      // costs milliseconds on a cold isolate.
+      const roles: unknown = JSON.parse(bundle.roles)
+      if (!Array.isArray(roles)) throw new Error('roles')
+      const template = {
+        id: templateId,
+        version,
+        roles,
+        sections: [],
+        ...(bundle.hasConclusion ? { conclusion: { id: 'conclusion' } } : {}),
+      } as unknown as Template
+      if (bundle.state !== 'draft') slimCache.set(key, template)
+      return template
+    },
+    catch: () => new StorageUnavailable({ message: 'template invalid' }),
+  })
+
+type Parts = Readonly<{
+  record: ReportRecord
+  template: Template
+  members: ReadonlyArray<MemberRecord>
+  rounds: ReadonlyArray<RoundWithParticipants>
+  reviews: ReadonlyArray<StoreReviewRecord>
+  revisions: ReadonlyArray<RevisionRecord>
+}>
+
+const readParts = (
+  db: Store,
   reportId: string,
-  attempt = 1,
-): Effect.Effect<Loaded | undefined, StorageUnavailable, Deps> =>
+  pass: boolean,
+): Effect.Effect<Parts | undefined, StorageUnavailable> =>
   Effect.gen(function* () {
-    const db = yield* store
-    const clock = yield* QuoroomClock
-    const config = yield* QuoroomConfig
-    const now = yield* clock.now
+    if (pass) {
+      const bundle = yield* db.readReport(reportId, { template: true })
+      if (bundle === null) return undefined
+      const { record } = bundle
+      const key = `${record.templateId}@${record.templateVersion}`
+      const cached = templateCache.get(key) ?? slimCache.get(key)
+      const template =
+        cached ??
+        (bundle.template === null
+          ? yield* Effect.fail(new StorageUnavailable({ message: 'template missing' }))
+          : yield* slimTemplate(key, record.templateId, record.templateVersion, bundle.template))
+      return { ...bundle, template }
+    }
     const record = yield* db.getReport(reportId)
     if (record === null) return undefined
     const template = yield* loadTemplate(
@@ -443,6 +512,22 @@ const loadRaw = (
     const reviews = rounds.length === 0 ? [] : yield* db.listReviews(reportId)
     const revisions =
       rounds.length === 0 ? [] : yield* db.listRevisions(reportId)
+    return { record, template, members, rounds, reviews, revisions }
+  })
+
+const loadRaw = (
+  reportId: string,
+  options: LoadOptions = {},
+  attempt = 1,
+): Effect.Effect<Loaded | undefined, StorageUnavailable, Deps> =>
+  Effect.gen(function* () {
+    const db = yield* store
+    const clock = yield* QuoroomClock
+    const config = yield* QuoroomConfig
+    const now = yield* clock.now
+    const parts = yield* readParts(db, reportId, options.pass === true)
+    if (parts === undefined) return undefined
+    const { record, template, members, rounds, reviews, revisions } = parts
     const flow = flowOf(record, rounds, reviews, revisions)
     const draftingRole = draftingRoleOf(template)
     const authors = members
@@ -462,6 +547,7 @@ const loadRaw = (
         reviews,
         revisions,
         now,
+        decisionStored: true,
         access: {
           id: reportId,
           unit: record.caseFile.unitId,
@@ -474,6 +560,7 @@ const loadRaw = (
     const last = rounds[rounds.length - 1]
     const settledLast = settled.rounds[settled.rounds.length - 1]
     let storedRounds = rounds
+    let decisionStored = true
     if (
       last !== undefined &&
       settledLast !== undefined &&
@@ -527,8 +614,11 @@ const loadRaw = (
           meta: JSON.stringify({ decidedBy }),
         },
       })
-      if (decided._tag === 'Refused' && attempt < MAX_SETTLE_ATTEMPTS) {
-        return yield* loadRaw(reportId, attempt + 1)
+      if (decided._tag === 'Refused') {
+        const tries = options.pass === true ? 1 : MAX_SETTLE_ATTEMPTS
+        if (attempt < tries) return yield* loadRaw(reportId, options, attempt + 1)
+        // NOTE: refused every time: the view is settled, but nothing was stored.
+        decisionStored = false
       }
       storedRounds = decidedRounds
     }
@@ -542,6 +632,7 @@ const loadRaw = (
       reviews,
       revisions,
       now,
+      decisionStored,
       access: {
         id: reportId,
         unit: record.caseFile.unitId,
@@ -552,7 +643,9 @@ const loadRaw = (
     }
   })
 
-export const loadReport = loadRaw
+export const loadReport = (reportId: string, options: LoadOptions = {}) =>
+  loadRaw(reportId, options)
+
 
 // ---- Authorization ----------------------------------------------------------------------------
 

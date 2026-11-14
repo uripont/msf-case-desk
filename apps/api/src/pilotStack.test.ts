@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -121,5 +121,39 @@ describe('test-env:down removes the grants file of that environment', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+// NOTE: Cron Triggers (stage 7, D12, D22). Only the demo's `app` and the pilot
+// stack's Worker have one, so a frozen version never runs the pass and no
+// message is sent twice. The Free plan allows 5 on the account.
+describe('Cron Triggers', () => {
+  const root = join(import.meta.dirname, '../../..')
+  const demo = readFileSync(join(root, 'alchemy.run.ts'), 'utf8')
+  const pilot = readFileSync(join(root, 'alchemy.pilot.run.ts'), 'utf8')
+
+  test('the demo stack has one, on `app`, and none on the frozen Workers', () => {
+    expect(demo.match(/^\s*crons:/gm)).toHaveLength(1)
+    const iter1 = demo.indexOf('Foldkit("Web"')
+    const iter2 = demo.indexOf('Foldkit("Iter2"')
+    const app = demo.indexOf('Foldkit("App"')
+    const cron = demo.indexOf('crons:')
+    expect(iter1).toBeGreaterThan(-1)
+    expect(app).toBeGreaterThan(iter2)
+    expect(cron).toBeGreaterThan(app)
+    // NOTE: the Worker `app` is the last resource; nothing follows it but the outputs.
+    expect(demo.indexOf('Foldkit(', app + 1)).toBe(-1)
+  })
+
+  test('no frozen Worker has a tick secret, and the demo `app` sets none either', () => {
+    expect(demo).not.toMatch(/TICK_SECRET\s*:/)
+    expect(pilot).not.toMatch(/TICK_SECRET\s*:/)
+  })
+
+  test('the pilot stack has one, every minute on the pilot and on test stages; so has the demo `app`', () => {
+    expect(pilot.match(/^\s*crons:/gm)).toHaveLength(1)
+    expect(pilot).toContain('crons: ["* * * * *"]')
+    expect(demo).toContain('crons: ["* * * * *"]')
+    expect(demo + pilot).not.toContain('*/5')
   })
 })

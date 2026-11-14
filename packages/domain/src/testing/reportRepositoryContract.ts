@@ -2044,7 +2044,8 @@ export const reportRepositoryContract = (
           state: 'claimed',
           claimedBy: 'w1',
           leaseUntil: 250,
-          attempts: 1,
+          attempts: 0,
+          deferrals: 0,
         }),
       )
       const second = await run(
@@ -2054,9 +2055,10 @@ export const reportRepositoryContract = (
       const retaken = await run(
         r.claimDueJobs({ now: 300, limit: 10, leaseMs: 100, claimedBy: 'w2' }),
       )
-      expect(retaken.map(j => [j.key, j.attempts]).sort()).toEqual([
-        ['n1', 2],
-        ['n2', 1],
+      // NOTE: a takeover is a deferral, never an attempt.
+      expect(retaken.map(j => [j.key, j.attempts, j.deferrals]).sort()).toEqual([
+        ['n1', 0, 1],
+        ['n2', 0, 0],
       ])
       const n1 = retaken.find(j => j.key === 'n1') as NonNullable<
         (typeof retaken)[number]
@@ -2086,6 +2088,179 @@ export const reportRepositoryContract = (
       expect(await run(r.markInboxRead(CAROL, [n1.id], 321))).toBe(0)
       expect(await run(r.markInboxRead(CAROL, [], 321))).toBe(0)
       expect((await run(r.listInbox(CAROL, 1))).map(j => j.key)).toEqual(['n2'])
+    })
+
+    test('a job fails and is retried, released, and told in the grid events', async () => {
+      const s = await published()
+      const { r } = s
+      // NOTE: `rr:carol` and `rr:dan` are reminders due at 500.
+      const first = await run(
+        r.claimDueJobs({ now: 500, limit: 10, leaseMs: 100, claimedBy: 'w1' }),
+      )
+      expect(first.map(j => j.key).sort()).toEqual(['rr:carol', 'rr:dan'])
+      const carol = first.find(j => j.key === 'rr:carol') as (typeof first)[number]
+      const dan = first.find(j => j.key === 'rr:dan') as (typeof first)[number]
+      await run(
+        r.finishJobs({
+          claimedBy: 'w1',
+          done: [],
+          skipped: [],
+          failed: [{ id: carol.id, retryAt: 700, error: 'provider down' }],
+          released: [dan.id],
+          now: 510,
+        }),
+      )
+      // NOTE: before the retry time nothing but the released job is claimable.
+      const early = await run(
+        r.claimDueJobs({ now: 600, limit: 10, leaseMs: 100, claimedBy: 'w2' }),
+      )
+      expect(early.map(j => [j.key, j.attempts])).toEqual([['rr:dan', 0]])
+      const retried = await run(
+        r.claimDueJobs({ now: 700, limit: 10, leaseMs: 100, claimedBy: 'w3' }),
+      )
+      expect(retried.map(j => [j.key, j.attempts, j.state])).toEqual([
+        ['rr:carol', 1, 'claimed'],
+      ])
+      // NOTE: a pass that lost its lease cannot finish what another one holds.
+      await run(
+        r.finishJobs({
+          claimedBy: 'w2',
+          done: [carol.id],
+          skipped: [],
+          now: 705,
+        }),
+      )
+      expect(await run(r.listInbox(CAROL, 10))).toEqual([])
+      // NOTE: a final failure is never claimed again.
+      await run(
+        r.finishJobs({
+          claimedBy: 'w3',
+          done: [],
+          skipped: [],
+          failed: [{ id: carol.id, retryAt: null, error: 'gave up' }],
+          now: 710,
+        }),
+      )
+      // NOTE: the claim can be limited to some reports.
+      expect(
+        await run(
+          r.claimDueJobs({
+            now: 99_000,
+            limit: 10,
+            leaseMs: 100,
+            claimedBy: 'w4',
+            reportIds: ['some-other-report'],
+          }),
+        ),
+      ).toEqual([])
+      const again = await run(
+        r.claimDueJobs({
+          now: 99_000,
+          limit: 10,
+          leaseMs: 100,
+          claimedBy: 'w4',
+          reportIds: [REPORT],
+        }),
+      )
+      // NOTE: carol's final failure is never claimed again; dan's lease ran out.
+      expect(again.map(j => [j.key, j.attempts, j.deferrals])).toEqual([
+        ['rr:dan', 0, 1],
+      ])
+      await run(
+        r.finishJobs({
+          claimedBy: 'w4',
+          done: [dan.id],
+          skipped: [],
+          delivered: [
+            { id: dan.id, providerMessageId: 'wamid.1', deliveryStatus: 'sent' },
+          ],
+          now: 99_100,
+        }),
+      )
+      const inbox = await run(r.listInbox(DAN, 10))
+      expect(
+        inbox.map(j => [j.key, j.providerMessageId, j.deliveryStatus]),
+      ).toEqual([['rr:dan', 'wamid.1', 'sent']])
+      // NOTE: a reminder that was sent is a fact of the grid, with its kind.
+      expect(
+        (await run(r.listEvents(REPORT, 100)))
+          .filter(e => e.kind === 'reminded')
+          .map(e => [e.accountId, e.revisionNumber, e.detail, e.at]),
+      ).toEqual([[DAN, 1, 'reminder_first', 99_100]])
+    })
+
+    test('a deferred job is tried again later without using an attempt; the inbox row carries its round\'s time zone', async () => {
+      const s = await published()
+      const { r } = s
+      const first = await run(
+        r.claimDueJobs({ now: 500, limit: 10, leaseMs: 100, claimedBy: 'w1' }),
+      )
+      const carol = first.find(j => j.key === 'rr:carol') as (typeof first)[number]
+      const dan = first.find(j => j.key === 'rr:dan') as (typeof first)[number]
+      await run(
+        r.finishJobs({
+          claimedBy: 'w1',
+          done: [dan.id],
+          skipped: [],
+          deferred: [{ id: carol.id, retryAt: 700, error: 'storage unavailable' }],
+          now: 510,
+        }),
+      )
+      expect(
+        await run(r.claimDueJobs({ now: 600, limit: 10, leaseMs: 100, claimedBy: 'w2' })),
+      ).toEqual([])
+      const again = await run(
+        r.claimDueJobs({ now: 700, limit: 10, leaseMs: 100, claimedBy: 'w2' }),
+      )
+      expect(again.map(j => [j.key, j.attempts, j.deferrals, j.state])).toEqual([
+        ['rr:carol', 0, 1, 'claimed'],
+      ])
+      // NOTE: a pass that only deferred a job under a lost lease changes nothing.
+      await run(
+        r.finishJobs({
+          claimedBy: 'w1',
+          done: [],
+          skipped: [],
+          deferred: [{ id: carol.id, retryAt: 9_000, error: 'late' }],
+          now: 705,
+        }),
+      )
+      await run(r.finishJobs({ claimedBy: 'w2', done: [carol.id], skipped: [], now: 710 }))
+      const inbox = await run(r.listInbox(CAROL, 10))
+      expect(inbox.map(j => [j.key, j.deadlineZone])).toEqual([['rr:carol', 'Europe/Madrid']])
+    })
+
+    test('the pass reads a report in one batch: the same rounds, reviews, revisions and roles as the separate reads, with no names', async () => {
+      const s = await published()
+      const { r } = s
+      const bundle = await run(r.readReport(REPORT, { template: true }))
+      expect(bundle).not.toBeNull()
+      const rounds = await run(r.listRounds(REPORT))
+      expect(bundle?.rounds.map(e => [e.round, e.participants.map(p => [p.userId, p.roleId, p.removedAt])])).toEqual(
+        rounds.map(e => [e.round, e.participants.map(p => [p.userId, p.roleId, p.removedAt])]),
+      )
+      expect(bundle?.reviews).toEqual(await run(r.listReviews(REPORT)))
+      expect(bundle?.revisions).toEqual(await run(r.listRevisions(REPORT)))
+      expect(bundle?.members.map(m => [m.userId, m.roleId])).toEqual(
+        (await run(r.listMembers(REPORT))).map(m => [m.userId, m.roleId]),
+      )
+      expect(bundle?.members.every(m => m.name === '')).toBe(true)
+      const record = await run(r.getReport(REPORT))
+      expect(bundle?.record.state).toBe(record?.state)
+      expect(bundle?.record.templateId).toBe(record?.templateId)
+      expect(bundle?.record.caseFile.unitId).toBe(record?.caseFile.unitId)
+      expect(bundle?.record.latestRevision).toBe(1)
+      const version = await run(
+        r.getTemplateVersion(record?.templateId ?? '', record?.templateVersion ?? 0),
+      )
+      const definition = JSON.parse(version?.definition ?? '{}') as {
+        roles: unknown
+        conclusion?: unknown
+      }
+      expect(JSON.parse(bundle?.template?.roles ?? 'null')).toEqual(definition.roles ?? null)
+      expect(bundle?.template?.hasConclusion).toBe(definition.conclusion !== undefined)
+      expect((await run(r.readReport(REPORT, { template: false })))?.template).toBeNull()
+      expect(await run(r.readReport('no-such-report', { template: true }))).toBeNull()
     })
 
     test('a read event is recorded once', async () => {

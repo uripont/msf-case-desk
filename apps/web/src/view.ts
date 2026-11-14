@@ -44,6 +44,7 @@ import * as Comments from './quoroom/comments'
 import * as Grid from './quoroom/grid'
 import * as History from './quoroom/history'
 import * as Inbox from './quoroom/inbox'
+import * as Notifications from './quoroom/notifications'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
 import * as Publish from './quoroom/publish'
@@ -196,6 +197,7 @@ type PageLink = { route: AppRoute; label: string }
 const pageLinksFor = (
   me: MeView,
   mode: RuntimeMode,
+  unread: number,
 ): ReadonlyArray<PageLink> => [
   ...(mode === 'demo'
     ? [
@@ -214,6 +216,10 @@ const pageLinksFor = (
     ? [{ route: AppRoute.Admin(), label: 'Administration' }]
     : []),
   { route: AppRoute.Inbox(), label: 'Inbox' },
+  {
+    route: AppRoute.Notifications(),
+    label: Notifications.unreadLabel('Notifications', unread),
+  },
   { route: AppRoute.Account(), label: 'My account' },
 ]
 
@@ -255,7 +261,7 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
         [
           h.nav(
             [h.AriaLabel('Pages'), h.Class('flex flex-wrap gap-x-6 gap-y-2')],
-            Array.map(pageLinksFor(me, modeOf(model)), link =>
+            Array.map(pageLinksFor(me, modeOf(model), model.notifications.unread), link =>
               pageLink(model, link, h),
             ),
           ),
@@ -830,6 +836,7 @@ const deskPageView = (
         Drafts: () => loadedDesk(model, h),
         Draft: () => loadedDesk(model, h),
         Inbox: () => loadedDesk(model, h),
+        Notifications: () => loadedDesk(model, h),
         Comments: () => loadedDesk(model, h),
         Grid: () => loadedDesk(model, h),
         Audit: () => loadedDesk(model, h),
@@ -1079,6 +1086,15 @@ const pageView = (
             model: model.inbox,
             view: Inbox.view,
             toParentMessage: message => Message.GotInboxMessage({ message }),
+          }),
+        ],
+        Notifications: () => [
+          h.submodel({
+            slotId: 'notifications',
+            model: model.notifications,
+            view: Notifications.view,
+            toParentMessage: message =>
+              Message.GotNotificationsMessage({ message }),
           }),
         ],
         Comments: ({ reportId }) => [

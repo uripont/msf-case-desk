@@ -7,19 +7,23 @@ import { layerSql } from './d1Repository'
 import { QuoroomServicesLive } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
 import { fromD1 } from './sql'
+import {
+  TICK_PATH,
+  type TickEnv,
+  handleTick,
+  notificationConfigFrom,
+  scheduledPass,
+} from './tick'
 
-export type Env = {
+export type Env = TickEnv & {
   readonly ASSETS: Fetcher
   readonly DB: D1Database
   // NOTE: `demo` or `pilot` (D20), set by the stack. Unset means `pilot`; any
   // other value is a configuration error (see `modeOf`).
   readonly RUNTIME_MODE?: string
-  // NOTE: Notification timings in minutes, set by the pilot stack (D12). Unset
-  // means the production values of `DEFAULT_NOTIFICATION_CONFIG`. Nothing reads
-  // them until the notification pass exists (stage 7).
-  readonly NOTIFY_REQUEST_DELAY_MINUTES?: string
-  readonly NOTIFY_FIRST_REMINDER_MINUTES?: string
-  readonly NOTIFY_FINAL_REMINDER_MINUTES?: string
+  // NOTE: the `NOTIFY_*_MINUTES` timings (D12) and `TICK_SECRET` are in `TickEnv`.
+  // Both the handlers that write the jobs and the pass that sends them read the
+  // timings, so a test environment's minutes apply to both.
 }
 
 const API_PREFIX = '/api/'
@@ -38,7 +42,7 @@ const handleApi = async (
   }
   const app = makeApp(
     layerSql(env.DB),
-    Layer.mergeAll(layerSqlReport(fromD1(env.DB)), QuoroomServicesLive),
+    Layer.mergeAll(layerSqlReport(fromD1(env.DB)), QuoroomServicesLive(notificationConfigFrom(env))),
     mode.mode,
   )
   try {
@@ -48,21 +52,20 @@ const handleApi = async (
   }
 }
 
-// NOTE: PLACEHOLDER until stage 7. The stacks that have a cron (the pilot,
-// and test environments of it) call this on every schedule; it does nothing
-// and is safe to run any number of times. Stage 7 replaces the body with the
-// notification pass, which builds its own layer from `layerSql(env.DB)`.
-const runNotificationPass = async (
-  _env: Env,
-  _scheduledTime: number,
-): Promise<void> => {}
-
 export default {
-  scheduled: (controller, env, context) => {
-    context.waitUntil(runNotificationPass(env, controller.scheduledTime))
+  // NOTE: The notification pass (stage 7). Only the Workers that have a Cron
+  // Trigger run it (the pilot, test environments and the demo's `app`), so no
+  // message is sent twice. It builds its own layer from `env.DB`.
+  scheduled: (_controller, env, context) => {
+    context.waitUntil(scheduledPass(fromD1(env.DB), env))
   },
-  fetch: (request, env, context) =>
-    new URL(request.url).pathname.startsWith(API_PREFIX)
+  fetch: (request, env, context) => {
+    const path = new URL(request.url).pathname
+    if (path === TICK_PATH) {
+      return handleTick(request, env, fromD1(env.DB))
+    }
+    return path.startsWith(API_PREFIX)
       ? handleApi(request, env, context)
-      : env.ASSETS.fetch(request).then(withReferrerPolicy),
+      : env.ASSETS.fetch(request).then(withReferrerPolicy)
+  },
 } satisfies ExportedHandler<Env>

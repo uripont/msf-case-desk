@@ -21,6 +21,8 @@ import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { type Browser, type Locator, type Page, chromium } from 'playwright-core'
 
 const root = join(import.meta.dirname, '../../..')
+// NOTE: invented, for the local test server only.
+const TICK_SECRET = 'e2e-tick-secret-not-a-real-one'
 const shots = process.env.E2E_SHOTS ?? '/tmp/quoroom-e2e-screens'
 const chromePath = process.env.E2E_CHROMIUM ?? '/usr/bin/chromium'
 
@@ -583,7 +585,10 @@ const main = async (): Promise<void> => {
       })
       const pilotData = join(local, 'pilot-data')
       mkdirSync(pilotData, { recursive: true })
-      pilotServer = startWorkerd(pilotPort, pilotData, { RUNTIME_MODE: 'pilot' })
+      pilotServer = startWorkerd(pilotPort, pilotData, {
+        RUNTIME_MODE: 'pilot',
+        TICK_SECRET: TICK_SECRET,
+      })
       await waitForHealth(pilotBase)
       pilotUrl = pilotBase
       const config = (await (await fetch(`${pilotBase}/api/config`)).json()) as {
@@ -2337,6 +2342,46 @@ const main = async (): Promise<void> => {
       await shot(pia, 'closing-7-audit-375')
       await rhea.context().close()
       await ravi.context().close()
+    })
+
+    await step('notifications on a phone: /api/tick is guarded, the pass tells the author, the count shows in the navigation, a link opens the report, mark read', async () => {
+      const pia = pilotPage
+      assert.ok(pia !== undefined, 'no pilot page')
+      const tick = (headers: Record<string, string>) =>
+        fetch(`${pilotUrl}/api/tick`, { method: 'POST', headers })
+      // NOTE: the route does not show itself to anyone without the secret: 404 for every request.
+      assert.equal((await tick({})).status, 404)
+      assert.equal((await tick({ authorization: 'Bearer wrong' })).status, 404)
+      assert.equal((await fetch(`${pilotUrl}/api/tick`)).status, 404)
+      const answer = await tick({ authorization: `Bearer ${TICK_SECRET}` })
+      assert.equal(answer.status, 200)
+      const counts = (await answer.json()) as { queries: number; sent: number }
+      assert.ok(counts.queries <= 50, `the pass used ${counts.queries} queries`)
+      assert.ok(counts.sent > 0, 'nothing was sent to the author')
+      // NOTE: a pass takes only a few jobs (CPU); more passes drain the rest, and
+      // then a pass has nothing left to send.
+      let last = counts.sent
+      for (let pass = 0; pass < 10 && last > 0; pass += 1) {
+        const next = (await (await tick({ authorization: `Bearer ${TICK_SECRET}` })).json()) as { sent: number }
+        last = next.sent
+      }
+      assert.equal(last, 0, 'passes kept sending')
+      const idle = (await (await tick({ authorization: `Bearer ${TICK_SECRET}` })).json()) as { sent: number }
+      assert.equal(idle.sent, 0, 'a pass sent again')
+
+      await pia.goto(`${pilotUrl}/notifications`)
+      await pia.getByRole('heading', { name: 'Notifications' }).waitFor()
+      await pia.getByText('The review round is decided.').first().waitFor()
+      await pia.getByRole('link', { name: /^Notifications \(\d+\)$/ }).waitFor()
+      await noSideScroll(pia)
+      await shot(pia, 'notifications-375')
+      const link = pia.getByRole('link', { name: 'Open: The review round is decided.' }).first()
+      assert.match((await link.getAttribute('href')) ?? '', /^\/r\/[^/]+$/)
+      await pia.getByRole('button', { name: 'Mark all notifications as read' }).click()
+      await pia.getByText('You have read everything.').waitFor()
+      await pia.getByRole('link', { name: 'Notifications', exact: true }).waitFor()
+      await pia.reload()
+      await pia.getByText('You have read everything.').waitFor()
     })
   } finally {
     await browser?.close()
