@@ -15,7 +15,7 @@ import { describe, expect as expectThat, test } from 'vitest'
 import { type AuthorCommentView, INTAKE_TEMPLATE } from '@case-desk/domain'
 
 import { clickedLinkTo } from './fixtures'
-import { Message, update } from './main'
+import { Message, OpenDialogFocus, update } from './main'
 import { revision } from './publish.fixtures'
 import { authorModel } from './quoroom.fixtures'
 import * as Comments from './quoroom/comments'
@@ -257,6 +257,7 @@ describe('the pending review and sending', () => {
         }),
       ),
       click(role('button', { name: 'Send your review' })),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       expect(text('Checking your comments…')).toExist(),
       // NOTE: the list is read again when the dialog opens; a comment added in
       // another tab shows up, and the counts are those of the fresh list.
@@ -271,6 +272,7 @@ describe('the pending review and sending', () => {
           ],
         }),
       ),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       expect(
         text('3 comments are sent: 1 to the authors only, 2 to the whole committee.'),
       ).toExist(),
@@ -317,10 +319,12 @@ describe('the pending review and sending', () => {
       { update, view },
       given(reviewScreen({ canVote: false })),
       click(role('button', { name: 'Send your review' })),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       Command.resolve(
         Review.ReadPending,
         Review.Message.SucceededReadPending({ scope: SCOPE, comments: [] }),
       ),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       expect(role('radio', { name: /Comment only/ })).toExist(),
       expect(role('radio', { name: /Approve/ })).toBeAbsent(),
     )
@@ -361,6 +365,7 @@ describe('the pending review and sending', () => {
       { update, view },
       given(reviewScreen({ comments: [textComment('c1')] })),
       click(role('button', { name: 'Send your review' })),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       Command.resolve(
         Review.ReadPending,
         Review.Message.SucceededReadPending({
@@ -368,6 +373,7 @@ describe('the pending review and sending', () => {
           comments: [textComment('c1')],
         }),
       ),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       click(role('radio', { name: /Comment only/ })),
       click(role('button', { name: 'Confirm and send review' })),
       Command.resolve(

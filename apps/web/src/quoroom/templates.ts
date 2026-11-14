@@ -512,6 +512,15 @@ export const update = (
     }),
   })
 
+// NOTE: Escape answers the open question with "no".
+export const dismissDialog = (model: Model): Update.Return<Model, Message> =>
+  update(
+    model,
+    Option.isSome(model.maybeConfirmRetire)
+      ? Message.CancelledRetire()
+      : Message.CancelledDiscard(),
+  )
+
 // VIEW
 
 export const editorPath = (templateId: string, version: number): string =>

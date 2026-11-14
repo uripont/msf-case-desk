@@ -13,3 +13,4 @@ coverage/
 .snapshots/
 .local/
 .build/
+.screens/

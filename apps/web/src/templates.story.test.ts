@@ -9,7 +9,7 @@ import {
 import { PANEL_EDITS } from '@case-desk/domain/testing/template-edits'
 import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
 
-import { Message, update } from './main'
+import { Message, OpenDialogFocus, update } from './main'
 import { clickedLinkTo } from './fixtures'
 import * as TemplateEditor from './quoroom/templateEditor'
 import * as Templates from './quoroom/templates'
@@ -393,7 +393,7 @@ describe('the template list pages, restores and discards', () => {
     const restore = update(list(), Message.GotTemplatesMessage({ message: Templates.Message.ClickedRestore({ templateId: 'tpl-old' }) }))
     expect(names(restore)).toEqual([Templates.RestoreTemplate.name])
     const asked = update(list(), Message.GotTemplatesMessage({ message: Templates.Message.AskedDiscard({ templateId: 'tpl-draft' }) }))
-    expect(names(asked)).toEqual([])
+    expect(names(asked)).toEqual([OpenDialogFocus.name])
     const confirmed = update(
       asked.model,
       Message.GotTemplatesMessage({ message: Templates.Message.ConfirmedDiscard({ templateId: 'tpl-draft', version: 1 }) }),

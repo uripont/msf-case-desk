@@ -2058,6 +2058,10 @@ export const update = (
     ? { model }
     : updateCurrent(model, message)
 
+// NOTE: Escape answers the open question with "no".
+export const dismissDialog = (model: Model): Update.Return<Model, Message> =>
+  update(model, Message.CancelledConfirmation())
+
 // SUBSCRIPTION
 
 export const SAVE_RETRY_SECONDS = 5

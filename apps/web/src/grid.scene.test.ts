@@ -23,7 +23,7 @@ import {
 } from '@case-desk/domain'
 
 import { clickedLinkTo } from './fixtures'
-import { Message, update } from './main'
+import { Message, OpenDialogFocus, update } from './main'
 import { Failure } from './quoroom/failure'
 import { NOW, revision } from './publish.fixtures'
 import { authorModel } from './quoroom.fixtures'
@@ -294,6 +294,7 @@ describe('extending a deadline and removing a reviewer', () => {
       { update, view },
       given(gridScreen()),
       click(role('button', { name: 'Remove Reviewer Two from this round' })),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       expect(role('alertdialog', { name: 'Remove Reviewer Two' })).toExist(),
       expect(
         text('Committee: 1 of 1 approved, every voter must approve. The rule is met.'),
@@ -558,6 +559,7 @@ describe('the outcome of a decided round', () => {
       given(reportScreen(INTAKE_TEMPLATE, 'decided', headers('decided', 'rule_met'))),
       click(role('button', { name: 'Start the conclusion' })),
       expect(role('alertdialog', { name: 'Start the conclusion?' })).toExist(),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       Command.resolve(Report.FocusConfirmation, Report.Message.CompletedFocusConfirmation()),
       click(role('button', { name: 'Start the conclusion' })),
       Command.resolve(

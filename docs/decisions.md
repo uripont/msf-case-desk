@@ -262,6 +262,18 @@ Stack `Spike0c`, stage `test_spike0c`, alchemy file `alchemy.spike0c.run.ts` (de
 
 `packages/e2e` is the one place that drives a real browser. It uses `playwright-core` 1.65.0 (no bundled browsers) with the system Chromium (`/usr/bin/chromium`, or `E2E_CHROMIUM`), so nothing is downloaded. It is a dev dependency of that package only, has no `test` script (so `pnpm test` and `pnpm check` do not need a browser) and starts its own workerd on a free port with a temporary data folder. Run it with `pnpm --filter @case-desk/e2e e2e`.
 
+## Other browser engines for the sweep (stage 10a)
+
+The sweep of every route (`packages/e2e/src/sweep.ts`) and the keyboard and session steps (`keyboard.ts`) run in Chromium and Firefox. Firefox is a dev-time download, not a project dependency: `pnpm --filter @case-desk/e2e exec playwright-core install firefox` puts Firefox 159 (build 1572) in Playwright's cache (`$PLAYWRIGHT_BROWSERS_PATH`, else `$XDG_CACHE_HOME/ms-playwright`). `playwright-core` launches it from there with no executable path. `E2E_ENGINES=chromium` runs Chromium only (used for the repeated flakiness runs); `E2E_SKIP_SWEEP=1` skips the route sweep.
+
+WebKit cannot run on this machine. `playwright-core install webkit` downloads it, but the host is Arch Linux without `sudo`, and the WebKit build needs `libicu*.so.74`, `libxml2.so.2`, `libjxl.so.0.8` and `libbacktrace.so.0`, which the system does not have (it has newer, differently versioned ones; `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` gets past the check and then the binary fails to load). It needs `sudo npx playwright install-deps` or a Debian/Ubuntu host. Safari is therefore not covered by a real engine; the screens use no engine-specific features, and Firefox (Gecko) and Chromium (Blink) agree on all of them.
+
+The route list is not written by hand: `AppRoute.members` is read from `apps/web/src/route.ts`, a route without a sample in `sweep.ts` fails the type check, and the sweep fails if the two lists differ.
+
+## A session that ends, and Escape (stage 10a)
+
+A signed-in call answered `Unauthorised` announces `quoroom-session-ended` on the window (`withQuoroom`, after the screen has had its failure). The app shows the sign-in at the same address and keeps every screen's Model; the same account signing in again resumes (unsaved report or template edits are saved at once), a different account starts from empty screens, so nothing of one account is shown to another. Escape answers an open in-page question (leave, remove, discard, retire, send, confirm) with "no" through the screen that asked it, the question takes the focus when it opens, and the focus returns to what opened it.
+
 ## Bundled fonts for the theme (stage 3c)
 
 The theme (D24) offers a fixed set of fonts served from the app itself, with no request to a font provider. Three packages were added to `apps/web`, pinned exactly, all under the SIL Open Font License:

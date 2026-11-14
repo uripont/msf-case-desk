@@ -14,7 +14,7 @@ import { describe, test } from 'vitest'
 import { INVESTIGATION_TEMPLATE } from '@case-desk/domain'
 
 import { clickedLinkTo } from './fixtures'
-import { Message, update } from './main'
+import { Message, OpenDialogFocus, update } from './main'
 import { authorModel } from './quoroom.fixtures'
 import * as Report from './quoroom/report'
 import {
@@ -89,6 +89,7 @@ describe('entries on the screen', () => {
       ),
       Command.resolve(Report.SaveSection, savedAs(2)),
       click(role('button', { name: 'Remove Security context' })),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       Command.resolve(
         Report.FocusConfirmation,
         Report.Message.CompletedFocusConfirmation(),

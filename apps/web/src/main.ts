@@ -75,7 +75,12 @@ import {
 } from './entryForm'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
-import { withPublic, withQuoroom } from './quoroom/api'
+import {
+  SESSION_ENDED_EVENT,
+  sessionEvents,
+  withPublic,
+  withQuoroom,
+} from './quoroom/api'
 import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
 import * as Downloads from './quoroom/downloads'
@@ -174,6 +179,8 @@ export const LEAVE_HEADING_ID = 'leave-report-heading'
 
 export const Model = Schema.Struct({
   maybeLeaving: Schema.Option(Leaving),
+  maybeEndedFor: Schema.Option(Schema.String),
+  maybeFocusReturn: Schema.Option(Schema.String),
   route: AppRoute,
   config: ConfigLoad,
   maybeLogoSrc: Schema.Option(Schema.String),
@@ -276,6 +283,9 @@ export const Message = defineMessageUnion({
   GotAuditMessage: { message: Audit.Message },
   GotDownloadsMessage: { message: Downloads.Message },
   GotPublishMessage: { message: Publish.Message },
+  EndedSession: {},
+  PressedEscape: {},
+  CompletedOpenDialogFocus: { maybeReturnTo: Schema.Option(Schema.String) },
   SucceededCheckSession: { me: MeView },
   FailedCheckSession: {},
   UpdatedLoginEmail: { value: Schema.String },
@@ -365,6 +375,36 @@ const firstCaseIdOf = (model: Model): Option.Option<typeof CaseId.Type> =>
     Option.map(triaged => triaged.triageCase.id),
   )
 
+// NOTE: Which question inside the page is open, if any. Escape answers it
+// with "no", through the screen that asked it. A review being sent has gone
+// past the question, so Escape leaves it alone.
+const isDialogOpen = (model: Model): boolean =>
+  Option.isSome(model.maybeLeaving) ||
+  (AppRoute.guards.Revision(model.route) &&
+    !Review.Dialog.guards.Closed(model.review.dialog) &&
+    !Review.Dialog.guards.Sending(model.review.dialog)) ||
+  (AppRoute.guards.Names(model.route) &&
+    Option.isSome(model.names.maybeRemoving)) ||
+  (AppRoute.guards.Grid(model.route) &&
+    Option.isSome(model.grid.maybeRemoving)) ||
+  (AppRoute.guards.Templates(model.route) &&
+    (Option.isSome(model.templates.maybeConfirmRetire) ||
+      Option.isSome(model.templates.maybeConfirmDiscard))) ||
+  (AppRoute.guards.TemplateEditor(model.route) &&
+    Option.isSome(model.templateEditor.maybeConfirmRemove)) ||
+  (AppRoute.guards.Report(model.route) &&
+    Option.isSome(model.report.maybeConfirmation))
+
+// NOTE: The question changes shape while it is open (the review dialog first
+// reads the comments, then asks), and a new shape is a new element, so the
+// focus is moved into it again.
+const openDialogOf = (model: Model): Option.Option<string> =>
+  isDialogOpen(model)
+    ? Option.some(
+        `${pathOf(model.route)}#${AppRoute.guards.Revision(model.route) ? model.review.dialog._tag : ''}`,
+      )
+    : Option.none()
+
 const emptyLoginForm = LoginForm.make({
   email: '',
   password: Redacted.make(''),
@@ -373,6 +413,8 @@ const emptyLoginForm = LoginForm.make({
 
 export const initialModel = Model.make({
   maybeLeaving: Option.none(),
+  maybeEndedFor: Option.none(),
+  maybeFocusReturn: Option.none(),
   route: AppRoute.Desk(),
   config: ConfigLoad.Loading(),
   maybeLogoSrc: Option.none(),
@@ -449,6 +491,44 @@ export const FocusElement = Command.define('FocusElement', {
       Effect.catch(() => Effect.void),
       Effect.as(Message.CompletedFocusElement()),
     ),
+})
+
+// NOTE: A question inside the page (leave, remove, send) takes the focus when
+// it opens, and gives it back to what opened it when it closes. The opener is
+// found by its id or its label, because the button itself may be replaced by
+// the question while it is open.
+const DIALOG_FOCUS_SELECTOR =
+  '[role="alertdialog"] :is([tabindex="-1"], input, button)'
+
+const selectorOfFocused = (): Option.Option<string> => {
+  const element = document.activeElement
+  if (
+    element === null ||
+    element === document.body ||
+    element.closest('[role="alertdialog"]') !== null
+  ) {
+    return Option.none()
+  }
+  const label = element.getAttribute('aria-label')
+  return element.id !== ''
+    ? Option.some(`#${CSS.escape(element.id)}`)
+    : label === null
+      ? Option.none()
+      : Option.some(`[aria-label="${label.replaceAll('"', '\\"')}"]`)
+}
+
+export const OpenDialogFocus = Command.define('OpenDialogFocus', {
+  messages: [Message.CompletedOpenDialogFocus],
+  execute: Effect.sync(selectorOfFocused).pipe(
+    Effect.tap(() =>
+      Dom.focus(DIALOG_FOCUS_SELECTOR, { makeFocusable: true }).pipe(
+        Effect.catch(() => Effect.void),
+      ),
+    ),
+    Effect.map(maybeReturnTo =>
+      Message.CompletedOpenDialogFocus({ maybeReturnTo }),
+    ),
+  ),
 })
 
 const focusPageHeading = () => FocusElement({ selector: `#${PAGE_HEADING_ID}` })
@@ -793,6 +873,7 @@ const signedOut = (model: Model): Model =>
     downloads: Downloads.cleared,
     publish: Publish.cleared,
     maybeLeaving: () => Option.none(),
+    maybeEndedFor: () => Option.none(),
     deskLoad: () => DeskLoad.Loading(),
     cases: () => [],
     ruleSets: () => [],
@@ -1466,7 +1547,31 @@ const opensLink = (
 
 // UPDATE
 
-export const update = (model: Model, message: Message) =>
+// NOTE: The same account after its session ended: the screens are as they
+// were, and what could not be saved is saved now.
+const signedBackIn = (
+  model: Model,
+  me: typeof MeView.Type,
+): Update.Return<Model, Message> => {
+  const back = modifyFields(model, {
+    session: () => Session.SignedIn({ me }),
+    maybeEndedFor: () => Option.none(),
+    loginForm: () => emptyLoginForm,
+  })
+  const saved: Update.Return<Model, Message> = AppRoute.guards.Report(
+    back.route,
+  )
+    ? retryReportSave(back)
+    : AppRoute.guards.TemplateEditor(back.route)
+      ? retryTemplateEditorSave(back)
+      : { model: back }
+  return {
+    model: saved.model,
+    commands: [...(saved.commands ?? []), focusPageHeading()],
+  }
+}
+
+const updateWithoutDialogFocus = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
     ClickedCase: ({ caseId }) => ({
       model: modifyFields(model, {
@@ -1678,7 +1783,41 @@ export const update = (model: Model, message: Message) =>
         NotSubmitted: () => submitLogin(model),
         Rejected: () => submitLogin(model),
       }),
-    SucceededSignIn: ({ me }) => resume(loadingDesk(model, me)),
+    PressedEscape: () => ({ model }),
+    CompletedOpenDialogFocus: ({ maybeReturnTo }) => ({
+      model: modifyFields(model, {
+        maybeFocusReturn: current =>
+          Option.isSome(openDialogOf(model))
+            ? Option.orElse(current, () => maybeReturnTo)
+            : Option.none(),
+      }),
+    }),
+    EndedSession: () =>
+      Session.match<Update.Return<Model, Message>>(model.session, {
+        Checking: () => ({ model }),
+        SignedOut: () => ({ model }),
+        SignedIn: ({ me }) => ({
+          model: modifyFields(model, {
+            session: () => Session.SignedOut(),
+            maybeEndedFor: () => Option.some(me.id),
+            loginForm: () =>
+              LoginForm.make({
+                email: me.email,
+                password: Redacted.make(''),
+                submission: LoginSubmission.NotSubmitted(),
+              }),
+          }),
+          commands: [focusPageHeading()],
+        }),
+      }),
+    SucceededSignIn: ({ me }) =>
+      Option.match(model.maybeEndedFor, {
+        onNone: () => resume(loadingDesk(model, me)),
+        onSome: endedFor =>
+          endedFor === me.id
+            ? signedBackIn(model, me)
+            : resume(loadingDesk(signedOut(model), me)),
+      }),
     FailedSignIn: ({ failure }) => ({
       model: modifyFields(model, {
         loginForm: form =>
@@ -1797,16 +1936,134 @@ const submitLogin = (model: Model) => ({
   ],
 })
 
+const dismissReview = Update.foldChildStep({
+  update: Review.dismissDialog,
+  read: (model: Model) => Option.some(model.review),
+  write: (model, nextReview) => modifyFields(model, { review: () => nextReview }),
+  toParentMessage: message => Message.GotReviewMessage({ message }),
+})
+
+const dismissNames = Update.foldChildStep({
+  update: Names.dismissDialog,
+  read: (model: Model) => Option.some(model.names),
+  write: (model, nextNames) => modifyFields(model, { names: () => nextNames }),
+  toParentMessage: message => Message.GotNamesMessage({ message }),
+})
+
+const dismissGrid = Update.foldChildStep({
+  update: Grid.dismissDialog,
+  read: (model: Model) => Option.some(model.grid),
+  write: (model, nextGrid) => modifyFields(model, { grid: () => nextGrid }),
+  toParentMessage: message => Message.GotGridMessage({ message }),
+})
+
+const dismissTemplates = Update.foldChildStep({
+  update: Templates.dismissDialog,
+  read: (model: Model) => Option.some(model.templates),
+  write: (model, nextTemplates) =>
+    modifyFields(model, { templates: () => nextTemplates }),
+  toParentMessage: message => Message.GotTemplatesMessage({ message }),
+})
+
+const dismissTemplateEditor = Update.foldChildStep({
+  update: TemplateEditor.dismissDialog,
+  read: (model: Model) => Option.some(model.templateEditor),
+  write: (model, nextEditor) =>
+    modifyFields(model, { templateEditor: () => nextEditor }),
+  toParentMessage: message => Message.GotTemplateEditorMessage({ message }),
+})
+
+const dismissReport = Update.foldChildStep({
+  update: Report.dismissDialog,
+  read: (model: Model) => Option.some(model.report),
+  write: (model, nextReport) => modifyFields(model, { report: () => nextReport }),
+  toParentMessage: message => Message.GotReportMessage({ message }),
+})
+
+const dismissDialog = (model: Model): Update.Return<Model, Message> =>
+  Option.isSome(model.maybeLeaving)
+    ? { model: modifyFields(model, { maybeLeaving: () => Option.none() }) }
+    : AppRoute.guards.Revision(model.route)
+      ? dismissReview(model)
+      : AppRoute.guards.Names(model.route)
+        ? dismissNames(model)
+        : AppRoute.guards.Grid(model.route)
+          ? dismissGrid(model)
+          : AppRoute.guards.Templates(model.route)
+            ? dismissTemplates(model)
+            : AppRoute.guards.TemplateEditor(model.route)
+              ? dismissTemplateEditor(model)
+              : AppRoute.guards.Report(model.route)
+                ? dismissReport(model)
+                : { model }
+
+export const update = (
+  model: Model,
+  message: Message,
+): Update.Return<Model, Message> => {
+  const next =
+    message._tag === 'PressedEscape'
+      ? dismissDialog(model)
+      : updateWithoutDialogFocus(model, message)
+  const wasOpen = Option.getOrUndefined(openDialogOf(model))
+  const isOpen = Option.getOrUndefined(openDialogOf(next.model))
+  if (wasOpen === isOpen) {
+    return next
+  }
+  if (isOpen !== undefined) {
+    return {
+      model: next.model,
+      commands: [...(next.commands ?? []), OpenDialogFocus()],
+    }
+  }
+  return Option.match(model.maybeFocusReturn, {
+    onNone: () => next,
+    onSome: selector => ({
+      model: modifyFields(next.model, { maybeFocusReturn: () => Option.none() }),
+      commands: [
+        ...(next.commands ?? []),
+        ...(pathOf(next.model.route) === pathOf(model.route)
+          ? [FocusElement({ selector })]
+          : []),
+      ],
+    }),
+  })
+}
+
 // SUBSCRIPTION
 
 export const CLOCK_TICK_MINUTES = 1
 
-const appSubscriptions = Subscription.make<Model, Message>()(_entry => ({
+const appSubscriptions = Subscription.make<Model, Message>()(entry => ({
+  escape: entry(
+    { isDialogOpen: Schema.Boolean },
+    {
+      modelToDependencies: model => ({
+        isDialogOpen: isDialogOpen(model),
+      }),
+      dependenciesToStream: ({ isDialogOpen }) =>
+        Dom.streamFromEventFilterMap({
+          target: window,
+          type: 'keydown',
+          filterMapEvent: event =>
+            event.key === 'Escape'
+              ? Option.some(Message.PressedEscape())
+              : Option.none(),
+        }).pipe(Stream.when(Effect.sync(() => isDialogOpen))),
+    },
+  ),
   clock: Subscription.persistentEntry(
     Stream.tick(Duration.minutes(CLOCK_TICK_MINUTES)).pipe(
       Stream.mapEffect(() => Clock.currentTimeMillis),
       Stream.map(now => Message.UpdatedNow({ now })),
     ),
+  ),
+  sessionEnded: Subscription.persistentEntry(
+    Dom.streamFromEvent({
+      target: sessionEvents,
+      type: SESSION_ENDED_EVENT,
+      mapEvent: () => Message.EndedSession(),
+    }),
   ),
   heroLayout: Subscription.persistentEntry(
     Dom.streamFromMediaQuery({

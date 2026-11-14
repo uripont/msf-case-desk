@@ -726,6 +726,10 @@ export const update = (
     ? { model }
     : updateCurrent(model, message)
 
+// NOTE: Escape answers the open question with "no".
+export const dismissDialog = (model: Model): Update.Return<Model, Message> =>
+  update(model, Message.CancelledRemove())
+
 // NOTE: Saves the draft again, for the question asked before the editor is
 // left.
 export const retrySave = (model: Model): Update.Return<Model, Message> =>

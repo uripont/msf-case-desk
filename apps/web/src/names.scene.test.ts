@@ -1,3 +1,4 @@
+import { Option } from 'effect'
 import {
   Command,
   click,
@@ -14,7 +15,7 @@ import { describe, test } from 'vitest'
 import { INTAKE_TEMPLATE } from '@case-desk/domain'
 
 import { clickedLinkTo } from './fixtures'
-import { Message, update } from './main'
+import { Message, OpenDialogFocus, update } from './main'
 import { authorModel } from './quoroom.fixtures'
 import * as Names from './quoroom/names'
 import * as Report from './quoroom/report'
@@ -151,6 +152,7 @@ describe('the people and names screen', () => {
       { update, view },
       given(namesScreen(['edit', 'manage_people'])),
       click(role('button', { name: 'Remove Zorana Veltkamp' })),
+      Command.resolve(OpenDialogFocus, Message.CompletedOpenDialogFocus({ maybeReturnTo: Option.none() })),
       expect(role('alertdialog')).toExist(),
       expect(role('button', { name: 'Keep Zorana Veltkamp' })).toExist(),
       click(role('button', { name: 'Keep Zorana Veltkamp' })),

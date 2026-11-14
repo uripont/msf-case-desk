@@ -522,7 +522,7 @@ export const cleared = (model: Model): Model =>
 // UPDATE
 
 const SESSION_ENDED =
-  'Your session has ended. Reload this page to sign in again. Comments you already added are kept.'
+  'Your session has ended. Sign in again to carry on. Comments you already added are kept.'
 
 const noticeOf = (failure: Failure): string =>
   failure._tag === 'SignInRequired' ? SESSION_ENDED : failureText(failure)
@@ -864,6 +864,10 @@ export const update = (
   'scope' in message && !isCurrentPage(model, message.scope)
     ? { model }
     : updateCurrent(model, message)
+
+// NOTE: Escape answers the open question with "no".
+export const dismissDialog = (model: Model): Update.Return<Model, Message> =>
+  update(model, Message.ClickedCancelSend())
 
 // SUBSCRIPTION
 

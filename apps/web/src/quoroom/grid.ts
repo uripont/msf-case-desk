@@ -375,6 +375,10 @@ export const update = (
     ? { model }
     : updateCurrent(model, message)
 
+// NOTE: Escape answers the open question with "no".
+export const dismissDialog = (model: Model): Update.Return<Model, Message> =>
+  update(model, Message.CancelledRemove())
+
 // VIEW
 
 const statusLine = (row: RevisionRow): string =>

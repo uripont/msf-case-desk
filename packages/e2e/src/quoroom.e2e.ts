@@ -19,7 +19,10 @@ import { join } from 'node:path'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 
 import { extractPages } from '@case-desk/pdf/testing'
-import { type Browser, type Locator, type Page, chromium } from 'playwright-core'
+import { type Browser, type Locator, type Page, chromium, firefox } from 'playwright-core'
+
+import { runKeyboard } from './keyboard.ts'
+import { runSweep } from './sweep.ts'
 
 const root = join(import.meta.dirname, '../../..')
 // NOTE: invented, for the local test server only.
@@ -2796,6 +2799,158 @@ const main = async (): Promise<void> => {
       assert.ok(hasImage(after), 'the next PDF does not embed the logo')
       await shot(pia, 'theme-6-downloads-1280')
     })
+
+    // NOTE: Stage 10a. The pilot now holds every kind of screen: reports with
+    // drafts, revisions, a decided round, a closing revision and an archive;
+    // an inbox; a theme. One more author, in a unit of their own, has nothing
+    // at all, to see every screen empty. Then the sweep of every route.
+    if (process.env.E2E_SWEEP !== '0') {
+      const emptyEmail = 'eve.empty@case-desk.test'
+      let emptyReportId = ''
+      let templateDraft = { templateId: '', version: 0 }
+      let reviewingId = ''
+      await step('sweep setup: a revision waiting for the reviewers of the Review Committee', async () => {
+        const pia = pilotPage
+        assert.ok(pia !== undefined, 'no pilot page')
+        await pia.goto(`${pilotUrl}/reports`)
+        await pia.getByRole('heading', { name: 'Start a report' }).waitFor()
+        await pia
+          .getByLabel('Template', { exact: true })
+          .selectOption({ label: 'Intake and initial assessment (version 1)' })
+        await pia.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0100')
+        await pia.getByLabel('Case file title', { exact: true }).fill('Synthetic waiting case file')
+        await pia.getByRole('button', { name: 'Create report' }).click()
+        await pia.getByRole('link', { name: 'Open report PIL-0100' }).click()
+        await pia.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+        reviewingId = reportIdOf(pia)
+        const copy = await rpc(pia, 'StartWorkingCopy', { reportId: reviewingId })
+        await rpc(pia, 'SaveSection', {
+          reportId: reviewingId,
+          sectionId: 'case-details',
+          saveCounter: copy.saveCounter,
+          content: {
+            values: { investigator: { type: 'text', text: 'The camp reported a delay in the supply of water.' } },
+            sections: {},
+          },
+        })
+        await pia.goto(`${pilotUrl}/r/${reviewingId}`)
+        await pia.getByRole('link', { name: /^Share as Draft/ }).click()
+        await pia.locator('[data-preview="redacted"]').first().waitFor()
+        await pia.getByLabel('Publish this draft for review as soon as it is shared').check()
+        await pia.getByRole('checkbox', { name: /^Review Committee/ }).check()
+        await pia
+          .getByRole('button', { name: /^Confirm the redacted version, share as Draft \d+ and publish/ })
+          .click()
+        await pia.locator('[data-published="1"]').waitFor()
+      })
+
+      await step('sweep setup: an author with nothing, and a template draft to open', async () => {
+        const pia = pilotPage
+        assert.ok(pia !== undefined, 'no pilot page')
+        await pia.setViewportSize({ width: 1280, height: 900 })
+        await pia.goto(`${pilotUrl}/admin`)
+        await pia.getByRole('heading', { name: 'Administration' }).waitFor()
+        await pia.getByLabel('Unit name').fill('Empty Unit')
+        await pia.getByLabel('Unit code').fill('EMP')
+        await pia.getByRole('button', { name: 'Create unit' }).click()
+        await pia.getByRole('list', { name: 'Units' }).getByText('Empty Unit').waitFor()
+        await pia.getByLabel('E-mail', { exact: true }).fill(emptyEmail)
+        await pia.getByLabel('Name', { exact: true }).fill('Eve Empty')
+        await pia.getByLabel('Unit', { exact: true }).selectOption({ label: 'Empty Unit (EMP)' })
+        await pia.getByRole('button', { name: 'Give capability' }).click()
+        await pia.getByRole('textbox', { name: 'Link' }).waitFor()
+        const eveLink = await copiedLink(pia)
+        const eve = await person(launched)
+        await activate(eve, eveLink, 'eve')
+        await eve.goto(`${pilotUrl}/reports`)
+        await eve.getByRole('heading', { name: 'Start a report' }).waitFor()
+        await eve
+          .getByLabel('Template', { exact: true })
+          .selectOption({ label: 'Intake and initial assessment (version 1)' })
+        await eve.getByLabel('Integrity Line reference', { exact: true }).fill('PIL-0099')
+        await eve.getByLabel('Case file title', { exact: true }).fill('Synthetic empty case file')
+        await eve.getByRole('button', { name: 'Create report' }).click()
+        await eve.getByRole('link', { name: 'Open report PIL-0099' }).click()
+        await eve.getByRole('heading', { name: 'Intake and initial assessment', level: 1 }).waitFor()
+        emptyReportId = reportIdOf(eve)
+        await eve.context().close()
+
+        await pia.goto(`${pilotUrl}/templates`)
+        await pia.getByRole('heading', { name: 'Templates', level: 1 }).waitFor()
+        await pia.getByLabel('Template to copy', { exact: true }).selectOption({ label: 'Intake and initial assessment' })
+        await pia.getByLabel('Name of the copy', { exact: true }).fill('Sweep draft')
+        await pia.getByRole('button', { name: 'Copy into a new draft' }).click()
+        await pia.getByRole('link', { name: 'Open the draft' }).click()
+        await pia.getByRole('heading', { name: 'Edit Sweep draft', level: 1 }).waitFor()
+        const match = /^\/templates\/([^/]+)\/v\/(\d+)$/.exec(new URL(pia.url()).pathname)
+        assert.ok(match !== null, `not a template editor address: ${pia.url()}`)
+        templateDraft = { templateId: decodeURIComponent(match[1] ?? ''), version: Number(match[2]) }
+      })
+
+      const engines: Array<{ name: string; browser: Browser }> = [{ name: 'chromium', browser: launched }]
+      const extra: Array<Browser> = []
+      if ((process.env.E2E_ENGINES ?? 'chromium,firefox').split(',').includes('firefox')) {
+        const ff = await firefox.launch()
+        extra.push(ff)
+        engines.push({ name: 'firefox', browser: ff })
+      }
+      try {
+        if (process.env.E2E_SKIP_SWEEP !== '1') {
+          await runSweep({
+            demoUrl: base,
+            pilotUrl,
+            password: PASSWORD,
+            emails: {
+              admin: 'pia.pilot@case-desk.test',
+              reviewer: 'ravi.reviewer@case-desk.test',
+              empty: emptyEmail,
+              demo: 'ada.admin@case-desk.test',
+            },
+            reports: {
+              closing: reportsByReference['PIL-0008'] ?? '',
+              empty: emptyReportId,
+            },
+            template: templateDraft,
+            engines,
+            screens: process.env.E2E_SCREENS_INDEXED ?? join(root, 'packages/e2e/.screens'),
+            step,
+          })
+        }
+        await runKeyboard({
+          pilotUrl,
+          password: PASSWORD,
+          emails: {
+            admin: 'pia.pilot@case-desk.test',
+            reviewer: 'ravi.reviewer@case-desk.test',
+            empty: emptyEmail,
+          },
+          reports: {
+            closing: reportsByReference['PIL-0008'] ?? '',
+            empty: emptyReportId,
+            reviewing: reviewingId,
+          },
+          engines,
+          step,
+          endSessionsOf: async name => {
+            const pia = pilotPage
+            assert.ok(pia !== undefined, 'no pilot page')
+            await pia.goto(`${pilotUrl}/admin`)
+            await pia.getByRole('button', { name: `Issue reset link for ${name}` }).click()
+            const link = await copiedLink(pia)
+            const other = await person(launched)
+            await other.goto(link)
+            await other.getByRole('heading', { name: 'Choose a new password' }).waitFor()
+            await other.getByLabel('New password').fill(PASSWORD)
+            await other.getByLabel('Type it again').fill(PASSWORD)
+            await other.getByRole('button', { name: 'Save new password' }).click()
+            await other.getByRole('button', { name: 'Sign out' }).waitFor()
+            await other.context().close()
+          },
+        })
+      } finally {
+        await Promise.all(extra.map(each => each.close()))
+      }
+    }
   } finally {
     await browser?.close()
     stop(server)

@@ -1,9 +1,10 @@
 import { clsx } from 'clsx'
-import { Redacted } from 'effect'
+import { Option, Redacted } from 'effect'
 import { Html, HtmlBuilder } from 'foldkit/html'
 
 import { LoginSubmission, Message, type Model } from './main'
 import { failureText } from './quoroom/failure'
+import { PAGE_HEADING_ID } from './quoroom/ui'
 import { fieldClassName, labelClassName, primaryButtonClassName } from './style'
 
 export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
@@ -21,18 +22,32 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
         [
           h.h1(
             [
+              h.Id(PAGE_HEADING_ID),
               h.Class(
                 'text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
               ),
             ],
             ['Sign in'],
           ),
-          h.p(
-            [h.Class('text-pretty text-lg font-light text-msf-ink')],
-            [
-              'Quoroom is where reports are written, reviewed and approved. Use the account you were given.',
-            ],
-          ),
+          Option.match(model.maybeEndedFor, {
+            onNone: () =>
+              h.p(
+                [h.Class('text-pretty text-lg font-light text-msf-ink')],
+                [
+                  'Quoroom is where reports are written, reviewed and approved. Use the account you were given.',
+                ],
+              ),
+            onSome: () =>
+              h.p(
+                [
+                  h.Role('status'),
+                  h.Class('text-pretty text-lg font-medium text-msf-ink'),
+                ],
+                [
+                  'Your session has ended. Sign in again to carry on where you were. What you were writing is kept.',
+                ],
+              ),
+          }),
         ],
       ),
       h.form(
