@@ -104,11 +104,10 @@ import {
   ThemeRecord,
 } from './templates'
 
-// NOTE: The iteration 3 contract: two groups, each served at `/api/rpc` once
-// stage 3 switches the apps over. `CaseDeskRpcs` of iteration 2 stays as it
-// is until then. Procedures are named for what they do; who may call each is
-// in `procedures.ts` and `docs/rpc.md`, and the server decides with
-// `authorize` on every request. A report that a caller may not see answers
+// NOTE: The contract: two groups, the signed-in procedures at `/api/q/rpc`
+// and the public ones at `/api/q/public`. Procedures are named for what they
+// do; who may call each is in `procedures.ts` and `docs/rpc.md`, and the
+// server decides with `authorize` on every request. A report that a caller may not see answers
 // `NotFound`, exactly like one that does not exist.
 
 const ReportId = { reportId: ApiId }

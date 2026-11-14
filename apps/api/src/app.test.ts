@@ -1,188 +1,86 @@
 import { Effect, Layer } from 'effect'
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test } from 'vitest'
 
 import {
-  DEFAULT_RULES,
+  DEFAULT_NOTIFICATION_CONFIG,
+  ReportRepository,
   Repository,
-  UserId,
 } from '@case-desk/domain'
-import { makeMemoryRepository } from '@case-desk/domain/testing/memory'
+import {
+  makeMemoryReportRepository,
+  makeMemoryRepository,
+} from '@case-desk/domain/testing/memory'
 
 import { makeApp } from './app'
-import { hashPassword } from './password'
-import { SESSION_COOKIE } from './session'
+import { QuoroomConfig, makeTestClock, makeTestIds } from './quoroom/core'
 
-const PASSWORD = 'synthetic-password'
+const apps: Array<{ dispose: () => Promise<void> }> = []
+afterEach(async () => {
+  await Promise.all(apps.splice(0).map(app => app.dispose()))
+})
 
-// NOTE: one repository instance for all requests, as with D1.
-const makeTestApp = async () =>
-  makeApp(
-    await memoryLayer({
-      users: [
-        {
-          id: UserId.make('user-1'),
-          email: 'tester@case-desk.test',
-          name: 'Synthetic Tester',
-          passwordHash: await hashPassword(PASSWORD, 1_000),
-        },
-      ],
-    }),
-    undefined,
-    'demo',
+const makeTestApp = async () => {
+  const app = makeApp(
+    Layer.succeed(Repository, await Effect.runPromise(makeMemoryRepository())),
+    Layer.mergeAll(
+      Layer.succeed(
+        ReportRepository,
+        await Effect.runPromise(makeMemoryReportRepository()),
+      ),
+      makeTestClock(Date.UTC(2026, 10, 12, 9, 0, 0)).layer,
+      makeTestIds(),
+      Layer.succeed(QuoroomConfig, DEFAULT_NOTIFICATION_CONFIG),
+    ),
   )
+  apps.push(app)
+  return app
+}
 
-const memoryLayer = async (seed: Parameters<typeof makeMemoryRepository>[0]) =>
-  Layer.succeed(Repository, await Effect.runPromise(makeMemoryRepository(seed)))
-
-const post = (path: string, body: unknown, cookie?: string) =>
-  new Request(`https://desk.test${path}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(cookie === undefined ? {} : { cookie }),
-    },
-    body: JSON.stringify(body),
+const request = (path: string, method = 'GET') =>
+  new Request(`https://quoroom.test${path}`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(method === 'POST' ? { body: '{}' } : {}),
   })
-
-const get = (path: string, cookie?: string) =>
-  new Request(`https://desk.test${path}`, {
-    headers: cookie === undefined ? {} : { cookie },
-  })
-
-const cookieFrom = (response: Response): string =>
-  (response.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
 
 describe('API routes', () => {
   test('every API response carries Referrer-Policy: no-referrer', async () => {
     const app = await makeTestApp()
-    const paths = ['/api/health', '/api/session', '/api/nothing-here']
     const responses = await Promise.all(
-      paths.map(path => app.handle(get(path))),
+      ['/api/health', '/api/config', '/api/nothing-here'].map(path =>
+        app.handle(request(path)),
+      ),
     )
     expect(responses.map(r => r.headers.get('referrer-policy'))).toEqual([
       'no-referrer',
       'no-referrer',
       'no-referrer',
     ])
-    expect(responses[2]?.status).toBe(404)
   })
 
-  test('the health check answers with the rules version', async () => {
+  test('the health check answers ok', async () => {
     const app = await makeTestApp()
-    const response = await app.handle(get('/api/health'))
-    expect(await response.json()).toEqual({
-      status: 'ok',
-      rulesVersion: DEFAULT_RULES.version,
-    })
-  })
-
-  test('the RPC path answers with or without a trailing slash', async () => {
-    const app = await makeTestApp()
-    const bodies = await Promise.all(
-      ['/api/rpc', '/api/rpc/'].map(path =>
-        app
-          .handle(
-            post(path, {
-              _tag: 'Request',
-              id: '1',
-              tag: 'ListCases',
-              payload: null,
-              headers: [],
-            }),
-          )
-          .then(response => response.text()),
-      ),
-    )
-    bodies.forEach(body => {
-      expect(body).toContain('Unauthorised')
-    })
+    const response = await app.handle(request('/api/health'))
+    expect(await response.json()).toEqual({ status: 'ok' })
   })
 
   test('unknown API paths answer 404', async () => {
     const app = await makeTestApp()
-    expect((await app.handle(get('/api/nothing'))).status).toBe(404)
-  })
-})
-
-describe('sign-in', () => {
-  test('signing in sets a session cookie that identifies the user', async () => {
-    const app = await makeTestApp()
-    const login = await app.handle(
-      post('/api/login', {
-        email: 'Tester@case-desk.test',
-        password: PASSWORD,
-      }),
-    )
-    expect(login.status).toBe(200)
-    const setCookie = login.headers.get('set-cookie') ?? ''
-    expect(setCookie).toContain(`${SESSION_COOKIE}=`)
-    expect(setCookie).toContain('HttpOnly')
-    expect(setCookie).toContain('Secure')
-    expect(setCookie).toContain('SameSite=Strict')
-
-    const session = await app.handle(get('/api/session', cookieFrom(login)))
-    expect(session.status).toBe(200)
-    expect(await session.json()).toEqual({
-      user: {
-        id: 'user-1',
-        email: 'tester@case-desk.test',
-        name: 'Synthetic Tester',
-      },
-    })
+    expect((await app.handle(request('/api/nothing'))).status).toBe(404)
   })
 
-  test('a wrong password or unknown e-mail is refused the same way', async () => {
+  // NOTE: the triage desk of iterations 1 and 2 runs only in its own frozen
+  // Workers; this one serves none of its routes.
+  test('the routes of the triage desk are not served', async () => {
     const app = await makeTestApp()
-    const wrongPassword = await app.handle(
-      post('/api/login', { email: 'tester@case-desk.test', password: 'nope' }),
-    )
-    const unknownEmail = await app.handle(
-      post('/api/login', {
-        email: 'nobody@case-desk.test',
-        password: PASSWORD,
-      }),
-    )
-    expect(wrongPassword.status).toBe(401)
-    expect(unknownEmail.status).toBe(401)
-    expect(await wrongPassword.json()).toEqual(await unknownEmail.json())
-  })
-
-  test('sign-in only accepts a JSON post', async () => {
-    const app = await makeTestApp()
-    const form = await app.handle(
-      new Request('https://desk.test/api/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: `email=tester@case-desk.test&password=${PASSWORD}`,
-      }),
-    )
-    expect(form.status).toBe(400)
-  })
-
-  test('signing out ends the session', async () => {
-    const app = await makeTestApp()
-    const login = await app.handle(
-      post('/api/login', {
-        email: 'tester@case-desk.test',
-        password: PASSWORD,
-      }),
-    )
-    const cookie = cookieFrom(login)
-    const logout = await app.handle(post('/api/logout', {}, cookie))
-    expect(logout.headers.get('set-cookie')).toContain('Max-Age=0')
-    expect(
-      await (await app.handle(get('/api/session', cookie))).json(),
-    ).toEqual({
-      user: null,
-    })
-  })
-
-  test('a made-up session token is refused', async () => {
-    const app = await makeTestApp()
-    const response = await app.handle(
-      get('/api/session', `${SESSION_COOKIE}=${'a'.repeat(64)}`),
-    )
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ user: null })
+    for (const [path, method] of [
+      ['/api/login', 'POST'],
+      ['/api/logout', 'POST'],
+      ['/api/session', 'GET'],
+      ['/api/rpc', 'POST'],
+      ['/api/rpc/', 'POST'],
+    ] as const) {
+      expect((await app.handle(request(path, method))).status, path).toBe(404)
+    }
   })
 })

@@ -199,7 +199,7 @@ export const makeWorld = async (scenario: Scenario) => {
     makeTestIds(),
     Layer.succeed(QuoroomConfig, DEFAULT_NOTIFICATION_CONFIG),
   )
-  const app = makeApp(Layer.succeed(Repository, users), deps, 'demo')
+  const app = makeApp(Layer.succeed(Repository, users), deps)
 
   await run(
     repository.createUnit({ id: U1, name: 'Unit One', code: 'U1', createdAt: 1 }),

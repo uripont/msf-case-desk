@@ -1,4 +1,4 @@
-# Runs Case Desk on plain workerd. Start it with `pnpm workerd` from the
+# Runs Quoroom on plain workerd. Start it with `pnpm workerd` from the
 # repository root, which builds the bundle and passes the local folders:
 #   --directory-path assets=<built web app>
 #   --directory-path data=<folder for the SQLite database>
@@ -19,9 +19,6 @@ const caseDesk :Workerd.Worker = (
   bindings = [
     (name = "ASSETS", service = "assets"),
     (name = "DATABASE", durableObjectNamespace = "LocalDatabase"),
-    # The runtime mode, `demo` or `pilot` (D20). Unset means `pilot`; anything else but
-    # `demo` is refused by the Worker (every API request answers 500).
-    (name = "RUNTIME_MODE", fromEnvironment = "RUNTIME_MODE"),
     # The notification pass (stage 7). `POST /api/tick` needs `TICK_SECRET` (unset: the
     # route answers 404); a host cron calls it, because workerd fires no Cron Triggers.
     # The timings, in minutes, are optional (D12).

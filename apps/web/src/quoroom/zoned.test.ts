@@ -9,8 +9,6 @@ import {
   zoneChoices,
   zonedTimeToEpoch,
 } from './zoned'
-import { toDateTimeInput } from '../entryForm'
-import { formatInstant } from '../format'
 import { momentText, timeText } from './draftText'
 import { formatMoment } from './ui'
 
@@ -74,10 +72,8 @@ describe('formatting never throws on a stored value', () => {
       expect(typeof deadlineText(value, 'Not/AZone')).toBe('string')
       expect(typeof dateTextIn(value, 'UTC')).toBe('string')
       expect(typeof formatMoment(value)).toBe('string')
-      expect(typeof formatInstant(value)).toBe('string')
       expect(typeof momentText(value)).toBe('string')
       expect(typeof timeText(value)).toBe('string')
-      expect(typeof toDateTimeInput(value)).toBe('string')
     },
   )
 })

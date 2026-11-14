@@ -2,7 +2,6 @@ import { Layer } from 'effect'
 
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'
-import { modeOf } from './runtimeMode'
 import { layerSql } from './d1Repository'
 import { QuoroomServicesLive } from './quoroom/core'
 import { layerSqlReport } from './reportRepository'
@@ -18,9 +17,6 @@ import {
 export type Env = TickEnv & {
   readonly ASSETS: Fetcher
   readonly DB: D1Database
-  // NOTE: `demo` or `pilot` (D20), set by the stack. Unset means `pilot`; any
-  // other value is a configuration error (see `modeOf`).
-  readonly RUNTIME_MODE?: string
   // NOTE: "1" on a test stage with invocation logs only (stage 10): each
   // answer carries `x-isolate` and `x-seq` (see `withSequence`).
   readonly REQUEST_SEQUENCE?: string
@@ -66,12 +62,8 @@ const handleApi = async (
   env: Env,
   context: ExecutionContext,
 ): Promise<Response> => {
-  const mode = modeOf(env.RUNTIME_MODE)
-  if (mode.refusal !== undefined) {
-    return withReferrerPolicy(mode.refusal)
-  }
   const { repository, quoroom } = layersFor(env)
-  const app = makeApp(repository, quoroom, mode.mode)
+  const app = makeApp(repository, quoroom)
   try {
     return await app.handle(request)
   } finally {

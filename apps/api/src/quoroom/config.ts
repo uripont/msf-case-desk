@@ -4,7 +4,6 @@ import {
   type AppConfig,
   CONFIG_MAX_AGE_SECONDS,
   DEFAULT_THEME,
-  type RuntimeMode,
   Theme,
   publicThemeOf,
 } from '@case-desk/domain'
@@ -17,7 +16,7 @@ const decodeTheme = Schema.decodeUnknownSync(Theme)
 // NOTE: the theme as stored, or the neutral default when none is stored or
 // the stored text is not a valid theme. The logo is only named when its image
 // is complete.
-export const readConfig = (mode: RuntimeMode) =>
+export const readConfig =
   Effect.gen(function* () {
     const db = yield* store
     const stored = yield* db.getTheme()
@@ -36,16 +35,15 @@ export const readConfig = (mode: RuntimeMode) =>
     const config: AppConfig =
       image !== null && image.complete && image.owner.kind === 'theme'
         ? {
-            mode,
             theme: publicThemeOf(theme),
             logo: { id: image.id, mime: image.mime, chunks: image.chunkCount },
           }
-        : { mode, theme: publicThemeOf(theme) }
+        : { theme: publicThemeOf(theme) }
     return config
   })
 
 export const makeConfigHandler =
-  (deps: QuoroomDeps, mode: RuntimeMode) =>
+  (deps: QuoroomDeps) =>
   (request: Request): Promise<Response> => {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return Promise.resolve(
@@ -56,7 +54,7 @@ export const makeConfigHandler =
       )
     }
     return Effect.runPromise(
-      readConfig(mode).pipe(
+      readConfig.pipe(
         Effect.map(config =>
           Response.json(config, {
             headers: {

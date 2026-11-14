@@ -4,7 +4,7 @@ Quoroom runs from this repository in three ways:
 
 - **A. On plain `workerd`**, Cloudflare's open-source Workers runtime, on your own machine or server, with the database in a SQLite file. No Cloudflare account is needed.
 - **B. The pilot stack** on Cloudflare's free plan ([`alchemy.pilot.run.ts`](../alchemy.pilot.run.ts)): one Worker, its own EU database, no demo data. This is what a real pilot runs on.
-- **C. The demo stack** on Cloudflare ([`alchemy.run.ts`](../alchemy.run.ts)): the latest version (`app`) with the synthetic triage cases, next to the frozen iterations (`iter1`, `iter2`), on one shared database.
+- **C. The demo stack** on Cloudflare ([`alchemy.run.ts`](../alchemy.run.ts)): the latest version (`app`) next to the frozen iterations (`iter1`, `iter2`), on one shared database.
 
 Running a pilot once it is deployed (first administrator, theme, units, backups, failures) is in [`pilot.md`](pilot.md).
 
@@ -20,13 +20,9 @@ cd quoroom
 pnpm install
 ```
 
-## Runtime mode
+## Demo and pilot
 
-The Worker reads the variable `RUNTIME_MODE`, which is exactly `demo` or `pilot`:
-
-- `pilot`, and also an unset or blank variable: Quoroom only. The triage desk of the earlier iterations is off and its routes (`/api/login`, `/api/logout`, `/api/session`, `/api/rpc`) answer 404.
-- `demo`: the triage desk with its synthetic cases stays next to Quoroom. The demo stack sets it on `app`; `pnpm workerd` sets it unless you ask for `--mode pilot`.
-- Anything else is a configuration error: the Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request until it is fixed.
+The latest code is Quoroom only; the Worker has no runtime mode (D20). A demo and a pilot differ only in what is deployed and imported: the demo stack adds the frozen iterations and their synthetic triage cases, the pilot holds the built-in templates and its own accounts. The triage desk of the earlier iterations runs only in the frozen `iter1` and `iter2`; `/api/login`, `/api/logout`, `/api/session` and `/api/rpc` answer 404 in the latest version.
 
 ## Accounts
 
@@ -39,7 +35,7 @@ pnpm grant-admin --env <...> --email <email> --reset
 
 It appends idempotent SQL to `.local/grants-<env>.sql` (git-ignored) and prints the link once, valid for 72 hours. The stack of that environment imports the file on its next deploy; the `workerd` build embeds `grants-workerd.sql` on its next start. `--origin` is the address of the app, so the printed link is complete (default for `workerd`: `http://127.0.0.1:8787`). The account gets the administrator and template editor capabilities. `--reset` makes a reset link for an account that already has a password.
 
-`pnpm users:add` creates accounts for the triage desk of the demo only (`.local/users.sql`). A pilot does not use it.
+`pnpm users:add` creates accounts on the demo only (`.local/users.sql`), for the frozen `iter2`. A pilot does not use it.
 
 ## Secrets
 
@@ -52,13 +48,13 @@ Secrets never go into the repository, a log, a URL or a chat. Only their names a
 
 On Cloudflare the pilot and demo stacks have no Worker secret today: a Cron Trigger runs the notification pass, so `/api/tick` stays unset (404) there. The WhatsApp credentials of a later stage will be Worker secrets set through Alchemy from the environment.
 
-Non-secret settings are plain variables: `RUNTIME_MODE`, and the notification timings in minutes `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES` (defaults 0, 2880 and 240: the request at once, reminders 48 h and 4 h before a deadline).
+Non-secret settings are plain variables: the notification timings in minutes `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES` (defaults 0, 2880 and 240: the request at once, reminders 48 h and 4 h before a deadline).
 
 ## A. Run on workerd
 
 ```sh
-pnpm workerd                    # demo mode, http://127.0.0.1:8787
-pnpm workerd --mode pilot       # pilot mode: built-in templates and the first administrator only
+pnpm workerd                    # demo data, http://127.0.0.1:8787
+pnpm workerd --mode pilot       # pilot data: built-in templates and the first administrator only
 pnpm workerd --mode pilot 8790  # choose a port
 ```
 
@@ -66,7 +62,7 @@ It builds the web app, bundles the Worker with the migrations and starts `worker
 
 - the same Worker code as on Cloudflare, serving the web app and the API under `/api`,
 - a SQLite database in `.local/workerd-data/` (demo) or `.local/workerd-data-pilot/` (pilot), created on the first start, with the migrations applied in the same order as on Cloudflare,
-- in demo mode, the accounts from `pnpm users:add` and the synthetic triage cases; in pilot mode, the built-in templates and `.local/grants-workerd.sql`.
+- the built-in templates and `.local/grants-workerd.sql`, and with `--mode demo` also the accounts from `pnpm users:add`.
 
 A pilot on `workerd`, from an empty folder:
 
@@ -146,7 +142,7 @@ pnpm test-env:down test_<name>        # deletes it, and .local/grants-test-<name
 
 ## C. The demo stack on Cloudflare
 
-The demo stack serves the latest version as `app` (in demo mode, with a Cron Trigger) and every delivered iteration, frozen at its git tag, on one shared database. Only `app` applies migrations; the rules that keep the frozen versions working are in [`compatibility.md`](compatibility.md).
+The demo stack serves the latest version as `app` (with a Cron Trigger) and every delivered iteration, frozen at its git tag, on one shared database. Only `app` applies migrations; the rules that keep the frozen versions working are in [`compatibility.md`](compatibility.md).
 
 ```sh
 pnpm snapshots:prepare            # extract the frozen iterations from their tags

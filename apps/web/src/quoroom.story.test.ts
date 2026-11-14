@@ -6,7 +6,6 @@ import { SYNTHETIC_ME, clickedPage, openedAt } from './fixtures'
 import {
   FocusElement,
   LoadConfig,
-  LoadDesk,
   Message,
   ReplaceUrl,
   Session,
@@ -114,7 +113,7 @@ describe('opening a link', () => {
     )
   })
 
-  test('setting a password signs in, loads the desk and clears the address', () => {
+  test('setting a password signs in and clears the address', () => {
     story(
       update,
       given(inspectedAs('activate')),
@@ -135,12 +134,7 @@ describe('opening a link', () => {
         expect(next.session).toEqual(Session.SignedIn({ me: SYNTHETIC_ME }))
         expect(Option.isNone(next.maybeLink)).toBe(true)
       }),
-      Command.expectHas(LoadDesk()),
       Command.expectHas(ReplaceUrl({ url: '/' })),
-      Command.resolve(
-        LoadDesk,
-        Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-      ),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
     )
   })

@@ -5,7 +5,7 @@ import type { Refusal } from '../permissions'
 import { REPORT_STATES } from '../report-flow'
 import { StorageUnavailable } from '../rpc'
 
-// NOTE: Shared pieces of the iteration 3 RPC contract: primitives, the typed
+// NOTE: Shared pieces of the RPC contract: primitives, the typed
 // errors and the error sets the procedures declare. Nothing here carries
 // report content.
 

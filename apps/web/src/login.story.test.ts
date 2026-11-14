@@ -2,19 +2,16 @@ import { Redacted } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
-import { SEED_CASES } from '@case-desk/domain'
-
 import {
   SYNTHETIC_ME,
   SYNTHETIC_USER,
   configuredModel,
-  loadedModel,
   openedAt,
+  signedInModel,
   signedOutModel,
 } from './fixtures'
 import {
   CheckSession,
-  LoadDesk,
   Message,
   ReplaceUrl,
   SignIn,
@@ -34,23 +31,19 @@ describe('sign-in', () => {
     )
   })
 
-  test('an existing session goes straight to the desk', () => {
+  test('an existing session goes straight to the home screen', () => {
     story(
       update,
       given(configuredModel),
       message(Message.SucceededCheckSession({ me: SYNTHETIC_ME })),
       model(next => {
         expect(next.session).toEqual({ _tag: 'SignedIn', me: SYNTHETIC_ME })
+        expect(next.route._tag).toBe('Home')
       }),
-      Command.expectHas(LoadDesk()),
-      Command.resolve(
-        LoadDesk,
-        Message.SucceededLoadDesk({ cases: SEED_CASES, ruleSets: [] }),
-      ),
     )
   })
 
-  test('signing in sends the form, then loads the desk', () => {
+  test('signing in sends the form and signs in', () => {
     story(
       update,
       given(signedOutModel),
@@ -65,13 +58,6 @@ describe('sign-in', () => {
       model(next => {
         expect(next.session._tag).toBe('SignedIn')
         expect(Redacted.value(next.loginForm.password)).toBe('')
-      }),
-      Command.resolve(
-        LoadDesk,
-        Message.SucceededLoadDesk({ cases: SEED_CASES, ruleSets: [] }),
-      ),
-      model(next => {
-        expect(next.deskLoad._tag).toBe('Loaded')
       }),
     )
   })
@@ -116,28 +102,17 @@ describe('sign-in', () => {
     )
   })
 
-  test('signing out clears the desk', () => {
+  test('signing out returns to the sign-in', () => {
     story(
       update,
-      given(loadedModel),
+      given(signedInModel),
       message(Message.ClickedSignOut()),
       model(next => {
         expect(next.session._tag).toBe('SignedOut')
-        expect(next.cases).toEqual([])
+        expect(next.route._tag).toBe('Home')
       }),
       Command.resolve(SignOut, Message.CompletedSignOut()),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
-    )
-  })
-
-  test('an expired session sends the user back to sign in', () => {
-    story(
-      update,
-      given(loadedModel),
-      message(Message.FailedLoadDesk({ failure: 'SignInRequired' })),
-      model(next => {
-        expect(next.session._tag).toBe('SignedOut')
-      }),
     )
   })
 })

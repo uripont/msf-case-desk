@@ -147,7 +147,6 @@ writeFileSync(join(out, 'tick-secret.txt'), `${tickSecret}\n`, { mode: 0o600 })
 const env = {
   DB,
   ASSETS: { fetch: async () => new Response('asset') } as unknown as Fetcher,
-  RUNTIME_MODE: 'pilot',
   TICK_SECRET: tickSecret,
   NOTIFY_REQUEST_DELAY_MINUTES: '0',
   NOTIFY_FIRST_REMINDER_MINUTES: '10',

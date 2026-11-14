@@ -52,11 +52,11 @@ Following Alchemy's single stack layout, one `alchemy.run.ts` deploys everything
 
 ## Domain first, as pure code
 
-The triage engine is a pure function over validated data. It has no clock, no randomness and no I/O, so the same code can run in the browser today and in a Worker or Durable Object later. The simulated clock in the UI is part of the Model for the same reason.
+`packages/domain` (templates, permissions, approval rules, comparison, redaction, numbering) is pure code over validated data. It has no clock, no randomness and no I/O, so the same code runs in the browser and in the Worker. The triage engine of iterations 1 and 2 was built the same way; it now lives only in their tags.
 
 ## Synthetic data only
 
-The seed cases are invented and carry no personal data, so the repository can be shared without exposing anything sensitive.
+The seed data (the built-in templates, and the triage cases imported for the frozen `iter2`) is invented and carries no personal data, so the repository can be shared without exposing anything sensitive.
 
 ## The design follows MSF's official branding guidelines
 
@@ -65,10 +65,6 @@ Colours, text colours and typography follow the guidelines published by MSF Barc
 The typeface, Atlas Grotesk, is licensed and not bundled. The guidelines reserve it for external communications and name Arial for other materials, so the font stack uses Atlas first, then the bundled open-licence Hanken Grotesk, then Arial, until MSF decides.
 
 The footer shows the positive logo in Catalan, and the app uses the organisation's Catalan name, Metges Sense Fronteres. All branding lives in `src/brand.ts` and `src/styles.css`, so another centre can change it in one place. Use of the MSF name and logo is being confirmed with MSF.
-
-## Operational centre is part of the case from the start
-
-Making it a platform for the whole movement is much cheaper if every case carries its operational centre from the first version. Rules are not yet per centre, but the shape of the model already allows it.
 
 ## One shared D1 database on the free plan
 
@@ -104,7 +100,7 @@ There is no sign-up page. `pnpm users:add` writes password hashes to `.local/use
 
 ## Plain Commands instead of KeyedQuery
 
-The web app loads and saves through ordinary Foldkit Commands that call the Effect RPC client. Foldkit's `KeyedQuery` is still experimental, and the desk loads one list of cases and one of rule sets, so caching by key adds nothing yet.
+The web app loads and saves through ordinary Foldkit Commands that call the Effect RPC client. Foldkit's `KeyedQuery` is still experimental, and each screen loads its own data, so caching by key adds nothing yet.
 
 ## Stage 0 spikes (iteration 3)
 
@@ -291,16 +287,16 @@ They join `@fontsource-variable/hanken-grotesk` 5.3.0 (headings). None depends o
 - **Stages.** Only `pilot` (Worker `pilot`) or `test_<name>` (Worker `test-<name>-pilot`). The file throws for any other stage, including the `ALCHEMY_STAGE=live_uripont` in `.env`.
 - **Commands.** `pnpm pilot:plan|deploy|destroy` always pass `--stage pilot` and refuse `--stage`, `--config` and `--env-file`. `pnpm test-env:up <test_name> [--fast]` deploys with `--yes` and prints the URL; `pnpm test-env:down <test_name>` destroys it. Both refuse a stage that does not match `test_[a-z0-9]+` (so `pilot` and `live_uripont` are refused). `--fast` sets `QUOROOM_FAST_TIMINGS=1`: reminders 10 and 3 minutes before the deadline instead of 48 h and 4 h. The pilot stage ignores it.
 - **Database.** Its own D1 with `jurisdiction: "eu"` (never change it after the first deploy: it replaces the database), the migrations, `apps/api/seed/builtin-templates.sql` (insert-if-absent, generated from the domain by `pnpm --filter @case-desk/api templates:sql`, kept in sync by a test), and `.local/grants-<env>.sql` if present (`pnpm grant-admin --env pilot|test-<name>`). No demo cases, no `users.sql`.
-- **Runtime mode (D20).** `RUNTIME_MODE` accepts exactly `demo` or `pilot`. Unset or blank is `pilot` (fail closed); any other value is a configuration error: the Worker logs `RUNTIME_MODE must be "demo" or "pilot"` and answers 500 to every `/api/*` request (`modeOf` in `apps/api/src/runtimeMode.ts`). The demo stack sets `RUNTIME_MODE=demo` explicitly on `app` (`iter2` is a frozen snapshot that does not read it), `pnpm workerd` exports it, and tests pass the mode to `makeApp`. In a pilot the legacy `/api/login`, `/api/logout` and `/api/session` answer 404; in the demo, `/api/login` shares the D13 throttle and the `active` check with the Quoroom `SignIn` (`authenticate`).
-- **Worker.** `RUNTIME_MODE=pilot`, the `NOTIFY_*_MINUTES` timings as variables, a Cron Trigger (every minute on `pilot` and on test stages; changed from every 5 minutes in stage 7) that calls `scheduled`. `scheduled` runs the notification pass (stage 7, `apps/api/src/tick.ts`).
+- **Demo and pilot (D20, revised 14 Nov in slim-down pass 1).** The latest code is Quoroom only and has no runtime mode: the Worker reads no `RUNTIME_MODE`, `/api/config` serves the public theme only, and `app`, the pilot and `workerd` run the same code. The triage desk of iterations 1 and 2 lives only in the frozen `iter1` and `iter2`, built from their tags; `iter2` has its own Worker and API, so `app` no longer serves `/api/login`, `/api/logout`, `/api/session` or `/api/rpc` (404 everywhere). Demo and pilot now differ only in what is deployed and imported: the demo stack runs `iter1`, `iter2` and `app` on one database that also imports `.local/users.sql` and `seed/demo-cases.sql` for `iter2`; the pilot stack imports the built-in templates and the first-admin grants only. `pnpm workerd --mode demo|pilot` chooses the embedded imports (demo adds `users.sql`; neither embeds the triage cases) and the data folder. Kept because `iter2` reads the same `users` and `sessions` rows: the cookie `case_desk_session`, the 32-byte hex session token stored as its SHA-256, and the PBKDF2 password hash. Before this pass `RUNTIME_MODE` was `demo` or `pilot` (unset meant `pilot`, anything else a 500), and the demo kept the triage desk visible in `app`.
+- **Worker.** The `NOTIFY_*_MINUTES` timings as variables, a Cron Trigger (every minute on `pilot` and on test stages; changed from every 5 minutes in stage 7) that calls `scheduled`. `scheduled` runs the notification pass (stage 7, `apps/api/src/tick.ts`).
 - **Observability.** Workers Logs on, invocation logs off (they record the URL), traces off, Issues on. Logs keep what the code writes, errors included; no request body is ever logged. Stage 10 checks this with a search for invented text. A test stage can turn invocation logs on (`pnpm test-env:up test_<name> --invocation-logs`, `QUOROOM_INVOCATION_LOGS=1`) for CPU measurements; the pilot stage ignores it, and a test checks the stack file.
-- **workerd.** `pnpm workerd --mode demo|pilot` (default demo). Pilot embeds the built-in templates and `grants-workerd.sql` only, keeps its data in `.local/workerd-data-pilot`, and starts workerd with `RUNTIME_MODE=pilot`.
+- **workerd.** `pnpm workerd --mode demo|pilot` (default demo). Pilot embeds the built-in templates and `grants-workerd.sql` only and keeps its data in `.local/workerd-data-pilot`; demo also embeds `users.sql`. The code served is the same (D20).
 - **Free plan.** One Cron Trigger and one D1 database per environment; a test environment is always destroyed after use.
 - **Pilot stack guards.** `scripts/pilot-stack.mjs` passes only `--yes`, `-y`, `--dry-run` and `--detailed` to alchemy and refuses `--profile`, `-p` and every other flag. It always passes `--profile default` and refuses to run when `ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID` or another account-selecting variable (nine names in `scripts/pilot-guards.mjs`) is set, in the environment or in `.env`, to anything but the default. The message names the variable, never its value. `test-env:down` also removes `.local/grants-test-<name>.sql`.
 - **First-admin imports apply once.** Each generated grant file carries a unique import ID recorded in `applied_imports` (migration 0005); its statements run only when the ID is absent, so a re-run on every deploy or workerd start cannot undo a revocation. `grant-admin --reset` checks the local workerd database (account exists, has a password, is active); for D1 it prints that the link works only if the account exists and is active.
 - **Referrer-Policy on static assets.** `apps/web/public/_headers` sets `Referrer-Policy: no-referrer` for all paths, because assets bypass the Worker (`runWorkerFirst: ["/api/*"]`). A test builds the web app and checks `dist/_headers`.
-- **`/api/config` is minimal.** It serves the mode and the public theme only (colours, fonts, organisation name). PDF header and footer text is read through the session-gated `GetTheme`.
-- **Legacy sign-in.** `/api/login`, `/api/logout` and `/api/session` are 404 in a pilot. In the demo, `/api/login` uses the same throttle and `active` check as the Quoroom `SignIn` (`quoroom/signin.ts`).
+- **`/api/config` is minimal.** It serves the public theme only (colours, fonts, organisation name). PDF header and footer text is read through the session-gated `GetTheme`.
+- **Legacy sign-in.** Removed in slim-down pass 1: `/api/login`, `/api/logout` and `/api/session` answer 404 in every environment (D20). Only the Quoroom `SignIn` (`quoroom/signin.ts`) signs in.
 
 ## Stage 4c: the rich-text editor (iteration 3)
 

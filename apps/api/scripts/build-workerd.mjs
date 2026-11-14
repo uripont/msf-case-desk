@@ -4,8 +4,8 @@
 //
 //   node scripts/build-workerd.mjs [--mode demo|pilot]
 //
-// demo (default): accounts from `pnpm users:add`, the grants from
-// `pnpm grant-admin --env workerd`, and the demo cases.
+// demo (default): accounts from `pnpm users:add` and the grants from
+// `pnpm grant-admin --env workerd`.
 // pilot: the built-in templates and the grants file only (D21).
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

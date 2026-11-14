@@ -19,10 +19,9 @@ import { AppRoute, pathOf } from '../../../apps/web/src/route.ts'
 
 export type Engine = Readonly<{ name: string; browser: Browser }>
 
-export type Actor = 'admin' | 'reviewer' | 'empty' | 'demo' | 'anonymous'
+export type Actor = 'admin' | 'reviewer' | 'empty' | 'anonymous'
 
 export type SweepContext = Readonly<{
-  demoUrl: string
   pilotUrl: string
   password: string
   emails: Readonly<Record<Exclude<Actor, 'anonymous'>, string>>
@@ -44,7 +43,7 @@ type Sample = Readonly<{
 
 // NOTE: Screens that make no request when they open (a form over what the
 // session already holds), so a failing server has nothing to break there.
-const NO_LOAD = new Set(['Account', 'NewCase', 'Rules', 'NotFound'])
+const NO_LOAD = new Set(['Home', 'Account', 'NotFound'])
 
 const WIDTHS = [375, 1280] as const
 const STATES = ['loaded', 'empty', 'loading', 'error'] as const
@@ -60,9 +59,7 @@ export const routeTags = (): ReadonlyArray<string> =>
 export const samples = (ctx: SweepContext): Record<AppRoute['_tag'], Sample> => {
   const { closing, empty } = ctx.reports
   return {
-    Desk: { route: AppRoute.Desk(), actor: 'demo' },
-    NewCase: { route: AppRoute.NewCase(), actor: 'demo' },
-    Rules: { route: AppRoute.Rules(), actor: 'demo' },
+    Home: { route: AppRoute.Home(), actor: 'admin' },
     Account: { route: AppRoute.Account(), actor: 'admin' },
     Unit: { route: AppRoute.Unit(), actor: 'admin', empty: AppRoute.Unit() },
     Reports: { route: AppRoute.Reports(), actor: 'admin', empty: AppRoute.Reports() },
@@ -311,7 +308,7 @@ export const runSweep = async (ctx: SweepContext): Promise<void> => {
 
   await ctx.step('every route of the router has a sweep sample', async () => {
     assert.deepEqual([...tags].sort(), Object.keys(table).sort())
-    assert.ok(tags.length >= 25, `only ${tags.length} routes`)
+    assert.ok(tags.length >= 23, `only ${tags.length} routes`)
   })
 
   for (const engine of ctx.engines) {
@@ -335,7 +332,6 @@ export const runSweep = async (ctx: SweepContext): Promise<void> => {
       for (const actor of ['admin', 'reviewer', 'empty'] as const) {
         states.set(actor, await signIn(engine.browser, ctx.pilotUrl, ctx.emails[actor], ctx.password))
       }
-      states.set('demo', await signIn(engine.browser, ctx.demoUrl, ctx.emails.demo, ctx.password))
     })
     const outDir = join(ctx.screens, engine.name)
     mkdirSync(outDir, { recursive: true })
@@ -348,7 +344,7 @@ export const runSweep = async (ctx: SweepContext): Promise<void> => {
           continue
         }
         const actor: Actor = state === 'empty' ? 'empty' : sample.actor
-        const base = sample.actor === 'demo' ? ctx.demoUrl : ctx.pilotUrl
+        const base = ctx.pilotUrl
         for (const width of WIDTHS) {
           await ctx.step(`${engine.name} ${tag} ${state} at ${width}`, async () => {
             const context = await engine.browser.newContext({

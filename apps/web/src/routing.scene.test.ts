@@ -10,8 +10,8 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { PILOT_CONFIG, SYNTHETIC_ME, configuredAt } from './fixtures'
-import { LoadDesk, Message, SignIn, update } from './main'
+import { SYNTHETIC_ME, configuredAt } from './fixtures'
+import { Message, SignIn, update } from './main'
 import { ADMIN_ME } from './quoroom.fixtures'
 import { Failure } from './quoroom/failure'
 import * as Review from './quoroom/review'
@@ -31,10 +31,6 @@ describe('a deep link opened signed out', () => {
       type(role('textbox', { name: 'Password' }), 'synthetic-password'),
       submit(role('form')),
       Command.resolve(SignIn, Message.SucceededSignIn({ me: SYNTHETIC_ME })),
-      Command.resolve(
-        LoadDesk,
-        Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-      ),
       expect(role('heading', { name: 'Sign in' })).toBeAbsent(),
       expect(role('heading', { name: 'Revision 2' })).toExist(),
       Command.resolve(
@@ -74,12 +70,7 @@ describe('navigation', () => {
           Message.SucceededCheckSession({ me: ADMIN_ME }),
         ).model,
       ),
-      expect(role('link', { name: 'Cases' })).toHaveAttr('href', '/'),
-      expect(role('link', { name: 'New case' })).toHaveAttr(
-        'href',
-        '/new-case',
-      ),
-      expect(role('link', { name: 'Rules' })).toHaveAttr('href', '/rules'),
+      expect(role('link', { name: 'Home' })).toHaveAttr('href', '/'),
       expect(role('link', { name: 'Administration' })).toHaveAttr(
         'href',
         '/admin',
@@ -88,41 +79,10 @@ describe('navigation', () => {
         'href',
         '/account',
       ),
-      expect(role('link', { name: 'Cases' })).toHaveAttr(
+      expect(role('link', { name: 'Home' })).toHaveAttr(
         'aria-current',
         'page',
       ),
-    )
-  })
-})
-
-describe('the pilot', () => {
-  const pilotAt = (path: string) =>
-    update(
-      configuredAt(path, PILOT_CONFIG),
-      Message.SucceededCheckSession({ me: ADMIN_ME }),
-    ).model
-
-  test('hides the triage screens from the navigation', () => {
-    scene(
-      { update, view },
-      given(pilotAt('/')),
-      expect(role('link', { name: 'Home' })).toExist(),
-      expect(role('link', { name: 'Cases' })).toBeAbsent(),
-      expect(role('link', { name: 'New case' })).toBeAbsent(),
-      expect(role('link', { name: 'Rules' })).toBeAbsent(),
-      expect(role('link', { name: 'Administration' })).toExist(),
-      expect(role('heading', { name: 'Welcome to Quoroom' })).toExist(),
-      expect(role('navigation', { name: 'Operational centre' })).toBeAbsent(),
-    )
-  })
-
-  test('answers a triage address with a page that is not available', () => {
-    scene(
-      { update, view },
-      given(pilotAt('/new-case')),
-      expect(role('heading', { name: 'This page is not available' })).toExist(),
-      expect(role('heading', { name: 'New case' })).toBeAbsent(),
     )
   })
 })

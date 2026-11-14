@@ -21,10 +21,8 @@ import {
   store,
 } from './core'
 
-// NOTE: The one place a password is checked for a sign-in (D13), shared by the
-// Quoroom `SignIn` and the legacy `/api/login` of the demo, so neither is an
-// unthrottled oracle for the other. The attempt is throttled before any
-// hashing. An unknown email, a wrong password, an account without a password
+// NOTE: The one place a password is checked for a sign-in (D13). The attempt
+// is throttled before any hashing. An unknown email, a wrong password, an account without a password
 // and a deactivated account all fail the same way and cost the same hashing.
 // The outcome is recorded either way.
 

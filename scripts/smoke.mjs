@@ -1,10 +1,11 @@
-// Smoke check for any Case Desk deployment: local workerd, `pnpm infra:dev`
-// or a deployed Worker. Read-only.
+// Smoke check for any deployment: local workerd, `pnpm infra:dev` or a
+// deployed Worker, Quoroom (`app`, the pilot) or the frozen `iter2`. Read-only.
 //
 //   node scripts/smoke.mjs <base-url>
 //   SMOKE_EMAIL=... SMOKE_PASSWORD=... node scripts/smoke.mjs <base-url>
 //
-// With an account it also signs in, reads the cases and rules, and signs out.
+// With an account it also signs in to `iter2`, reads the cases and rules, and
+// signs out. Quoroom is checked signed out only.
 
 const base = (process.argv[2] ?? '').replace(/\/$/, '')
 if (!/^https?:\/\//.test(base)) {
@@ -30,14 +31,12 @@ const expect = (condition, message) => {
   }
 }
 
-// NOTE: In pilot mode (D20) the triage procedures at /api/rpc refuse everyone,
-// so the "no session" check asks a Quoroom procedure instead. Deployments from
-// before /api/config existed are demo.
-const config = await fetch(`${base}/api/config`)
-  .then(response => (response.ok ? response.json() : {}))
-  .catch(() => ({}))
-const pilot = config.mode === 'pilot'
-if (pilot) console.log('mode pilot: the triage desk is off, checking the Quoroom API instead')
+// NOTE: Quoroom serves /api/config and has no triage routes (D20); the frozen
+// iter2 has no /api/config and is checked through its triage API.
+const quoroom = await fetch(`${base}/api/config`)
+  .then(response => response.ok)
+  .catch(() => false)
+console.log(quoroom ? 'Quoroom: checking the Quoroom API' : 'no /api/config: checking the triage API of iter2')
 
 const rpc = (tag, cookie, path = '/api/rpc') =>
   fetch(`${base}${path}`, {
@@ -68,8 +67,8 @@ const signedOut = async cookie => {
     cookie ? { headers: { cookie } } : {},
   )
   const body = await response.json().catch(() => ({}))
-  // NOTE: a pilot has no legacy session route (404); the next check covers it.
-  return response.status === 401 || body.user === null || (pilot && response.status === 404)
+  // NOTE: Quoroom has no legacy session route (404); the next check covers it.
+  return response.status === 401 || body.user === null || (quoroom && response.status === 404)
 }
 
 await check('there is no session without signing in', async () => {
@@ -77,14 +76,16 @@ await check('there is no session without signing in', async () => {
 })
 
 await check('the API refuses requests without a session', async () => {
-  const refused = pilot ? await rpc('GetMe', undefined, '/api/q/rpc') : await rpc('ListCases')
+  const refused = quoroom ? await rpc('GetMe', undefined, '/api/q/rpc') : await rpc('ListCases')
   expect(refused.includes('Unauthorised'), 'not refused')
 })
 
 const email = process.env.SMOKE_EMAIL
 const password = process.env.SMOKE_PASSWORD
 
-if (email && password) {
+if (email && password && quoroom) {
+  console.log('skip signed-in checks: they use the triage API of iter2')
+} else if (email && password) {
   let cookie = ''
   await check('signing in works', async () => {
     const response = await fetch(`${base}/api/login`, {

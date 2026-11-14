@@ -24,7 +24,7 @@ import { Path } from "effect/Path";
 // What the database holds after a deploy: the migrations, the built-in
 // templates (insert-if-absent), and, if `.local/grants-<env>.sql` exists, the
 // first administrator written by `pnpm grant-admin --env pilot|test-<n>`.
-// No demo cases and no accounts from `users.sql`.
+// No triage cases and no accounts from `users.sql`.
 //
 // Test environments can use short notification timings (minutes instead of
 // 48 h and 4 h) with QUOROOM_FAST_TIMINGS=1, which `pnpm test-env:up --fast`
@@ -97,7 +97,6 @@ export default Alchemy.Stack(
       assets: { runWorkerFirst: ["/api/*"] },
       env: {
         DB: database,
-        RUNTIME_MODE: "pilot",
         NOTIFY_REQUEST_DELAY_MINUTES: String(timings.requestDelay),
         NOTIFY_FIRST_REMINDER_MINUTES: String(timings.firstReminder),
         NOTIFY_FINAL_REMINDER_MINUTES: String(timings.finalReminder),

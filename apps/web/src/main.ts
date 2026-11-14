@@ -1,16 +1,4 @@
-import {
-  Array,
-  Clock,
-  Duration,
-  Effect,
-  Match,
-  Option,
-  Redacted,
-  Result,
-  Schema,
-  Stream,
-  pipe,
-} from 'effect'
+import { Array, Effect, Option, Redacted, Schema, Stream } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
 import {
   Command,
@@ -29,50 +17,15 @@ import { Url, toString as urlToString } from 'foldkit/url'
 
 import {
   AppConfig,
-  CENTRES,
-  CHANNELS,
   CONFIG_PATH,
-  Case,
-  CaseEntry,
-  CaseId,
   ConfigLogo,
   DEFAULT_THEME,
-  DEMO_START,
-  FastTrackSignal,
   IMAGE_ROUTE,
   ImageChunkRead,
   MeView,
-  RISKS,
-  RuleSet,
-  RuleSetScope,
-  type RuntimeMode,
-  SCOPES,
-  type TriageRules,
-  TriageRules as TriageRulesSchema,
-  type TriagedCase,
-  URGENCIES,
-  prioritiseByCentre,
   publicThemeOf,
-  rulesFor,
 } from '@case-desk/domain'
 
-import { ApiFailure, failureOf, withApi } from './api'
-import {
-  HeroLayout,
-  LAYOUT_SETTLE_MS,
-  NARROW_VIEWPORT_QUERY,
-  heroLayoutForViewport,
-  isAnimatedLayoutChange,
-  markDomId,
-} from './axisLayout'
-import {
-  EntryField,
-  EntryForm,
-  EntrySubmission,
-  emptyEntryForm,
-  entryOf,
-  toggleSignal,
-} from './entryForm'
 import * as Account from './quoroom/account'
 import * as Admin from './quoroom/admin'
 import {
@@ -107,34 +60,7 @@ import {
   redactedFragmentOf,
   urlToAppRoute,
 } from './route'
-import {
-  RulesField,
-  RulesForm,
-  RulesSubmission,
-  rulesFormFor,
-  rulesOfForm,
-} from './rulesForm'
-
 // MODEL
-
-export const CentreFilter = Schema.Literals([
-  'All',
-  'OCA',
-  'OCB',
-  'OCBA',
-  'OCG',
-  'OCP',
-])
-export type CentreFilter = typeof CentreFilter.Type
-
-export const CENTRE_FILTERS: ReadonlyArray<CentreFilter> = CentreFilter.literals
-
-export const DeskLoad = defineTaggedUnion({
-  Loading: {},
-  Loaded: {},
-  Failed: { failure: ApiFailure },
-})
-export type DeskLoad = typeof DeskLoad.Type
 
 export const Session = defineTaggedUnion({
   Checking: {},
@@ -184,8 +110,6 @@ export const Model = Schema.Struct({
   route: AppRoute,
   config: ConfigLoad,
   maybeLogoSrc: Schema.Option(Schema.String),
-  entryForm: EntryForm,
-  rulesForm: RulesForm,
   session: Session,
   origin: Schema.String,
   maybeLink: Schema.Option(Link.Model),
@@ -209,40 +133,12 @@ export const Model = Schema.Struct({
   downloads: Downloads.Model,
   publish: Publish.Model,
   loginForm: LoginForm,
-  deskLoad: DeskLoad,
-  ruleSets: Schema.Array(RuleSet),
-  cases: Schema.Array(Case),
-  now: Schema.Int,
-  maybeSelectedCaseId: Schema.Option(CaseId),
-  maybeHighlightedCaseId: Schema.Option(CaseId),
-  maybeFocusedMarkId: Schema.Option(CaseId),
-  heroLayout: HeroLayout,
-  isDetailSheetOpen: Schema.Boolean,
-  centreFilter: CentreFilter,
 })
 export type Model = typeof Model.Type
 
 // MESSAGE
 
 export const Message = defineMessageUnion({
-  ClickedCase: { caseId: CaseId },
-  ClickedCloseDetail: {},
-  EnteredCase: { caseId: CaseId },
-  LeftCase: {},
-  FocusedCaseMark: { caseId: CaseId },
-  BlurredCaseMark: {},
-  UpdatedHeroLayout: { layout: Schema.Literals(['Axis', 'Timeline']) },
-  CompletedFocusCaseMark: {},
-  CompletedFocusElement: {},
-  SelectedCentreFilter: { centreFilter: CentreFilter },
-  CompletedGetCurrentTime: { now: Schema.Int },
-  UpdatedNow: { now: Schema.Int },
-  SucceededLoadDesk: {
-    cases: Schema.Array(Case),
-    ruleSets: Schema.Array(RuleSet),
-  },
-  FailedLoadDesk: { failure: ApiFailure },
-  ClickedRetryLoad: {},
   // NOTE: the address without its fragment, and the fragment (a link token)
   // apart and Redacted (`withoutFragment`, `entry.ts`).
   ClickedLink: {
@@ -295,66 +191,11 @@ export const Message = defineMessageUnion({
   FailedSignIn: { failure: Failure },
   ClickedSignOut: {},
   CompletedSignOut: {},
-  UpdatedEntryField: { field: EntryField, value: Schema.String },
-  ToggledEntrySignal: { signal: FastTrackSignal },
-  SubmittedEntry: {},
-  SucceededCreateCase: { created: Case },
-  FailedCreateCase: { failure: ApiFailure },
-  SelectedRulesScope: { scope: RuleSetScope },
-  UpdatedRulesField: { field: RulesField, value: Schema.String },
-  SubmittedRules: {},
-  ClickedDiscardRules: {},
-  SucceededPutRuleSet: { ruleSet: RuleSet },
-  FailedPutRuleSet: { failure: ApiFailure },
+  CompletedFocusElement: {},
 })
 export type Message = typeof Message.Type
 
 // QUERIES
-
-export const queueOf = (model: Model): ReadonlyArray<TriagedCase> =>
-  prioritiseByCentre(model.ruleSets, model.cases, model.now)
-
-export const rulesOf = (model: Model): TriageRules =>
-  rulesFor(
-    model.ruleSets,
-    model.centreFilter === 'All' ? 'Default' : model.centreFilter,
-  )
-
-export const visibleQueueOf = (model: Model): ReadonlyArray<TriagedCase> =>
-  pipe(
-    queueOf(model),
-    Array.filter(
-      triaged =>
-        model.centreFilter === 'All' ||
-        triaged.triageCase.centre === model.centreFilter,
-    ),
-  )
-
-export const maybeSelectedOf = (model: Model): Option.Option<TriagedCase> =>
-  pipe(
-    model.maybeSelectedCaseId,
-    Option.flatMap(selectedId =>
-      Array.findFirst(
-        queueOf(model),
-        triaged => triaged.triageCase.id === selectedId,
-      ),
-    ),
-  )
-
-export const overdueCountOf = (model: Model): number =>
-  Array.filter(visibleQueueOf(model), triaged => triaged.sla._tag === 'Overdue')
-    .length
-
-export const dueSoonCountOf = (model: Model): number =>
-  Array.filter(visibleQueueOf(model), triaged => triaged.sla._tag === 'DueSoon')
-    .length
-
-export const modeOf = (model: Model): RuntimeMode =>
-  ConfigLoad.match<RuntimeMode>(model.config, {
-    Loading: () => 'pilot',
-    Loaded: ({ config }) => config.mode,
-    Unavailable: () => 'pilot',
-  })
 
 export const themeOf = (model: Model) =>
   ConfigLoad.match(model.config, {
@@ -367,13 +208,6 @@ export const isConfigKnown = (model: Model): boolean =>
   !ConfigLoad.guards.Loading(model.config)
 
 // INIT
-
-const firstCaseIdOf = (model: Model): Option.Option<typeof CaseId.Type> =>
-  pipe(
-    queueOf(model),
-    Array.head,
-    Option.map(triaged => triaged.triageCase.id),
-  )
 
 // NOTE: Which question inside the page is open, if any. Escape answers it
 // with "no", through the screen that asked it. A review being sent has gone
@@ -415,11 +249,9 @@ export const initialModel = Model.make({
   maybeLeaving: Option.none(),
   maybeEndedFor: Option.none(),
   maybeFocusReturn: Option.none(),
-  route: AppRoute.Desk(),
+  route: AppRoute.Home(),
   config: ConfigLoad.Loading(),
   maybeLogoSrc: Option.none(),
-  entryForm: emptyEntryForm(DEMO_START),
-  rulesForm: rulesFormFor([], 'Default'),
   session: Session.Checking(),
   origin: '',
   maybeLink: Option.none(),
@@ -443,16 +275,6 @@ export const initialModel = Model.make({
   downloads: Downloads.initialModel,
   publish: Publish.initialModel,
   loginForm: emptyLoginForm,
-  deskLoad: DeskLoad.Loading(),
-  ruleSets: [],
-  cases: [],
-  now: DEMO_START,
-  maybeSelectedCaseId: Option.none(),
-  maybeHighlightedCaseId: Option.none(),
-  maybeFocusedMarkId: Option.none(),
-  heroLayout: 'Responsive',
-  isDetailSheetOpen: false,
-  centreFilter: 'All',
 })
 
 const openingLink = (url: Url): Update.Return<Model, Message> =>
@@ -469,7 +291,6 @@ export const init: Runtime.RoutingApplicationInit<Model, Message> = url => {
       origin: () => originOf(url),
     }),
     commands: [
-      GetCurrentTime(),
       CheckSession(),
       LoadConfig(),
       ...(opened.commands ?? []),
@@ -532,40 +353,6 @@ export const OpenDialogFocus = Command.define('OpenDialogFocus', {
 })
 
 const focusPageHeading = () => FocusElement({ selector: `#${PAGE_HEADING_ID}` })
-
-export const FocusCaseMark = Command.define('FocusCaseMark', {
-  args: { selector: Schema.String },
-  messages: [Message.CompletedFocusCaseMark],
-  execute: ({ selector }) =>
-    Dom.focus(selector, { preventScroll: true }).pipe(
-      Effect.catch(() => Effect.void),
-      Effect.as(Message.CompletedFocusCaseMark()),
-    ),
-})
-
-export const GetCurrentTime = Command.define('GetCurrentTime', {
-  messages: [Message.CompletedGetCurrentTime],
-  execute: Effect.map(Clock.currentTimeMillis, now =>
-    Message.CompletedGetCurrentTime({ now }),
-  ),
-})
-
-export const LoadDesk = Command.define('LoadDesk', {
-  messages: [Message.SucceededLoadDesk, Message.FailedLoadDesk],
-  execute: withApi(client =>
-    Effect.all({
-      cases: client.ListCases(),
-      ruleSets: client.ListRuleSets(),
-    }),
-  ).pipe(
-    Effect.map(({ cases, ruleSets }) =>
-      Message.SucceededLoadDesk({ cases, ruleSets }),
-    ),
-    Effect.catch(error =>
-      Effect.succeed(Message.FailedLoadDesk({ failure: failureOf(error) })),
-    ),
-  ),
-})
 
 // NOTE: A link is opened at `/link#<token>`. The token is read once from the
 // fragment and the fragment is removed at once, so it is not left in the
@@ -673,183 +460,6 @@ export const SignOut = Command.define('SignOut', {
   ),
 })
 
-export const CreateCase = Command.define('CreateCase', {
-  args: { entry: CaseEntry },
-  messages: [Message.SucceededCreateCase, Message.FailedCreateCase],
-  execute: ({ entry }) =>
-    withApi(client => client.CreateCase({ entry })).pipe(
-      Effect.map(created => Message.SucceededCreateCase({ created })),
-      Effect.catch(error =>
-        Effect.succeed(Message.FailedCreateCase({ failure: failureOf(error) })),
-      ),
-    ),
-})
-
-export const PutRuleSet = Command.define('PutRuleSet', {
-  args: { scope: RuleSetScope, rules: TriageRulesSchema },
-  messages: [Message.SucceededPutRuleSet, Message.FailedPutRuleSet],
-  execute: ({ scope, rules }) =>
-    withApi(client => client.PutRuleSet({ scope, rules })).pipe(
-      Effect.map(ruleSet => Message.SucceededPutRuleSet({ ruleSet })),
-      Effect.catch(error =>
-        Effect.succeed(Message.FailedPutRuleSet({ failure: failureOf(error) })),
-      ),
-    ),
-})
-
-const withRulesField = (
-  form: RulesForm,
-  field: RulesField,
-  value: string,
-): RulesForm =>
-  modifyFields(
-    Match.value(field).pipe(
-      Match.when('version', () => modifyFields(form, { version: () => value })),
-      Match.when('p1MinScore', () =>
-        modifyFields(form, { p1MinScore: () => value }),
-      ),
-      Match.when('p2MinScore', () =>
-        modifyFields(form, { p2MinScore: () => value }),
-      ),
-      Match.when('fastTrackHours', () =>
-        modifyFields(form, { fastTrackHours: () => value }),
-      ),
-      Match.when('targetP1', () =>
-        modifyFields(form, { targetP1: () => value }),
-      ),
-      Match.when('targetP2', () =>
-        modifyFields(form, { targetP2: () => value }),
-      ),
-      Match.when('targetP3', () =>
-        modifyFields(form, { targetP3: () => value }),
-      ),
-      Match.exhaustive,
-    ),
-    { submission: () => RulesSubmission.Editing() },
-  )
-
-const submitRules = (model: Model): Update.Return<Model, Message> =>
-  Result.match(rulesOfForm(model.rulesForm), {
-    onFailure: errors => ({
-      model: modifyFields(model, {
-        rulesForm: form => modifyFields(form, { isShowingErrors: () => true }),
-      }),
-      commands: focusFirstInvalid(
-        RULES_FIELD_ORDER,
-        errors,
-        field => `rules-${field}`,
-      ),
-    }),
-    onSuccess: rules => ({
-      model: modifyFields(model, {
-        rulesForm: form =>
-          modifyFields(form, { submission: () => RulesSubmission.Saving() }),
-      }),
-      commands: [PutRuleSet({ scope: model.rulesForm.scope, rules })],
-    }),
-  })
-
-const isOneOf =
-  <A extends string>(choices: ReadonlyArray<A>) =>
-  (value: string): value is A =>
-    choices.some(choice => choice === value)
-
-const withEntryField = (
-  form: EntryForm,
-  field: EntryField,
-  value: string,
-): EntryForm =>
-  Match.value(field).pipe(
-    Match.when('centre', () =>
-      isOneOf(CENTRES)(value)
-        ? modifyFields(form, { centre: () => value })
-        : form,
-    ),
-    Match.when('channel', () =>
-      isOneOf(CHANNELS)(value)
-        ? modifyFields(form, { channel: () => value })
-        : form,
-    ),
-    Match.when('scope', () =>
-      isOneOf(SCOPES)(value)
-        ? modifyFields(form, { scope: () => value })
-        : form,
-    ),
-    Match.when('risk', () =>
-      isOneOf(RISKS)(value) ? modifyFields(form, { risk: () => value }) : form,
-    ),
-    Match.when('urgency', () =>
-      isOneOf(URGENCIES)(value)
-        ? modifyFields(form, { urgency: () => value })
-        : form,
-    ),
-    Match.when('receivedAt', () =>
-      modifyFields(form, { receivedAt: () => value }),
-    ),
-    Match.when('summary', () => modifyFields(form, { summary: () => value })),
-    Match.when('details', () => modifyFields(form, { details: () => value })),
-    Match.when('location', () => modifyFields(form, { location: () => value })),
-    Match.when('reference', () =>
-      modifyFields(form, { reference: () => value }),
-    ),
-    Match.when('fastTrackSignals', () => form),
-    Match.exhaustive,
-  )
-
-const ENTRY_FIELD_ORDER: ReadonlyArray<EntryField> = [
-  'summary',
-  'receivedAt',
-  'details',
-  'location',
-  'reference',
-]
-
-const RULES_FIELD_ORDER: ReadonlyArray<RulesField> = [
-  'p1MinScore',
-  'p2MinScore',
-  'fastTrackHours',
-  'targetP1',
-  'targetP2',
-  'targetP3',
-  'version',
-]
-
-const focusFirstInvalid = <Field extends string>(
-  order: ReadonlyArray<Field>,
-  errors: Partial<Record<Field, string>>,
-  idOf: (field: Field) => string,
-) =>
-  Option.match(
-    Array.findFirst(order, field => errors[field] !== undefined),
-    {
-      onNone: () => [],
-      onSome: field => [FocusElement({ selector: `#${idOf(field)}` })],
-    },
-  )
-
-const submitEntry = (model: Model): Update.Return<Model, Message> =>
-  Result.match(entryOf(model.entryForm, model.now), {
-    onFailure: errors => ({
-      model: modifyFields(model, {
-        entryForm: form => modifyFields(form, { isShowingErrors: () => true }),
-      }),
-      commands: focusFirstInvalid(
-        ENTRY_FIELD_ORDER,
-        errors,
-        field => `entry-${field}`,
-      ),
-    }),
-    onSuccess: entry => ({
-      model: modifyFields(model, {
-        entryForm: form =>
-          modifyFields(form, {
-            submission: () => EntrySubmission.Submitting(),
-          }),
-      }),
-      commands: [CreateCase({ entry })],
-    }),
-  })
-
 const signedOut = (model: Model): Model =>
   modifyFields(model, {
     session: () => Session.SignedOut(),
@@ -875,14 +485,6 @@ const signedOut = (model: Model): Model =>
     maybeLeaving: () => Option.none(),
     maybeEndedFor: () => Option.none(),
     maybeFocusReturn: () => Option.none(),
-    entryForm: () => emptyEntryForm(model.now),
-    rulesForm: () => rulesFormFor([], 'Default'),
-    deskLoad: () => DeskLoad.Loading(),
-    cases: () => [],
-    ruleSets: () => [],
-    maybeSelectedCaseId: () => Option.none(),
-    maybeHighlightedCaseId: () => Option.none(),
-    isDetailSheetOpen: () => false,
     maybeLogoSrc: () => Option.none(),
   })
 
@@ -902,11 +504,10 @@ const fromAccount = (model: Model, me: MeView): Model => {
   })
 }
 
-const loadingDesk = (model: Model, me: MeView): Model =>
+const signedIn = (model: Model, me: MeView): Model =>
   modifyFields(model, {
     session: () => Session.SignedIn({ me }),
     loginForm: () => emptyLoginForm,
-    deskLoad: () => DeskLoad.Loading(),
   })
 
 const foldLink = Update.foldChild({
@@ -920,15 +521,15 @@ const foldLink = Update.foldChild({
       SignedInWithLink:
         ({ me }) =>
         stepModel => {
-          const home = modifyFields(loadingDesk(fromAccount(stepModel, me), me), {
+          const home = modifyFields(signedIn(fromAccount(stepModel, me), me), {
             maybeLink: () => Option.none(),
-            route: () => AppRoute.Desk(),
+            route: () => AppRoute.Home(),
           })
           const resumed = resume(home)
           return {
             model: resumed.model,
             commands: [
-              ReplaceUrl({ url: pathOf(AppRoute.Desk()) }),
+              ReplaceUrl({ url: pathOf(AppRoute.Home()) }),
               ...(resumed.commands ?? []),
             ],
           }
@@ -948,8 +549,8 @@ const foldThemeScreen = Update.foldChild({
         ({ theme, maybeLogo, maybeSrc }) =>
         stepModel => {
           // NOTE: The real configuration is kept: nothing is invented when it
-          // has not loaded (no mode is made up), and the logo is the saved
-          // one whether or not its preview was shown.
+          // has not loaded, and the logo is the saved one whether or not its
+          // preview was shown.
           const maybeConfig = ConfigLoad.match<Option.Option<AppConfig>>(
             stepModel.config,
             {
@@ -981,10 +582,9 @@ const foldThemeScreen = Update.foldChild({
               config: current =>
                 Option.match(maybeConfig, {
                   onNone: () => current,
-                  onSome: config =>
+                  onSome: () =>
                     ConfigLoad.Loaded({
                       config: AppConfig.make({
-                        mode: config.mode,
                         theme: publicThemeOf(theme),
                         ...Option.match(maybeSavedLogo, {
                           onNone: () => ({}),
@@ -1353,9 +953,7 @@ const enterRoute = (
   route: AppRoute,
 ): Update.Return<Model, Message> =>
   AppRoute.match<Update.Return<Model, Message>>(route, {
-    Desk: () => ({ model }),
-    NewCase: () => ({ model }),
-    Rules: () => ({ model }),
+    Home: () => ({ model }),
     Account: () => enterAccount(model),
     Admin: () => enterAdmin(model.origin)(model),
     Theme: () => enterThemeScreen(model),
@@ -1395,9 +993,8 @@ const logoCommands = (model: Model) =>
   })
 
 // NOTE: A signed-in account and a known configuration are both needed before
-// a screen can load its data: the triage desk only in the demo, never in a
-// pilot, and the logo only for someone signed in. Whichever of the two
-// arrives last starts it, so it runs once.
+// a screen can load its data, and the logo is only for someone signed in.
+// Whichever of the two arrives last starts it, so it runs once.
 const resume = (model: Model): Update.Return<Model, Message> =>
   Session.match(model.session, {
     Checking: () => ({ model }),
@@ -1407,11 +1004,9 @@ const resume = (model: Model): Update.Return<Model, Message> =>
         return { model }
       }
       const entered = enterRoute(model, model.route)
-      const desk = modeOf(model) === 'demo' ? [LoadDesk()] : []
       return {
         model: entered.model,
         commands: [
-          ...desk,
           ...logoCommands(model),
           ...(entered.commands ?? []),
         ],
@@ -1452,15 +1047,7 @@ const goTo = (
       ? { model }
       : startLink(model, fragment)
     : { model: modifyFields(model, { maybeLink: () => Option.none() }) }
-  const routed = modifyFields(linked.model, {
-    route: () => route,
-    isDetailSheetOpen: () => false,
-    rulesForm: form =>
-      AppRoute.guards.Rules(route) &&
-      !RulesSubmission.guards.Saving(form.submission)
-        ? rulesFormFor(model.ruleSets, form.scope)
-        : form,
-  })
+  const routed = modifyFields(linked.model, { route: () => route })
   const entered: Update.Return<Model, Message> = Session.guards.SignedIn(
     routed.session,
   )
@@ -1574,9 +1161,7 @@ const isFailedLoad = (load: Readonly<{ _tag: string }>): boolean =>
 // screen holds nothing to keep, so it is loaded again after the sign-in.
 const hasFailedLoad = (model: Model): boolean =>
   AppRoute.match(model.route, {
-    Desk: () => false,
-    NewCase: () => false,
-    Rules: () => false,
+    Home: () => false,
     Link: () => false,
     NotFound: () => false,
     Account: () => isFailedLoad(model.account.load),
@@ -1630,95 +1215,6 @@ const signedBackIn = (
 
 const updateWithoutDialogFocus = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
-    ClickedCase: ({ caseId }) => ({
-      model: modifyFields(model, {
-        maybeSelectedCaseId: () => Option.some(caseId),
-        isDetailSheetOpen: () => true,
-      }),
-    }),
-    ClickedCloseDetail: () => ({
-      model: modifyFields(model, {
-        maybeSelectedCaseId: () => Option.none(),
-        maybeHighlightedCaseId: () => Option.none(),
-        isDetailSheetOpen: () => false,
-      }),
-    }),
-    EnteredCase: ({ caseId }) => ({
-      model: modifyFields(model, {
-        maybeHighlightedCaseId: () => Option.some(caseId),
-      }),
-    }),
-    LeftCase: () => ({
-      model: modifyFields(model, {
-        maybeHighlightedCaseId: () => Option.none(),
-      }),
-    }),
-    FocusedCaseMark: ({ caseId }) => ({
-      model: modifyFields(model, {
-        maybeHighlightedCaseId: () => Option.some(caseId),
-        maybeFocusedMarkId: () => Option.some(caseId),
-      }),
-    }),
-    BlurredCaseMark: () => ({
-      model: modifyFields(model, {
-        maybeHighlightedCaseId: () => Option.none(),
-        maybeFocusedMarkId: () => Option.none(),
-      }),
-    }),
-    UpdatedHeroLayout: ({ layout }) => {
-      const nextModel = modifyFields(model, { heroLayout: () => layout })
-      if (model.heroLayout === layout) {
-        return { model }
-      }
-      return Option.match(model.maybeFocusedMarkId, {
-        onNone: () => ({ model: nextModel }),
-        onSome: caseId => ({
-          model: nextModel,
-          commands: [
-            FocusCaseMark({ selector: `#${markDomId(layout, caseId)}` }),
-          ],
-        }),
-      })
-    },
-    CompletedFocusCaseMark: () => ({ model }),
-    CompletedFocusElement: () => ({ model }),
-    UpdatedNow: ({ now }) => ({
-      model: modifyFields(model, { now: () => now }),
-    }),
-    SelectedCentreFilter: ({ centreFilter }) => ({
-      model: modifyFields(model, { centreFilter: () => centreFilter }),
-    }),
-    CompletedGetCurrentTime: ({ now }) => ({
-      model: modifyFields(model, {
-        now: () => now,
-        entryForm: () => emptyEntryForm(now),
-      }),
-    }),
-    SucceededLoadDesk: ({ cases, ruleSets }) => {
-      const loaded = modifyFields(model, {
-        deskLoad: () => DeskLoad.Loaded(),
-        cases: () => cases,
-        ruleSets: () => ruleSets,
-      })
-      return {
-        model: modifyFields(loaded, {
-          maybeSelectedCaseId: maybeSelected =>
-            Option.orElse(maybeSelected, () => firstCaseIdOf(loaded)),
-        }),
-      }
-    },
-    FailedLoadDesk: ({ failure }) => ({
-      model:
-        failure === 'SignInRequired'
-          ? signedOut(model)
-          : modifyFields(model, {
-              deskLoad: () => DeskLoad.Failed({ failure }),
-            }),
-    }),
-    ClickedRetryLoad: () => ({
-      model: modifyFields(model, { deskLoad: () => DeskLoad.Loading() }),
-      commands: [LoadDesk()],
-    }),
     ClickedLink: ({ request, fragment }) =>
       UrlRequest.match<Update.Return<Model, Message>>(request, {
         Internal: ({ url }) => {
@@ -1822,7 +1318,7 @@ const updateWithoutDialogFocus = (model: Model, message: Message) =>
     GotGridMessage: ({ message }) => foldGrid(model, message),
     GotAuditMessage: ({ message }) => foldAudit(model, message),
     GotDownloadsMessage: ({ message }) => foldDownloads(model, message),
-    SucceededCheckSession: ({ me }) => resume(loadingDesk(model, me)),
+    SucceededCheckSession: ({ me }) => resume(signedIn(model, me)),
     FailedCheckSession: () => ({ model: signedOut(model) }),
     UpdatedLoginEmail: ({ value }) => ({
       model: modifyFields(model, {
@@ -1869,11 +1365,11 @@ const updateWithoutDialogFocus = (model: Model, message: Message) =>
       }),
     SucceededSignIn: ({ me }) =>
       Option.match(model.maybeEndedFor, {
-        onNone: () => resume(loadingDesk(model, me)),
+        onNone: () => resume(signedIn(model, me)),
         onSome: endedFor =>
           endedFor === me.id
             ? signedBackIn(model, me)
-            : resume(loadingDesk(signedOut(model), me)),
+            : resume(signedIn(signedOut(model), me)),
       }),
     FailedSignIn: ({ failure }) => ({
       model: modifyFields(model, {
@@ -1885,99 +1381,11 @@ const updateWithoutDialogFocus = (model: Model, message: Message) =>
       }),
     }),
     ClickedSignOut: () => ({
-      model: modifyFields(signedOut(model), { route: () => AppRoute.Desk() }),
-      commands: [SignOut(), ReplaceUrl({ url: pathOf(AppRoute.Desk()) })],
+      model: modifyFields(signedOut(model), { route: () => AppRoute.Home() }),
+      commands: [SignOut(), ReplaceUrl({ url: pathOf(AppRoute.Home()) })],
     }),
     CompletedSignOut: () => ({ model }),
-    SelectedRulesScope: ({ scope }) => ({
-      model: modifyFields(model, {
-        rulesForm: () => rulesFormFor(model.ruleSets, scope),
-      }),
-    }),
-    UpdatedRulesField: ({ field, value }) => ({
-      model: modifyFields(model, {
-        rulesForm: form => withRulesField(form, field, value),
-      }),
-    }),
-    SubmittedRules: () =>
-      RulesSubmission.match(model.rulesForm.submission, {
-        Saving: () => ({ model }),
-        Editing: () => submitRules(model),
-        Saved: () => submitRules(model),
-        Failed: () => submitRules(model),
-      }),
-    ClickedDiscardRules: () => ({
-      model: modifyFields(model, {
-        rulesForm: form => rulesFormFor(model.ruleSets, form.scope),
-      }),
-    }),
-    SucceededPutRuleSet: ({ ruleSet }) => {
-      const ruleSets = Array.append(
-        Array.filter(
-          model.ruleSets,
-          existing => existing.scope !== ruleSet.scope,
-        ),
-        ruleSet,
-      )
-      return {
-        model: modifyFields(model, {
-          ruleSets: () => ruleSets,
-          rulesForm: form =>
-            modifyFields(rulesFormFor(ruleSets, form.scope), {
-              submission: () => RulesSubmission.Saved(),
-            }),
-        }),
-      }
-    },
-    FailedPutRuleSet: ({ failure }) => ({
-      model:
-        failure === 'SignInRequired'
-          ? signedOut(model)
-          : modifyFields(model, {
-              rulesForm: form =>
-                modifyFields(form, {
-                  submission: () => RulesSubmission.Failed({ failure }),
-                }),
-            }),
-    }),
-    UpdatedEntryField: ({ field, value }) => ({
-      model: modifyFields(model, {
-        entryForm: form => withEntryField(form, field, value),
-      }),
-    }),
-    ToggledEntrySignal: ({ signal }) => ({
-      model: modifyFields(model, {
-        entryForm: form => toggleSignal(form, signal),
-      }),
-    }),
-    SubmittedEntry: () =>
-      EntrySubmission.match(model.entryForm.submission, {
-        Submitting: () => ({ model }),
-        Editing: () => submitEntry(model),
-        Failed: () => submitEntry(model),
-      }),
-    SucceededCreateCase: ({ created }) => ({
-      model: modifyFields(model, {
-        cases: cases => Array.append(cases, created),
-        entryForm: () => emptyEntryForm(model.now),
-        route: () => AppRoute.Desk(),
-        centreFilter: () => 'All',
-        maybeSelectedCaseId: () => Option.some(created.id),
-        isDetailSheetOpen: () => true,
-      }),
-      commands: [PushUrl({ url: pathOf(AppRoute.Desk()) }), focusPageHeading()],
-    }),
-    FailedCreateCase: ({ failure }) => ({
-      model:
-        failure === 'SignInRequired'
-          ? signedOut(model)
-          : modifyFields(model, {
-              entryForm: form =>
-                modifyFields(form, {
-                  submission: () => EntrySubmission.Failed({ failure }),
-                }),
-            }),
-    }),
+    CompletedFocusElement: () => ({ model }),
   })
 
 const submitLogin = (model: Model) => ({
@@ -2089,8 +1497,6 @@ export const update = (
 
 // SUBSCRIPTION
 
-export const CLOCK_TICK_MINUTES = 1
-
 const appSubscriptions = Subscription.make<Model, Message>()(entry => ({
   escape: entry(
     { isDialogOpen: Schema.Boolean },
@@ -2109,25 +1515,12 @@ const appSubscriptions = Subscription.make<Model, Message>()(entry => ({
         }).pipe(Stream.when(Effect.sync(() => isDialogOpen))),
     },
   ),
-  clock: Subscription.persistentEntry(
-    Stream.tick(Duration.minutes(CLOCK_TICK_MINUTES)).pipe(
-      Stream.mapEffect(() => Clock.currentTimeMillis),
-      Stream.map(now => Message.UpdatedNow({ now })),
-    ),
-  ),
   sessionEnded: Subscription.persistentEntry(
     Dom.streamFromEvent({
       target: sessionEvents,
       type: SESSION_ENDED_EVENT,
       mapEvent: () => Message.EndedSession(),
     }),
-  ),
-  heroLayout: Subscription.persistentEntry(
-    Dom.streamFromMediaQuery({
-      query: NARROW_VIEWPORT_QUERY,
-      mapMatches: isNarrow =>
-        Message.UpdatedHeroLayout({ layout: heroLayoutForViewport(isNarrow) }),
-    }).pipe(Stream.debounce(Duration.millis(LAYOUT_SETTLE_MS))),
   ),
 }))
 
@@ -2203,10 +1596,3 @@ export const subscriptions = Subscription.aggregate(
   reviewSubscriptions,
 )
 
-// VIEW TRANSITION
-
-export const heroLayoutTransition = ({
-  previousModel,
-  model,
-}: Readonly<{ previousModel: Model; model: Model }>): boolean =>
-  isAnimatedLayoutChange(previousModel.heroLayout, model.heroLayout)

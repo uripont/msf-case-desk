@@ -2,12 +2,7 @@ import { Option, Redacted } from 'effect'
 
 import { MeView } from '@case-desk/domain'
 
-import {
-  SYNTHETIC_ME,
-  configuredAt,
-  configuredModel,
-  loadedModel,
-} from './fixtures'
+import { SYNTHETIC_ME, configuredAt, configuredModel } from './fixtures'
 import { Message, update } from './main'
 
 // NOTE: Synthetic accounts for the Quoroom screens. The link tokens are made
@@ -30,10 +25,7 @@ export const AUTHOR_ME = withGrants([
 ])
 
 export const signedInAs = (me: MeView) =>
-  [
-    Message.SucceededCheckSession({ me }),
-    Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-  ].reduce((model, message) => update(model, message).model, configuredModel)
+  update(configuredModel, Message.SucceededCheckSession({ me })).model
 
 export const adminModel = signedInAs(ADMIN_ME)
 
@@ -50,5 +42,3 @@ export const linkPageModel = (
       onSome: token => `/link#${Redacted.value(token)}`,
     }),
   )
-
-export const desk = loadedModel

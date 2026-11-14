@@ -1,5 +1,5 @@
-// Adds a Case Desk account to .local/users.sql, which the deployment imports
-// into the shared database. The file holds password hashes, never passwords,
+// Adds an account to .local/users.sql, which the demo deployment imports
+// into the shared database (the account signs in to Quoroom and to `iter2`). The file holds password hashes, never passwords,
 // and is git-ignored.
 //
 //   pnpm users:add --email name@example.org --name "Full Name" [--password ...]

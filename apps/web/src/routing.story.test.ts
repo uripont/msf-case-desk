@@ -4,8 +4,7 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
 import {
-  DEMO_CONFIG,
-  PILOT_CONFIG,
+  CONFIG,
   SYNTHETIC_ME,
   clickedLinkTo,
   configuredAt,
@@ -14,7 +13,6 @@ import {
 } from './fixtures'
 import {
   LoadConfig,
-  LoadDesk,
   LoadExternal,
   Message,
   PushUrl,
@@ -23,7 +21,7 @@ import {
   SignIn,
   update,
 } from './main'
-import { ADMIN_ME, SYNTHETIC_UNIT } from './quoroom.fixtures'
+import { ADMIN_ME } from './quoroom.fixtures'
 import * as Admin from './quoroom/admin'
 import { Failure } from './quoroom/failure'
 import * as Link from './quoroom/link'
@@ -47,9 +45,7 @@ const argsOf = (step: ReturnType<typeof update>, name: string) =>
 
 describe('routes', () => {
   test('each address opens its screen', () => {
-    expect(routeOf('/')).toEqual(AppRoute.Desk())
-    expect(routeOf('/new-case')).toEqual(AppRoute.NewCase())
-    expect(routeOf('/rules')).toEqual(AppRoute.Rules())
+    expect(routeOf('/')).toEqual(AppRoute.Home())
     expect(routeOf('/account')).toEqual(AppRoute.Account())
     expect(routeOf('/unit')).toEqual(AppRoute.Unit())
     expect(routeOf('/admin')).toEqual(AppRoute.Admin())
@@ -70,13 +66,13 @@ describe('routes', () => {
       AppRoute.NotFound({ path: '/nothing/here' }),
     )
     expect(routeOf('/r/rep-1/rev/third')._tag).toBe('NotFound')
+    expect(routeOf('/new-case')._tag).toBe('NotFound')
+    expect(routeOf('/rules')._tag).toBe('NotFound')
   })
 
   test('every route prints the address that parses back to it', () => {
     const routes = [
-      AppRoute.Desk(),
-      AppRoute.NewCase(),
-      AppRoute.Rules(),
+      AppRoute.Home(),
       AppRoute.Account(),
       AppRoute.Unit(),
       AppRoute.Admin(),
@@ -120,7 +116,7 @@ describe('a deep link opened signed out', () => {
     story(
       update,
       given(openedAt(link).model),
-      message(Message.SucceededLoadConfig({ config: DEMO_CONFIG })),
+      message(Message.SucceededLoadConfig({ config: CONFIG })),
       message(Message.FailedCheckSession()),
       model(next => {
         expect(next.session).toEqual(Session.SignedOut())
@@ -136,10 +132,6 @@ describe('a deep link opened signed out', () => {
         expect(next.session._tag).toBe('SignedIn')
         expect(next.route).toEqual(deepLink)
       }),
-      Command.resolve(
-        LoadDesk,
-        Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-      ),
       Command.resolve(
         Review.LoadReview,
         Review.Message.FailedLoadReview({
@@ -167,39 +159,42 @@ describe('a deep link opened signed out', () => {
         configuredAt('/admin'),
         Message.SucceededCheckSession({ me: ADMIN_ME }),
       ).model,
-      Message.FailedLoadDesk({ failure: 'SignInRequired' }),
+      Message.EndedSession(),
     ).model
     expect(onAdmin.session._tag).toBe('SignedOut')
     expect(onAdmin.route).toEqual(AppRoute.Admin())
     const back = update(onAdmin, Message.SucceededSignIn({ me: ADMIN_ME }))
     expect(back.model.route).toEqual(AppRoute.Admin())
-    expect(namesOf(back)).toContain('LoadAdmin')
+    const other = update(
+      onAdmin,
+      Message.SucceededSignIn({ me: { ...ADMIN_ME, id: 'another-admin' } }),
+    )
+    expect(other.model.route).toEqual(AppRoute.Admin())
+    expect(namesOf(other)).toContain('LoadAdmin')
   })
 
-  test('the settings and the session may arrive in either order, and the data loads once', () => {
+  test('the settings and the session may arrive in either order, and the screen loads once', () => {
     const configFirst = update(
       update(
-        openedAt('/').model,
-        Message.SucceededLoadConfig({ config: DEMO_CONFIG }),
+        openedAt('/admin').model,
+        Message.SucceededLoadConfig({ config: CONFIG }),
       ).model,
-      Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
+      Message.SucceededCheckSession({ me: ADMIN_ME }),
     )
     const sessionFirst = update(
       update(
-        openedAt('/').model,
-        Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
+        openedAt('/admin').model,
+        Message.SucceededCheckSession({ me: ADMIN_ME }),
       ).model,
-      Message.SucceededLoadConfig({ config: DEMO_CONFIG }),
+      Message.SucceededLoadConfig({ config: CONFIG }),
     )
-    expect(
-      namesOf(configFirst).filter(name => name === LoadDesk.name),
-    ).toHaveLength(1)
-    expect(
-      namesOf(sessionFirst).filter(name => name === LoadDesk.name),
-    ).toHaveLength(1)
+    const loads = (step: ReturnType<typeof update>) =>
+      namesOf(step).filter(name => name === Admin.LoadAdmin.name)
+    expect(loads(configFirst)).toHaveLength(1)
+    expect(loads(sessionFirst)).toHaveLength(1)
     const early = update(
-      openedAt('/').model,
-      Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
+      openedAt('/admin').model,
+      Message.SucceededCheckSession({ me: ADMIN_ME }),
     )
     expect(namesOf(early)).toEqual([])
   })
@@ -230,7 +225,7 @@ describe('keeping the address in step', () => {
   test('the back button opens the earlier screen without pushing', () => {
     const onAdmin = update(signedIn, clickedLinkTo('/admin')).model
     const back = update(onAdmin, Message.ChangedUrl({ url: urlOf('/') }))
-    expect(back.model.route).toEqual(AppRoute.Desk())
+    expect(back.model.route).toEqual(AppRoute.Home())
     expect(namesOf(back)).not.toContain(PushUrl.name)
   })
 
@@ -250,48 +245,8 @@ describe('keeping the address in step', () => {
   test('signing out goes back to the start page', () => {
     const onAdmin = update(signedIn, clickedLinkTo('/admin')).model
     const out = update(onAdmin, Message.ClickedSignOut())
-    expect(out.model.route).toEqual(AppRoute.Desk())
+    expect(out.model.route).toEqual(AppRoute.Home())
     expect(argsOf(out, ReplaceUrl.name)).toEqual({ url: '/' })
-  })
-})
-
-describe('the pilot', () => {
-  const pilotSignedIn = update(
-    configuredAt('/', PILOT_CONFIG),
-    Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
-  )
-
-  test('never loads the triage desk', () => {
-    expect(namesOf(pilotSignedIn)).not.toContain(LoadDesk.name)
-  })
-
-  test('the demo does', () => {
-    const demo = update(
-      configuredAt('/', DEMO_CONFIG),
-      Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
-    )
-    expect(namesOf(demo)).toContain(LoadDesk.name)
-  })
-
-  test('a settings failure counts as no triage rather than as the demo', () => {
-    const failed = update(openedAt('/').model, Message.FailedLoadConfig())
-    const signedIn = update(
-      failed.model,
-      Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
-    )
-    expect(namesOf(signedIn)).not.toContain(LoadDesk.name)
-  })
-
-  test('the administration screen of a pilot still loads', () => {
-    const adminPilot = update(
-      update(
-        openedAt('/admin').model,
-        Message.SucceededLoadConfig({ config: PILOT_CONFIG }),
-      ).model,
-      Message.SucceededCheckSession({ me: ADMIN_ME }),
-    )
-    expect(namesOf(adminPilot)).toContain(Admin.LoadAdmin.name)
-    expect(SYNTHETIC_UNIT.code).toBe('SYN')
   })
 })
 

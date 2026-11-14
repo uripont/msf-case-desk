@@ -189,7 +189,7 @@ const main = async (): Promise<void> => {
       CASE_DESK_LOCAL_DIR: local,
     })
     mkdirSync(join(local, 'data'), { recursive: true })
-    server = startWorkerd(port, join(local, 'data'), { RUNTIME_MODE: 'demo' })
+    server = startWorkerd(port, join(local, 'data'), {})
     await waitForHealth(base)
 
     const launched = await chromium.launch({
@@ -363,7 +363,7 @@ const main = async (): Promise<void> => {
       await shot(ben, 'ben-1-notifications')
     })
 
-    await step('signing out and in again returns to the desk', async () => {
+    await step('signing out and in again returns to the start page', async () => {
       await rae.getByRole('button', { name: 'Sign out' }).click()
       await rae.getByRole('heading', { name: 'Sign in' }).waitFor()
       await rae.getByLabel('E-mail').fill('rae.viewer@case-desk.test')
@@ -390,15 +390,14 @@ const main = async (): Promise<void> => {
       await shot(visitor, 'throttled')
     })
 
-    await step('/api/config gives the demo mode and the neutral theme, briefly cached', async () => {
+    await step('/api/config gives the neutral theme and no mode, briefly cached', async () => {
       const response = await fetch(`${base}/api/config`)
       assert.equal(response.status, 200)
       assert.match(response.headers.get('cache-control') ?? '', /public, max-age=\d+/)
       const config = (await response.json()) as {
-        mode: string
         theme: { organisationName: string; colors: { primary: string } }
       }
-      assert.equal(config.mode, 'demo')
+      assert.deepEqual(Object.keys(config).filter(key => key !== 'logo'), ['theme'])
       assert.equal(config.theme.organisationName, 'Your organisation')
       assert.equal(config.theme.colors.primary, '#1f4e79')
     })
@@ -452,10 +451,10 @@ const main = async (): Promise<void> => {
     })
 
     // NOTE: a real pilot: a workerd bundle built with `--mode pilot` (no demo
-    // cases, no demo accounts), started with RUNTIME_MODE=pilot, and a first
+    // accounts), and a first
     // administrator from a generated grant file with an invented e-mail. The
     // demo server above has read its bundle already, so building over it is safe.
-    await step('a pilot build: the server says so and the triage routes are gone', async () => {
+    await step('a pilot build: the server starts and the triage routes are gone', async () => {
       const pilotLocal = join(local, 'pilot-local')
       mkdirSync(pilotLocal, { recursive: true })
       const pilotPort = await freePort()
@@ -481,15 +480,10 @@ const main = async (): Promise<void> => {
       const pilotData = join(local, 'pilot-data')
       mkdirSync(pilotData, { recursive: true })
       pilotServer = startWorkerd(pilotPort, pilotData, {
-        RUNTIME_MODE: 'pilot',
         TICK_SECRET: TICK_SECRET,
       })
       await waitForHealth(pilotBase)
       pilotUrl = pilotBase
-      const config = (await (await fetch(`${pilotBase}/api/config`)).json()) as {
-        mode: string
-      }
-      assert.equal(config.mode, 'pilot')
       for (const [path, method] of [
         ['/api/rpc', 'POST'],
         ['/api/login', 'POST'],
@@ -513,7 +507,7 @@ const main = async (): Promise<void> => {
       assert.equal(await pilot.getByRole('link', { name: 'New case' }).count(), 0)
       assert.equal(await pilot.getByRole('link', { name: 'Rules' }).count(), 0)
       await pilot.goto(`${pilotUrl}/new-case`)
-      await pilot.getByText('This page is not available').waitFor()
+      await pilot.getByRole('heading', { name: 'Page not found' }).waitFor()
       await shot(pilot, 'pilot-no-triage')
     })
 
@@ -2776,14 +2770,12 @@ const main = async (): Promise<void> => {
       try {
         if (process.env.E2E_SKIP_SWEEP !== '1') {
           await runSweep({
-            demoUrl: base,
             pilotUrl,
             password: PASSWORD,
             emails: {
               admin: 'pia.pilot@case-desk.test',
               reviewer: 'ravi.reviewer@case-desk.test',
               empty: emptyEmail,
-              demo: 'ada.admin@case-desk.test',
             },
             reports: {
               closing: reportsByReference['PIL-0008'] ?? '',

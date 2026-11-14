@@ -11,7 +11,7 @@ import {
   type ReportRepository,
 } from '@case-desk/domain'
 
-import { AuthenticationLive } from '../handlers'
+import { AuthenticationLive } from '../authentication'
 import { authorHandlers } from './author'
 import { activityHandlers } from './activity'
 import { templateHandlers } from './templates'
@@ -21,9 +21,6 @@ import type { QuoroomClock, QuoroomConfig, QuoroomIds } from './core'
 import { makeImageHandler } from './images'
 import { publicHandlers } from './public'
 import { reviewerHandlers } from './reviewer'
-
-// NOTE: The iteration 3 RPC, served at its own path next to the iteration 2
-// one, which keeps working as it was. Stage 3 switches the apps over.
 
 export { QUOROOM_PUBLIC_PATH, QUOROOM_RPC_PATH }
 

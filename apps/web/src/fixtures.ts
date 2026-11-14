@@ -6,7 +6,6 @@ import {
   type AppConfig,
   DEFAULT_THEME,
   MeView,
-  SEED_CASES,
   UserId,
 } from '@case-desk/domain'
 
@@ -31,13 +30,10 @@ export const ORIGIN = 'https://quoroom.test'
 export const urlOf = (path: string) =>
   Option.getOrThrow(fromString(`${ORIGIN}${path}`))
 
-export const DEMO_CONFIG: AppConfig = { mode: 'demo', theme: DEFAULT_THEME }
-export const PILOT_CONFIG: AppConfig = { mode: 'pilot', theme: DEFAULT_THEME }
+export const CONFIG: AppConfig = { theme: DEFAULT_THEME }
 
 export const PAGE_PATHS = {
-  Desk: '/',
-  NewCase: '/new-case',
-  Rules: '/rules',
+  Home: '/',
   Account: '/account',
   Unit: '/unit',
   Reports: '/reports',
@@ -54,7 +50,7 @@ export const openedAt = (path: string) => init(urlOf(path))
 
 // NOTE: the app at an address, with its configuration known and no one signed
 // in yet, as when the settings arrive before the session check.
-export const configuredAt = (path: string, config: AppConfig = DEMO_CONFIG) =>
+export const configuredAt = (path: string, config: AppConfig = CONFIG) =>
   update(openedAt(path).model, Message.SucceededLoadConfig({ config })).model
 
 export const configuredModel = configuredAt('/')
@@ -66,19 +62,9 @@ export const signedInModel = update(
   Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
 ).model
 
-export const loadedModel = update(
-  signedInModel,
-  Message.SucceededLoadDesk({ cases: SEED_CASES, ruleSets: [] }),
-).model
-
 export const signedOutModel = update(
   configuredModel,
   Message.FailedCheckSession(),
-).model
-
-export const pilotSignedInModel = update(
-  configuredAt('/', PILOT_CONFIG),
-  Message.SucceededCheckSession({ me: SYNTHETIC_ME }),
 ).model
 
 export const atPage = (

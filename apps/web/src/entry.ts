@@ -5,7 +5,6 @@ import { UrlRequest } from 'foldkit/navigation'
 import {
   Message,
   Model,
-  heroLayoutTransition,
   init,
   subscriptions,
   update,
@@ -43,7 +42,6 @@ const application = Runtime.makeApplication({
         }),
       }),
   },
-  viewTransition: heroLayoutTransition,
   container: document.getElementById('root'),
   devTools: {
     Message,

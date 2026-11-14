@@ -3,9 +3,11 @@
 # with the database in .local/workerd-data (demo) or .local/workerd-data-pilot
 # (pilot). Usage: pnpm workerd [--mode demo|pilot] [port]
 #
-# demo (default): the synthetic demo cases and the accounts from `pnpm users:add`.
-# pilot: the built-in templates only, plus the first administrator written by
-# `pnpm grant-admin --env workerd` if that file exists. No seed cases.
+# Both serve the same Quoroom code (D20); the mode chooses the imports and the
+# data folder.
+# demo (default): the built-in templates, the accounts from `pnpm users:add`
+# and the first administrator written by `pnpm grant-admin --env workerd`.
+# pilot: the built-in templates and that first administrator only.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -58,7 +60,7 @@ node "$root/apps/api/scripts/build-workerd.mjs" --mode "$mode"
 mkdir -p "$data"
 
 echo "Quoroom ($mode) on http://127.0.0.1:$port"
-RUNTIME_MODE=$mode exec pnpm --dir "$root/apps/api" exec workerd serve workerd/case-desk.capnp \
+exec pnpm --dir "$root/apps/api" exec workerd serve workerd/case-desk.capnp \
   --directory-path "assets=$root/apps/web/dist" \
   --directory-path "data=$data" \
   --socket-addr "http=127.0.0.1:$port" \

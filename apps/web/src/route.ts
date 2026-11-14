@@ -4,8 +4,7 @@ import { defineRouteUnion } from 'foldkit/route'
 import { type Url } from 'foldkit/url'
 
 // NOTE: One route per screen. The URL is the address of the screen, so a link
-// opens the right one and the address bar follows the app. Stages 4 to 6 add
-// their routes here (reports, drafts, the reviewer's revision): a route is a
+// opens the right one and the address bar follows the app. A route is a
 // variant, a router and a line in `urlToAppRoute`, `pathOf` and `needsSession`.
 // Nothing in a URL is secret. A link token travels in the fragment of `/link`
 // only, which the app removes once it has read it.
@@ -13,9 +12,7 @@ import { type Url } from 'foldkit/url'
 // ROUTE
 
 export const AppRoute = defineRouteUnion({
-  Desk: {},
-  NewCase: {},
-  Rules: {},
+  Home: {},
   Account: {},
   Unit: {},
   Reports: {},
@@ -41,12 +38,7 @@ export const AppRoute = defineRouteUnion({
 })
 export type AppRoute = typeof AppRoute.Type
 
-const deskRouter = pipe(Route.root, Route.mapTo(AppRoute.Desk))
-const newCaseRouter = pipe(
-  Route.literal('new-case'),
-  Route.mapTo(AppRoute.NewCase),
-)
-const rulesRouter = pipe(Route.literal('rules'), Route.mapTo(AppRoute.Rules))
+const homeRouter = pipe(Route.root, Route.mapTo(AppRoute.Home))
 const accountRouter = pipe(
   Route.literal('account'),
   Route.mapTo(AppRoute.Account),
@@ -145,9 +137,7 @@ const revisionRouter = pipe(
 
 export const urlToAppRoute = Route.parseUrlWithFallback(
   Route.oneOf(
-    deskRouter,
-    newCaseRouter,
-    rulesRouter,
+    homeRouter,
     accountRouter,
     unitRouter,
     reportsRouter,
@@ -175,9 +165,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 
 export const pathOf = (route: AppRoute): string =>
   AppRoute.match(route, {
-    Desk: () => deskRouter(),
-    NewCase: () => newCaseRouter(),
-    Rules: () => rulesRouter(),
+    Home: () => homeRouter(),
     Account: () => accountRouter(),
     Unit: () => unitRouter(),
     Reports: () => reportsRouter(),
@@ -209,9 +197,7 @@ export const pathOf = (route: AppRoute): string =>
 // shown the sign-in form, and is on that screen once signed in.
 export const needsSession = (route: AppRoute): boolean =>
   AppRoute.match(route, {
-    Desk: () => true,
-    NewCase: () => true,
-    Rules: () => true,
+    Home: () => true,
     Account: () => true,
     Unit: () => true,
     Reports: () => true,
@@ -233,37 +219,6 @@ export const needsSession = (route: AppRoute): boolean =>
     Audit: () => true,
     Downloads: () => true,
     Revision: () => true,
-    NotFound: () => false,
-  })
-
-// NOTE: The triage screens of iteration 2. They belong to the demo
-// environment and are off in a pilot (D20).
-export const isTriageRoute = (route: AppRoute): boolean =>
-  AppRoute.match(route, {
-    Desk: () => true,
-    NewCase: () => true,
-    Rules: () => true,
-    Account: () => false,
-    Unit: () => false,
-    Reports: () => false,
-    Admin: () => false,
-    Theme: () => false,
-    Templates: () => false,
-    TemplateEditor: () => false,
-    Inbox: () => false,
-    Notifications: () => false,
-    Link: () => false,
-    Report: () => false,
-    Share: () => false,
-    Names: () => false,
-    Publish: () => false,
-    Drafts: () => false,
-    Draft: () => false,
-    Comments: () => false,
-    Grid: () => false,
-    Audit: () => false,
-    Downloads: () => false,
-    Revision: () => false,
     NotFound: () => false,
   })
 

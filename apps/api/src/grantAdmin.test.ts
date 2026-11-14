@@ -59,7 +59,6 @@ const world = () => {
       makeTestIds(),
       Layer.succeed(QuoroomConfig, DEFAULT_NOTIFICATION_CONFIG),
     ),
-    'demo',
   )
   open.push(() => app.dispose())
   const jar = new Map<string, string>()

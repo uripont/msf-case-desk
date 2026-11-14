@@ -25,7 +25,6 @@
     "users:add": "pnpm --filter @case-desk/api users:add",
     "grant-admin": "pnpm --filter @case-desk/api grant-admin",
     "compat:check": "sh scripts/compat-check.sh",
-    "demo:refresh": "pnpm --filter @case-desk/api demo:seed",
     "workerd": "sh scripts/workerd.sh",
     "smoke": "node scripts/smoke.mjs",
     "rehearsal": "node packages/e2e/src/rehearsal.ts",

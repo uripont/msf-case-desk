@@ -1,128 +1,24 @@
-import {
-  Command,
-  click,
-  expect,
-  given,
-  inside,
-  keydown,
-  role,
-  scene,
-  text,
-} from 'foldkit/scene'
+import { expect, given, role, scene, text } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { loadedModel, signedInModel } from './fixtures'
-import { LoadDesk, Message, initialModel, update } from './main'
+import { signedInModel } from './fixtures'
+import { initialModel, update } from './main'
 import { view } from './view'
 
 describe('scene', () => {
-  test('the home screen leads with what needs attention', () => {
+  test('the home screen welcomes a signed-in account', () => {
     scene(
       { update, view },
-      given(loadedModel),
-      expect(role('heading', { name: '1 case is due soon' })).toExist(),
-      expect(role('region', { name: 'Urgent' })).toExist(),
-      expect(role('region', { name: 'Standard' })).toExist(),
-      expect(role('heading', { name: 'Why this is urgent' })).toExist(),
-    )
-  })
-
-  test('picking another case explains its priority', () => {
-    scene(
-      { update, view },
-      given(loadedModel),
-      click(role('button', { name: /Question about whether a gift/ })),
-      expect(role('heading', { name: 'Why this is standard' })).toExist(),
-    )
-  })
-
-  test('choosing an operational centre narrows the queue', () => {
-    scene(
-      { update, view },
-      given(loadedModel),
-      click(role('button', { name: 'OCG' })),
-      expect(text('SYN-001', { exact: false })).toExist(),
-      expect(text('SYN-002', { exact: false })).toBeAbsent(),
-    )
-  })
-
-  test('the latest app has no demo controls and no simulated clock', () => {
-    scene(
-      { update, view },
-      given(loadedModel),
-      expect(role('button', { name: 'Demo controls' })).toBeAbsent(),
-      expect(text('Simulated time', { exact: false })).toBeAbsent(),
-      expect(role('button', { name: '+24 h' })).toBeAbsent(),
-    )
-  })
-
-  test('every case on the time axis is a named button', () => {
-    scene(
-      { update, view },
-      given(loadedModel),
-      inside(
-        role('group', { name: 'Cases on the time axis' }),
-        expect(
-          role('button', {
-            name: 'SYN-002, urgent, fast-track, 16 hours left',
-          }),
-        ).toExist(),
-      ),
-      inside(
-        role('group', { name: 'Cases on the timeline' }),
-        expect(
-          role('button', {
-            name: 'SYN-001, urgent, fast-track, due soon, 4 hours left',
-          }),
-        ).toExist(),
-      ),
-    )
-  })
-
-  test('tapping a case on the timeline opens it', () => {
-    scene(
-      { update, view },
-      given(loadedModel),
-      inside(
-        role('group', { name: 'Cases on the timeline' }),
-        click(role('button', { name: /^SYN-005,/ })),
-      ),
-      expect(role('heading', { name: /Concern about a colleague/ })).toExist(),
-      expect(role('button', { name: '← Back to cases' })).toExist(),
-    )
-  })
-
-  test('the axis is one tab stop and arrow keys move between cases', () => {
-    scene(
-      { update, view },
-      given(loadedModel),
-      inside(
-        role('group', { name: 'Cases on the timeline' }),
-        expect(role('button', { name: /^SYN-001,/ })).toHaveAttr(
-          'tabIndex',
-          '0',
-        ),
-        expect(role('button', { name: /^SYN-002,/ })).toHaveAttr(
-          'tabIndex',
-          '-1',
-        ),
-        keydown(role('button', { name: /^SYN-001,/ }), 'ArrowDown'),
-        expect(role('button', { name: /^SYN-002,/ })).toHaveAttr(
-          'tabIndex',
-          '0',
-        ),
-        expect(role('button', { name: /^SYN-001,/ })).toHaveAttr(
-          'tabIndex',
-          '-1',
-        ),
-      ),
+      given(signedInModel),
+      expect(role('heading', { name: 'Welcome to Quoroom' })).toExist(),
+      expect(role('link', { name: 'Home' })).toHaveAttr('href', '/'),
     )
   })
 
   test('the footer names the product and the organisation of the theme', () => {
     scene(
       { update, view },
-      given(loadedModel),
+      given(signedInModel),
       expect(
         text('Quoroom, a reporting system for Your organisation.'),
       ).toExist(),
@@ -130,47 +26,6 @@ describe('scene', () => {
         text('developed at Universitat Pompeu Fabra', { exact: false }),
       ).toExist(),
       expect(role('img')).toBeAbsent(),
-    )
-  })
-})
-
-const emptyModel = update(
-  signedInModel,
-  Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-).model
-
-const failedModel = update(
-  signedInModel,
-  Message.FailedLoadDesk({ failure: 'Unavailable' }),
-).model
-
-describe('desk states', () => {
-  test('a desk with no cases invites the first entry', () => {
-    scene(
-      { update, view },
-      given(emptyModel),
-      expect(role('heading', { name: 'Everything is on track' })).toExist(),
-      expect(text('No cases yet.')).toExist(),
-      expect(role('link', { name: 'Enter a case' })).toHaveAttr(
-        'href',
-        '/new-case',
-      ),
-    )
-  })
-
-  test('a desk that cannot load offers to try again', () => {
-    scene(
-      { update, view },
-      given(failedModel),
-      expect(
-        role('heading', { name: 'The cases could not be loaded' }),
-      ).toExist(),
-      click(role('button', { name: 'Try again' })),
-      Command.resolve(
-        LoadDesk,
-        Message.SucceededLoadDesk({ cases: [], ruleSets: [] }),
-      ),
-      expect(text('No cases yet.')).toExist(),
     )
   })
 

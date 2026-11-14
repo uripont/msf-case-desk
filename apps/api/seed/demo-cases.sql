@@ -1,6 +1,6 @@
--- Synthetic demo cases, generated from packages/domain/src/seed.ts.
--- Regenerate with: pnpm --filter @case-desk/api demo:seed
--- Refreshed: 2026-11-02T19:19
+-- Synthetic triage cases for the frozen iteration 2 (iter2) on the demo stack.
+-- Generated in iteration 2 from its seed (git tag iter2); fixed since. The times
+-- are relative to the import, so each deploy makes them fresh again.
 
 INSERT INTO cases (id, centre, received_at, summary, scope, risk, urgency, fast_track_signals, channel, entered_at, entered_by, schema_version)
 VALUES ('DEMO-001', 'OCG', CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 72000000, 'Anonymous report that a team lead pressures junior staff for favours in exchange for contract renewals.', 'Team', 'High', 'Elevated', '["Exploitation"]', 'IntegrityLine', CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 72000000, (SELECT id FROM users WHERE email = 'demo@case-desk.test'), 1)

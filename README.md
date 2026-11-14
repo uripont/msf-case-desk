@@ -18,7 +18,7 @@ What it does:
 - **Review rounds.** A revision goes to a committee with a deadline. Reviewers comment on selected text or whole sections and approve, request changes or comment. Reminders and outcomes arrive in an in-app inbox; the first request can be sent by WhatsApp from the author's phone.
 - **Closing.** A round is decided by its approval rule or its deadline. The report ends with a closing revision or on approval and is archived, read-only, with a status grid and an audit log. Any draft or revision downloads as a PDF, made in the browser and never stored.
 
-Iterations 1 and 2 were **Case Desk**, a triage desk for incoming cases. They stay online, frozen, on the demo environment; their scoring rules are in [`docs/triage-rules.md`](docs/triage-rules.md).
+Iterations 1 and 2 were **Case Desk**, a triage desk for incoming cases. They stay online, frozen, on the demo environment, built from the git tags `iter1` and `iter2`; their code and scoring rules are in those tags.
 
 ## Environments
 
@@ -71,7 +71,7 @@ pnpm grant-admin --env workerd --email admin@example.org --name "Admin Example" 
 pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 ```
 
-`pnpm workerd` without `--mode` runs the demo, with the triage desk and its synthetic cases. Deploying to Cloudflare and running a host cron for notifications are in [`docs/self-hosting.md`](docs/self-hosting.md).
+`pnpm workerd` without `--mode` runs the same Quoroom with the demo data: it also imports the accounts from `pnpm users:add`. Deploying to Cloudflare and running a host cron for notifications are in [`docs/self-hosting.md`](docs/self-hosting.md).
 
 | Script | What it does |
 | --- | --- |
@@ -85,7 +85,7 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 | `pnpm check` | Typecheck, lint, the migration check, tests and build, as CI does |
 | `pnpm compat:check` | Runs each frozen version's storage tests on the latest schema |
 | `pnpm snapshots:prepare` | Extracts the frozen iterations from their tags, for the demo stack |
-| `pnpm users:add` | An account for the triage desk of the demo only |
+| `pnpm users:add` | An account on the demo only, shared with the frozen `iter2` |
 
 ## Testing
 

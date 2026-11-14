@@ -19,10 +19,16 @@ describe('workerd build imports', () => {
     ])
   })
 
-  test('pilot never embeds the demo cases or the demo accounts', () => {
+  test('pilot never embeds the demo accounts, and no mode the triage cases', () => {
     const files = workerdImportFiles('pilot', paths, everything)
-    expect(files.some(file => file.endsWith('demo-cases.sql'))).toBe(false)
     expect(files.some(file => file.endsWith('users.sql'))).toBe(false)
+    for (const mode of ['demo', 'pilot'] as const) {
+      expect(
+        workerdImportFiles(mode, paths, everything).some(file =>
+          file.endsWith('demo-cases.sql'),
+        ),
+      ).toBe(false)
+    }
   })
 
   test('pilot without a first-admin file embeds only the templates', () => {
@@ -31,12 +37,11 @@ describe('workerd build imports', () => {
     ).toEqual([join(api, 'seed/builtin-templates.sql')])
   })
 
-  test('demo embeds the templates, then accounts, grants and demo cases', () => {
+  test('demo embeds the templates, then accounts and grants', () => {
     expect(workerdImportFiles('demo', paths, everything).map(f => f.split('/').pop())).toEqual([
       'builtin-templates.sql',
       'users.sql',
       'grants-workerd.sql',
-      'demo-cases.sql',
     ])
   })
 

@@ -1,32 +1,14 @@
-import { Array, Effect, Layer, Option, Ref, Schema, pipe } from 'effect'
+import { Array, Effect, Layer, Option, Ref, pipe } from 'effect'
 
-import { Case } from '../case'
-import type { CasePatch } from '../entry'
-import {
-  type NewSession,
-  Repository,
-  caseFromEntry,
-} from '../repository'
-import type { RuleSet, RuleSetScope, TriageRules } from '../rules'
-import { type User, type UserId, type UserRecord, normaliseEmail } from '../user'
+import { type NewSession, Repository } from '../repository'
+import { type User, type UserRecord, normaliseEmail } from '../user'
 
-// NOTE: the in-memory twin of the iteration 2 `Repository`, for tests only.
+// NOTE: the in-memory twin of the accounts `Repository`, for tests only.
 // It is not exported from the package index, so no app bundles it.
-
-const decodeCase = Schema.decodeUnknownSync(Case)
-
-type StoredRuleSet = Readonly<{
-  scope: RuleSetScope
-  rules: TriageRules
-  updatedAt: number
-  updatedBy: UserId | undefined
-}>
 
 type StoredSession = NewSession
 
 type MemoryState = Readonly<{
-  cases: ReadonlyArray<Case>
-  ruleSets: ReadonlyArray<StoredRuleSet>
   users: ReadonlyArray<UserRecord>
   sessions: ReadonlyArray<StoredSession>
 }>
@@ -38,77 +20,11 @@ export const makeMemoryRepository = (
 ): Effect.Effect<Repository['Service']> =>
   Effect.gen(function* () {
     const state = yield* Ref.make<MemoryState>({
-      cases: seed.cases ?? [],
-      ruleSets: seed.ruleSets ?? [],
       users: seed.users ?? [],
       sessions: seed.sessions ?? [],
     })
 
-    const nameOf = (current: MemoryState, userId?: UserId): string =>
-      pipe(
-        Array.findFirst(current.users, user => user.id === userId),
-        Option.match({ onNone: () => '', onSome: user => user.name }),
-      )
-
-    const toRuleSet = (
-      current: MemoryState,
-      stored: StoredRuleSet,
-    ): RuleSet => ({
-      scope: stored.scope,
-      rules: stored.rules,
-      updatedAt: stored.updatedAt,
-      updatedByName: nameOf(current, stored.updatedBy),
-    })
-
     return Repository.of({
-      listCases: () => Effect.map(Ref.get(state), current => current.cases),
-      getCase: id =>
-        Effect.map(Ref.get(state), current =>
-          Array.findFirst(current.cases, stored => stored.id === id),
-        ),
-      createCase: newCase =>
-        Ref.modify(state, current => {
-          const created = caseFromEntry(
-            newCase,
-            nameOf(current, newCase.enteredBy),
-          )
-          return [created, { ...current, cases: [...current.cases, created] }]
-        }),
-      updateCase: (id, patch) =>
-        Ref.modify(state, current => {
-          const maybeUpdated = pipe(
-            Array.findFirst(current.cases, stored => stored.id === id),
-            Option.map(stored => decodeCase({ ...stored, ...patch })),
-          )
-          return [
-            maybeUpdated,
-            Option.match(maybeUpdated, {
-              onNone: () => current,
-              onSome: updated => ({
-                ...current,
-                cases: Array.map(current.cases, stored =>
-                  stored.id === id ? updated : stored,
-                ),
-              }),
-            }),
-          ]
-        }),
-      listRuleSets: () =>
-        Effect.map(Ref.get(state), current =>
-          Array.map(current.ruleSets, stored => toRuleSet(current, stored)),
-        ),
-      putRuleSet: (scope, rules, updatedAt, updatedBy) =>
-        Ref.modify(state, current => {
-          const stored: StoredRuleSet = { scope, rules, updatedAt, updatedBy }
-          const next = {
-            ...current,
-            ruleSets: [
-              ...Array.filter(current.ruleSets, set => set.scope !== scope),
-              stored,
-            ],
-          }
-          return [toRuleSet(next, stored), next]
-        }),
       findUserByEmail: email =>
         Effect.map(Ref.get(state), current =>
           Array.findFirst(

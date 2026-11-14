@@ -10,7 +10,6 @@ import { defaultThemeStyle, themeStyle } from './theme'
 import { view } from './view'
 
 const INVENTED: AppConfig = {
-  mode: 'demo',
   theme: {
     ...DEFAULT_THEME,
     organisationName: 'Invented Organisation',

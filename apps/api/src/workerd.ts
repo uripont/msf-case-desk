@@ -1,4 +1,4 @@
-// Entry for running Case Desk on plain workerd, without Cloudflare. The API
+// Entry for running Quoroom on plain workerd, without Cloudflare. The API
 // and the assets are served as on Cloudflare; the database is a Durable
 // Object with SQLite storage on local disk, behind the same SqlDatabase
 // interface D1 satisfies. Built and started by `pnpm workerd`.
@@ -10,7 +10,6 @@ import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
 
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'
-import { modeOf } from './runtimeMode'
 import {
   TICK_PATH,
   type TickEnv,
@@ -38,9 +37,6 @@ export type Env = TickEnv & {
   // address, if the operator controls one. Without it the per-address sign-in
   // limit is one shared bucket (see `clientAddress`).
   readonly TRUSTED_PROXY_HEADER?: string
-  // NOTE: `demo` or `pilot` (D20), set in the workerd config. Unset means `pilot`;
-  // any other value is a configuration error (see `modeOf`).
-  readonly RUNTIME_MODE?: string
 }
 
 const runScript = (sql: SqlStorage, script: string): void => {
@@ -196,14 +192,9 @@ export default {
       proxyHeader === ''
         ? { kind: 'self_hosted' }
         : { kind: 'header', name: proxyHeader }
-    const mode = modeOf(env.RUNTIME_MODE)
-    if (mode.refusal !== undefined) {
-      return withReferrerPolicy(mode.refusal)
-    }
     const app = makeApp(
       layerSql(database),
       Layer.mergeAll(layerSqlReport(database), QuoroomServicesFor(network, notificationConfigFrom(env))),
-      mode.mode,
     )
     try {
       return await app.handle(request)

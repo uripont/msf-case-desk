@@ -45,16 +45,6 @@ describe('a session that ends', () => {
     expect(back.names.maybeRemoving).toEqual(Option.none())
   })
 
-  test('another account signing in does not get the entry form typed before', () => {
-    const typed = modifyFields(working, {
-      entryForm: form => modifyFields(form, { summary: () => 'Invented summary' }),
-    })
-    const ended = update(typed, Message.EndedSession()).model
-    const other = { ...SYNTHETIC_ME, id: 'someone-else' }
-    const back = update(ended, Message.SucceededSignIn({ me: other })).model
-    expect(back.entryForm.summary).toBe('')
-  })
-
   test('another account signing in with a link after the session ended starts from empty screens', () => {
     const ended = update(working, Message.EndedSession()).model
     const linked = modifyFields(ended, {

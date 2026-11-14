@@ -1,23 +1,16 @@
-import { Clock, Effect, Option, Schema } from 'effect'
+import { Clock, Effect, Option } from 'effect'
 
 import {
-  Email,
   Repository,
   type RepositoryError,
   type User,
 } from '@case-desk/domain'
 
-import { DUMMY_HASH, verifyPassword } from './password'
-
+// NOTE: the session format is shared with the frozen iteration 2 on the demo
+// database: the cookie name, the token (32 random bytes in hex) and its stored
+// SHA-256. Changing any of them signs everyone out of one of the two.
 export const SESSION_COOKIE = 'case_desk_session'
 export const SESSION_DAYS = 14
-export const SESSION_MS = SESSION_DAYS * 24 * 3_600_000
-
-export const Credentials = Schema.Struct({
-  email: Email,
-  password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
-})
-export type Credentials = typeof Credentials.Type
 
 const toHex = (bytes: ArrayBuffer): string =>
   Array.from(new Uint8Array(bytes), byte =>
@@ -29,44 +22,6 @@ const toHex = (bytes: ArrayBuffer): string =>
 export const hashToken = (token: string): Promise<string> =>
   crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)).then(toHex)
 
-export const newToken = (): string =>
-  toHex(crypto.getRandomValues(new Uint8Array(32)).buffer)
-
-export type SignIn = Readonly<{
-  user: User
-  token: string
-  expiresAt: number
-}>
-
-export const signIn = (
-  credentials: Credentials,
-): Effect.Effect<Option.Option<SignIn>, RepositoryError, Repository> =>
-  Effect.gen(function* () {
-    const repository = yield* Repository
-    const maybeUser = yield* repository.findUserByEmail(credentials.email)
-    const storedHash = Option.match(maybeUser, {
-      onNone: () => DUMMY_HASH,
-      onSome: user => user.passwordHash,
-    })
-    const isValid = yield* Effect.promise(() =>
-      verifyPassword(credentials.password, storedHash),
-    )
-    if (!isValid || Option.isNone(maybeUser)) {
-      return Option.none()
-    }
-    const { id, email, name } = maybeUser.value
-    const now = yield* Clock.currentTimeMillis
-    const token = newToken()
-    const expiresAt = now + SESSION_MS
-    yield* repository.createSession({
-      tokenHash: yield* Effect.promise(() => hashToken(token)),
-      userId: id,
-      createdAt: now,
-      expiresAt,
-    })
-    return Option.some({ user: { id, email, name }, token, expiresAt })
-  })
-
 export const sessionUser = (
   token: string,
 ): Effect.Effect<Option.Option<User>, RepositoryError, Repository> =>
@@ -75,15 +30,6 @@ export const sessionUser = (
     const now = yield* Clock.currentTimeMillis
     const tokenHash = yield* Effect.promise(() => hashToken(token))
     return yield* repository.findSessionUser(tokenHash, now)
-  })
-
-export const signOut = (
-  token: string,
-): Effect.Effect<void, RepositoryError, Repository> =>
-  Effect.gen(function* () {
-    const repository = yield* Repository
-    const tokenHash = yield* Effect.promise(() => hashToken(token))
-    yield* repository.deleteSession(tokenHash)
   })
 
 export const tokenFromCookies = (
