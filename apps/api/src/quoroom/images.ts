@@ -107,7 +107,7 @@ const upload = (request: Request, userId: string, url: URL) =>
       return fail('bad_signature')
     }
     if (query.owner === 'theme') {
-      // NOTE: the logo belongs to the administrator.
+      // NOTE: the logo belongs to whoever holds Theme.
       const db = yield* store
       const grants = yield* db.listGrants(userId)
       const result = authorize(

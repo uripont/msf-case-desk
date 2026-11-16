@@ -24,7 +24,9 @@ import { type Browser, type Locator, type Page, chromium, firefox } from 'playwr
 import {
   PASSWORD,
   activate,
+  addPerson,
   copiedLink,
+  createUnit,
   ensureChecked,
   noSideScroll,
   openIn,
@@ -225,20 +227,15 @@ const main = async (): Promise<void> => {
       await other.context().close()
     })
 
-    await step('the administrator sees the administration and creates a unit', async () => {
-      await admin.getByRole('link', { name: 'Administration' }).click()
-      await admin.getByRole('heading', { name: 'Administration' }).waitFor()
-      await admin.getByLabel('Unit name').fill('Synthetic Unit')
-      await admin.getByLabel('Unit code').fill('SYN')
-      await admin.getByRole('button', { name: 'Create unit' }).click()
-      await admin.getByRole('list', { name: 'Units' }).getByText('Synthetic Unit').waitFor()
+    await step('the administrator opens People and creates a unit', async () => {
+      await admin.getByRole('link', { name: 'People', exact: true }).click()
+      await admin.getByRole('heading', { name: 'People', level: 1 }).waitFor()
+      await createUnit(admin, 'Synthetic Unit', 'SYN')
       await shot(admin, 'admin-1-unit-created')
     })
 
     const grant = async (email: string, name: string): Promise<string> => {
-      await admin.getByLabel('E-mail', { exact: true }).fill(email)
-      await admin.getByLabel('Name', { exact: true }).fill(name)
-      await admin.getByRole('button', { name: 'Give capability' }).click()
+      await addPerson(admin, { email, name, unit: 'Synthetic Unit (SYN)' })
       await admin.getByRole('textbox', { name: 'Link' }).waitFor()
       await shot(admin, `admin-grant-${name.split(' ')[0]?.toLowerCase()}`)
       return copiedLink(admin)
@@ -249,11 +246,17 @@ const main = async (): Promise<void> => {
     await step('the administrator grants two authors in the unit and gets one link each', async () => {
       anaLink = await grant('ana.author@case-desk.test', 'Ana Author')
       benLink = await grant('ben.author@case-desk.test', 'Ben Author')
-      await admin.getByText('Author in Synthetic Unit').first().waitFor()
+      assert.ok(
+        await admin
+          .getByRole('checkbox', { name: 'Reports in Synthetic Unit for Ben Author' })
+          .first()
+          .isChecked(),
+        'Ben has no Reports in the unit',
+      )
     })
 
     await step('the accounts are listed and a reset link can be issued', async () => {
-      await admin.getByRole('button', { name: 'Issue reset link for Ana Author' }).click()
+      await admin.getByRole('button', { name: 'Issue reset link for Ana Author' }).first().click()
       await admin.getByRole('textbox', { name: 'Link' }).waitFor()
       await shot(admin, 'admin-reset-link')
       await copiedLink(admin)
@@ -269,12 +272,13 @@ const main = async (): Promise<void> => {
       await activate(ben, benLink, 'ben')
     })
 
-    await step('the author sees the unit, the other author, and nothing of administration', async () => {
+    await step('the author sees the unit, the other author, and no People tab', async () => {
       await assert.rejects(
-        ana.getByRole('link', { name: 'Administration' }).waitFor({ timeout: 500 }),
+        ana.getByRole('link', { name: 'People', exact: true }).waitFor({ timeout: 500 }),
       )
-      await ana.getByRole('link', { name: 'My unit' }).click()
-      await ana.getByRole('heading', { name: 'My unit' }).waitFor()
+      await ana.getByRole('link', { name: 'Reports', exact: true }).click()
+      await ana.getByRole('link', { name: 'Reviewers and committees' }).click()
+      await ana.getByRole('heading', { name: 'Reviewers and committees' }).waitFor()
       await ana
         .getByRole('list', { name: 'Authors in this unit' })
         .getByText('Ben Author')
@@ -337,7 +341,7 @@ const main = async (): Promise<void> => {
     })
 
     await step('only the reviewer gives WhatsApp consent, on their own account', async () => {
-      await rae.getByRole('link', { name: 'My account' }).click()
+      await rae.getByRole('link', { name: /, my account$/ }).click()
       await rae.getByRole('heading', { name: 'Your account' }).waitFor()
       assert.equal(
         await rae
@@ -355,7 +359,7 @@ const main = async (): Promise<void> => {
     })
 
     await step('an author sets the approval notice (D19)', async () => {
-      await ben.getByRole('link', { name: 'My account' }).click()
+      await ben.getByRole('link', { name: /, my account$/ }).click()
       await ben.getByRole('heading', { name: 'Your account' }).waitFor()
       await ben.getByLabel('Tell me about each single approval of my reports').check()
       await ben.getByRole('button', { name: 'Save preferences' }).click()
@@ -514,12 +518,9 @@ const main = async (): Promise<void> => {
     await step('the Quoroom screens work in the pilot', async () => {
       const pilot = pilotPage
       assert.ok(pilot !== undefined, 'no pilot page')
-      await pilot.goto(`${pilotUrl}/admin`)
-      await pilot.getByRole('heading', { name: 'Administration' }).waitFor()
-      await pilot.getByLabel('Unit name').fill('Pilot Unit')
-      await pilot.getByLabel('Unit code').fill('PIL')
-      await pilot.getByRole('button', { name: 'Create unit' }).click()
-      await pilot.getByRole('list', { name: 'Units' }).getByText('Pilot Unit').waitFor()
+      await pilot.goto(`${pilotUrl}/people`)
+      await pilot.getByRole('heading', { name: 'People', level: 1 }).waitFor()
+      await createUnit(pilot, 'Pilot Unit', 'PIL')
       await pilot.goto(`${pilotUrl}/account`)
       await pilot.getByRole('heading', { name: 'Your account' }).waitFor()
       await shot(pilot, 'pilot-quoroom')
@@ -531,14 +532,17 @@ const main = async (): Promise<void> => {
     await step('an author writes an intake report on a phone and the values persist', async () => {
       const pilot = pilotPage
       assert.ok(pilot !== undefined, 'no pilot page')
-      await pilot.goto(`${pilotUrl}/admin`)
-      await pilot.getByRole('heading', { name: 'Administration' }).waitFor()
-      await pilot.getByLabel('E-mail', { exact: true }).fill('pia.pilot@case-desk.test')
-      await pilot.getByLabel('Name', { exact: true }).fill('Pia Pilot')
-      await pilot.getByLabel('Capability', { exact: true }).selectOption('author')
-      await pilot.getByLabel('Unit', { exact: true }).selectOption({ label: 'Pilot Unit (PIL)' })
-      await pilot.getByRole('button', { name: 'Give capability' }).click()
-      await pilot.getByText('Author in Pilot Unit').first().waitFor()
+      await pilot.goto(`${pilotUrl}/people`)
+      await pilot.getByRole('heading', { name: 'People', level: 1 }).waitFor()
+      await addPerson(pilot, {
+        email: 'pia.pilot@case-desk.test',
+        name: 'Pia Pilot',
+        unit: 'Pilot Unit (PIL)',
+      })
+      await ensureChecked(
+        pilot.getByRole('checkbox', { name: 'Reports in Pilot Unit for Pia Pilot' }).first(),
+        'Pia has no Reports in the unit',
+      )
 
       await pilot.goto(`${pilotUrl}/reports`)
       await pilot.getByRole('heading', { name: 'Start a report' }).waitFor()
@@ -1379,13 +1383,13 @@ const main = async (): Promise<void> => {
     await step('two authors share from one draft: the comparison, the automatic changes, immutable drafts, comments', async () => {
       const pia = pilotPage
       assert.ok(pia !== undefined, 'no pilot page')
-      await pia.goto(`${pilotUrl}/admin`)
-      await pia.getByRole('heading', { name: 'Administration' }).waitFor()
-      await pia.getByLabel('E-mail', { exact: true }).fill('bea.second@case-desk.test')
-      await pia.getByLabel('Name', { exact: true }).fill('Bea Second')
-      await pia.getByLabel('Capability', { exact: true }).selectOption('author')
-      await pia.getByLabel('Unit', { exact: true }).selectOption({ label: 'Pilot Unit (PIL)' })
-      await pia.getByRole('button', { name: 'Give capability' }).click()
+      await pia.goto(`${pilotUrl}/people`)
+      await pia.getByRole('heading', { name: 'People', level: 1 }).waitFor()
+      await addPerson(pia, {
+        email: 'bea.second@case-desk.test',
+        name: 'Bea Second',
+        unit: 'Pilot Unit (PIL)',
+      })
       await pia.getByRole('textbox', { name: 'Link' }).waitFor()
       const beaLink = await copiedLink(pia)
       const bea = await person(launched)
@@ -1675,8 +1679,8 @@ const main = async (): Promise<void> => {
       assert.ok(pia !== undefined, 'no pilot page')
 
       // A reviewer with a number and consent, in a committee.
-      await pia.goto(`${pilotUrl}/unit`)
-      await pia.getByRole('heading', { name: 'My unit' }).waitFor()
+      await pia.goto(`${pilotUrl}/reports/unit`)
+      await pia.getByRole('heading', { name: 'Reviewers and committees' }).waitFor()
       await pia.getByLabel('Reviewer name').fill('Pat Panel')
       await pia.getByLabel('Reviewer e-mail').fill('pat.panel@case-desk.test')
       await pia.getByLabel('Reviewer phone number').fill('+34 611 000 111')
@@ -1692,7 +1696,7 @@ const main = async (): Promise<void> => {
 
       const pat = await person(launched)
       await activate(pat, patLink, 'pat')
-      await pat.getByRole('link', { name: 'My account' }).click()
+      await pat.getByRole('link', { name: /, my account$/ }).click()
       await pat.getByRole('heading', { name: 'Your account' }).waitFor()
       await pat.getByLabel('Phone number').fill('+34 611 000 111')
       await pat
@@ -1785,8 +1789,8 @@ const main = async (): Promise<void> => {
       }
 
       // Two redacted reviewers in one committee.
-      await pia.goto(`${pilotUrl}/unit`)
-      await pia.getByRole('heading', { name: 'My unit' }).waitFor()
+      await pia.goto(`${pilotUrl}/reports/unit`)
+      await pia.getByRole('heading', { name: 'Reviewers and committees' }).waitFor()
       const register = async (name: string, email: string): Promise<string> => {
         await pia.getByLabel('Reviewer name').fill(name)
         await pia.getByLabel('Reviewer e-mail').fill(email)
@@ -2253,14 +2257,14 @@ const main = async (): Promise<void> => {
       await pia.goto(`${pilotUrl}/notifications`)
       await pia.getByRole('heading', { name: 'Notifications' }).waitFor()
       await pia.getByText('The review round is decided.').first().waitFor()
-      await pia.getByRole('link', { name: /^Notifications \(\d+\)$/ }).waitFor()
+      await pia.getByRole('link', { name: /^Home \(\d+\)$/ }).waitFor()
       await noSideScroll(pia)
       await shot(pia, 'notifications-375')
       const link = pia.getByRole('link', { name: 'Open: The review round is decided.' }).first()
       assert.match((await link.getAttribute('href')) ?? '', /^\/r\/[^/]+$/)
       await pia.getByRole('button', { name: 'Mark all notifications as read' }).click()
       await pia.getByText('You have read everything.').waitFor()
-      await pia.getByRole('link', { name: 'Notifications', exact: true }).waitFor()
+      await pia.getByRole('link', { name: 'Home', exact: true }).waitFor()
       await pia.reload()
       await pia.getByText('You have read everything.').waitFor()
     })
@@ -2439,13 +2443,13 @@ const main = async (): Promise<void> => {
     await step('a template editor copies the intake template, adds a section and an ending choice, fixes a validation error, previews and publishes; an author starts a report from the new version', async () => {
       const pia = pilotPage
       assert.ok(pia !== undefined, 'no pilot page')
-      await pia.goto(`${pilotUrl}/admin`)
-      await pia.getByRole('heading', { name: 'Administration' }).waitFor()
-      await pia.getByLabel('E-mail', { exact: true }).fill('pia.pilot@case-desk.test')
-      await pia.getByLabel('Name', { exact: true }).fill('Pia Pilot')
-      await pia.getByLabel('Capability', { exact: true }).selectOption('template_editor')
-      await pia.getByRole('button', { name: 'Give capability' }).click()
-      await pia.waitForFunction(() => /Template editor\s*Remove/.test(document.body.innerText))
+      // NOTE: `grant-admin` gave Pia Templates; the toggle shows it.
+      await pia.goto(`${pilotUrl}/people`)
+      await pia.getByRole('heading', { name: 'People', level: 1 }).waitFor()
+      assert.ok(
+        await pia.getByRole('checkbox', { name: 'Templates for Pia Pilot' }).first().isChecked(),
+        'Pia has no Templates',
+      )
 
       await pia.setViewportSize({ width: 1280, height: 900 })
       await pia.goto(`${pilotUrl}/templates`)
@@ -2720,16 +2724,10 @@ const main = async (): Promise<void> => {
         const pia = pilotPage
         assert.ok(pia !== undefined, 'no pilot page')
         await pia.setViewportSize({ width: 1280, height: 900 })
-        await pia.goto(`${pilotUrl}/admin`)
-        await pia.getByRole('heading', { name: 'Administration' }).waitFor()
-        await pia.getByLabel('Unit name').fill('Empty Unit')
-        await pia.getByLabel('Unit code').fill('EMP')
-        await pia.getByRole('button', { name: 'Create unit' }).click()
-        await pia.getByRole('list', { name: 'Units' }).getByText('Empty Unit').waitFor()
-        await pia.getByLabel('E-mail', { exact: true }).fill(emptyEmail)
-        await pia.getByLabel('Name', { exact: true }).fill('Eve Empty')
-        await pia.getByLabel('Unit', { exact: true }).selectOption({ label: 'Empty Unit (EMP)' })
-        await pia.getByRole('button', { name: 'Give capability' }).click()
+        await pia.goto(`${pilotUrl}/people`)
+        await pia.getByRole('heading', { name: 'People', level: 1 }).waitFor()
+        await createUnit(pia, 'Empty Unit', 'EMP')
+        await addPerson(pia, { email: emptyEmail, name: 'Eve Empty', unit: 'Empty Unit (EMP)' })
         await pia.getByRole('textbox', { name: 'Link' }).waitFor()
         const eveLink = await copiedLink(pia)
         const eve = await person(launched)
@@ -2804,8 +2802,8 @@ const main = async (): Promise<void> => {
           endSessionsOf: async name => {
             const pia = pilotPage
             assert.ok(pia !== undefined, 'no pilot page')
-            await pia.goto(`${pilotUrl}/admin`)
-            await pia.getByRole('button', { name: `Issue reset link for ${name}` }).click()
+            await pia.goto(`${pilotUrl}/people`)
+            await pia.getByRole('button', { name: `Issue reset link for ${name}` }).first().click()
             const link = await copiedLink(pia)
             const other = await person(launched)
             await other.goto(link)

@@ -6,7 +6,7 @@ Quoroom runs from this repository in three ways:
 - **B. The pilot stack** on Cloudflare's free plan ([`alchemy.pilot.run.ts`](../alchemy.pilot.run.ts)): one Worker, its own EU database, no demo data. This is what a real pilot runs on.
 - **C. The demo stack** on Cloudflare ([`alchemy.run.ts`](../alchemy.run.ts)): the latest version (`app`) next to the frozen iterations (`iter1`, `iter2`), on one shared database.
 
-Running a pilot once it is deployed (first administrator, theme, units, backups, failures) is in [`pilot.md`](pilot.md).
+Running a pilot once it is deployed (first account, theme, units, backups, failures) is in [`pilot.md`](pilot.md).
 
 ## Prerequisites
 
@@ -26,14 +26,14 @@ The latest code is Quoroom only; the Worker has no runtime mode (D20). A demo an
 
 ## Accounts
 
-There is no sign-up page and no password is ever printed. The operator creates the first administrator of an environment with a one-time link; everyone else is invited in the app (see [`pilot.md`](pilot.md)).
+There is no sign-up page and no password is ever printed. The operator creates the first account of an environment, with People, Theme and Templates, with a one-time link; everyone else is invited in the app (see [`pilot.md`](pilot.md)).
 
 ```sh
 pnpm grant-admin --env <demo|pilot|workerd|test-NAME> --email <email> --name "<name>" [--origin <address>]
 pnpm grant-admin --env <...> --email <email> --reset
 ```
 
-It appends idempotent SQL to `.local/grants-<env>.sql` (git-ignored) and prints the link once, valid for 72 hours. The stack of that environment imports the file on its next deploy; the `workerd` build embeds `grants-workerd.sql` on its next start. `--origin` is the address of the app, so the printed link is complete (default for `workerd`: `http://127.0.0.1:8787`). The account gets the administrator and template editor capabilities. `--reset` makes a reset link for an account that already has a password.
+It appends idempotent SQL to `.local/grants-<env>.sql` (git-ignored) and prints the link once, valid for 72 hours. The stack of that environment imports the file on its next deploy; the `workerd` build embeds `grants-workerd.sql` on its next start. `--origin` is the address of the app, so the printed link is complete (default for `workerd`: `http://127.0.0.1:8787`). The account gets People, Theme and Templates. `--reset` makes a reset link for an account that already has a password.
 
 `pnpm users:add` creates accounts on the demo only (`.local/users.sql`), for the frozen `iter2`. A pilot does not use it.
 
@@ -54,7 +54,7 @@ Non-secret settings are plain variables: the notification timings in minutes `NO
 
 ```sh
 pnpm workerd                    # demo data, http://127.0.0.1:8787
-pnpm workerd --mode pilot       # pilot data: built-in templates and the first administrator only
+pnpm workerd --mode pilot       # pilot data: built-in templates and the first account only
 pnpm workerd --mode pilot 8790  # choose a port
 ```
 
@@ -108,7 +108,7 @@ Everything fits in the free plan. No payment card is needed; when a daily limit 
    ```sh
    pnpm exec alchemy profile edit --add Cloudflare
    ```
-3. **Grant the first administrator** (writes `.local/grants-pilot.sql`):
+3. **Grant the first account** (writes `.local/grants-pilot.sql`):
    ```sh
    pnpm grant-admin --env pilot --email <email> --name "<name>" --origin https://pilot.<subdomain>.workers.dev
    ```
@@ -138,7 +138,7 @@ pnpm test-env:up test_<name> --fast   # Worker test-<name>-pilot, reminders afte
 pnpm test-env:down test_<name>        # deletes it, and .local/grants-test-<name>.sql
 ```
 
-`--invocation-logs` turns on invocation logs, for CPU measurements; the pilot never has them. `pnpm grant-admin --env test-<name>` grants its first administrator.
+`--invocation-logs` turns on invocation logs, for CPU measurements; the pilot never has them. `pnpm grant-admin --env test-<name>` grants its first account.
 
 ## C. The demo stack on Cloudflare
 

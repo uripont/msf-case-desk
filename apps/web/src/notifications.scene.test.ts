@@ -35,7 +35,7 @@ const notificationsScreen = (
     clickedLinkTo('/notifications'),
     Message.GotNotificationsMessage({
       message: Notifications.Message.SucceededLoadNotifications({
-        scope: { reportId: '', generation: 1 },
+        scope: { reportId: '', generation: 2 },
         page: { items, unread },
         zone: 'Europe/Madrid',
         nowMs: NOW,
@@ -75,24 +75,21 @@ describe('the notifications screen', () => {
     )
   })
 
-  test('the navigation shows how many are not read', () => {
+  test('the Home tab shows how many are not read', () => {
     scene(
       { update, view },
       given(notificationsScreen([entry('n1', 'review_request')], 3)),
-      expect(role('link', { name: 'Notifications (3)' })).toHaveAttr(
-        'href',
-        '/notifications',
-      ),
+      expect(role('link', { name: 'Home (3)' })).toHaveAttr('href', '/'),
     )
   })
 
-  test('with none unread the navigation has no number and the screen says so', () => {
+  test('with none unread the Home tab has no number and the screen says so', () => {
     scene(
       { update, view },
       given(
         notificationsScreen([entry('n1', 'round_decided', { readAt: NOW })], 0),
       ),
-      expect(role('link', { name: 'Notifications' })).toExist(),
+      expect(role('link', { name: 'Home' })).toExist(),
       expect(text('You have read everything.')).toExist(),
     )
   })

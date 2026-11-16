@@ -127,7 +127,7 @@ describe('pnpm grant-admin (D21)', () => {
     )
   })
 
-  test('creates an administrator and template editor with no password; the link sets one, once', async () => {
+  test('creates a holder of People, Theme and Templates with no password; the link sets one, once', async () => {
     const w = world()
     const token = 'f'.repeat(64)
     const { sql } = await issued(token, 'activate')
@@ -137,10 +137,11 @@ describe('pnpm grant-admin (D21)', () => {
       { email: EMAIL, password_hash: 'pbkdf2-sha256$0$!$!' },
     ])
     expect(
-      rows(w.sql, 'SELECT capability, unit_id FROM capability_grants ORDER BY capability'),
+      rows(w.sql, 'SELECT capability, unit_id FROM permission_grants ORDER BY capability'),
     ).toEqual([
-      { capability: 'admin', unit_id: '' },
+      { capability: 'people', unit_id: '' },
       { capability: 'template_editor', unit_id: '' },
+      { capability: 'theme', unit_id: '' },
     ])
 
     const info = await w.publicCall(c => c.InspectLink({ token }))
@@ -154,7 +155,8 @@ describe('pnpm grant-admin (D21)', () => {
     )
     expect(Result.isSuccess(consumed) && consumed.success.grants).toEqual(
       expect.arrayContaining([
-        { capability: 'admin' },
+        { capability: 'people' },
+        { capability: 'theme' },
         { capability: 'template_editor' },
       ]),
     )
@@ -180,13 +182,13 @@ describe('pnpm grant-admin (D21)', () => {
       c.ConsumeLink({ token: first.token, password: 'a long synthetic passphrase' }),
     )
     const before = rows(w.sql, 'SELECT * FROM users')
-    const grantsBefore = rows(w.sql, 'SELECT * FROM capability_grants')
+    const grantsBefore = rows(w.sql, 'SELECT * FROM permission_grants')
     // NOTE: the import re-runs the whole file on every start, and a second
     // `pnpm grant-admin` for the same email appends more statements.
     const second = await issued('b'.repeat(64), 'activate', 'a2')
     w.sql.raw.exec(first.sql + second.sql + first.sql)
     expect(rows(w.sql, 'SELECT * FROM users')).toEqual(before)
-    expect(rows(w.sql, 'SELECT * FROM capability_grants')).toEqual(grantsBefore)
+    expect(rows(w.sql, 'SELECT * FROM permission_grants')).toEqual(grantsBefore)
     expect(rows(w.sql, 'SELECT * FROM users')[0]?.['password_hash']).not.toBe(
       'pbkdf2-sha256$0$!$!',
     )
@@ -201,12 +203,12 @@ describe('pnpm grant-admin (D21)', () => {
     const w = world()
     const { sql } = await issued('7'.repeat(64), 'activate')
     w.sql.raw.exec(sql)
-    expect(rows(w.sql, 'SELECT capability FROM capability_grants')).toHaveLength(2)
-    w.sql.raw.exec(`DELETE FROM capability_grants WHERE capability = 'template_editor'`)
+    expect(rows(w.sql, 'SELECT capability FROM permission_grants')).toHaveLength(3)
+    w.sql.raw.exec(`DELETE FROM permission_grants WHERE capability <> 'people'`)
     // NOTE: a redeploy or a restart of workerd imports the same file again.
     w.sql.raw.exec(sql)
     w.sql.raw.exec(sql)
-    expect(rows(w.sql, 'SELECT capability FROM capability_grants')).toEqual([{ capability: 'admin' }])
+    expect(rows(w.sql, 'SELECT capability FROM permission_grants')).toEqual([{ capability: 'people' }])
     expect(rows(w.sql, 'SELECT id FROM applied_imports')).toEqual([{ id: 'imp-' + '7'.repeat(64) }])
   })
 
@@ -216,7 +218,7 @@ describe('pnpm grant-admin (D21)', () => {
     w.sql.raw.exec(sql)
     w.sql.raw.exec(sql)
     expect(rows(w.sql, 'SELECT id FROM users')).toHaveLength(1)
-    expect(rows(w.sql, 'SELECT capability FROM capability_grants')).toHaveLength(2)
+    expect(rows(w.sql, 'SELECT capability FROM permission_grants')).toHaveLength(3)
     expect(rows(w.sql, 'SELECT id FROM invitations')).toHaveLength(1)
     expect(rows(w.sql, "SELECT id FROM audit_events WHERE action LIKE 'account.operator%'")).toHaveLength(1)
     expect(rows(w.sql, 'SELECT id FROM applied_imports')).toHaveLength(1)

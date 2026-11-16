@@ -35,9 +35,9 @@ export const CONFIG: AppConfig = { theme: DEFAULT_THEME }
 export const PAGE_PATHS = {
   Home: '/',
   Account: '/account',
-  Unit: '/unit',
+  Unit: '/reports/unit',
   Reports: '/reports',
-  Admin: '/admin',
+  People: '/people',
 } as const
 
 export const clickedLinkTo = (path: string): Message =>

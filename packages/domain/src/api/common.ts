@@ -105,7 +105,7 @@ export class NotFound extends Schema.TaggedError<NotFound>()('NotFound', {}) {}
 //   this one.
 // - `not_permitted` is `NotPermitted` with reason `not_permitted`: the caller
 //   is a member who sees the thing but lacks the permission or capability.
-//   For capabilities of the deployment (administrator, template editor,
+//   For capabilities of the deployment (people, theme, template editor,
 //   author in a unit) `authorize` never looks at the target, so a caller
 //   without the capability gets this answer whether the target exists or not.
 // - `read_only` is `NotPermitted` with reason `read_only`: an archived report

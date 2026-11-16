@@ -1,4 +1,4 @@
-// Grants the first administrator of an environment (D21). It never writes or
+// Grants the first account of an environment (D21). It never writes or
 // prints a password: it appends idempotent SQL to .local/grants-<env>.sql,
 // which the environment's stack imports (importFiles) or the workerd build
 // embeds, and prints the one-time link (72 hours) once.
@@ -7,8 +7,8 @@
 //   pnpm grant-admin --env workerd --email sam@example.org --reset
 //
 // --env is demo, pilot, workerd or test-<name>. --origin is the address the app
-// is served from, to print a complete link. The account gets the administrator
-// and template editor capabilities; author is granted in the app, per unit.
+// is served from, to print a complete link. The account gets the People, Theme
+// and Templates capabilities; author is granted in the app, per unit.
 // Run it again for the same email to get a fresh activation link. --reset
 // issues a reset link for an account that already has a password. For
 // `--env workerd` it first checks, in the local database, that the account

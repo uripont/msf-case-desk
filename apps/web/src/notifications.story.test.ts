@@ -8,7 +8,7 @@ import * as Notifications from './quoroom/notifications'
 
 // NOTE: Marking read, the unread count and its poll.
 
-const SCOPE = { reportId: '', generation: 1 }
+const SCOPE = { reportId: '', generation: 2 }
 
 const got = (message: Notifications.Message) =>
   Message.GotNotificationsMessage({ message })

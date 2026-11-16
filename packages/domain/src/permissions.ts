@@ -12,7 +12,8 @@ import {
 // NOTE: One authorization function, `authorize(account, report, action)`,
 // for the capabilities of the deployment and the roles of a template.
 //
-// Capabilities: administrator, template editor, author in a unit, operator.
+// Capabilities, one per top tab of the app: `people` (accounts, units,
+// capabilities and links), `theme`, `template_editor` and `author` in a unit.
 // None of them gives access to a report. Access to a report comes only from
 // being one of its members: an author of the drafting role, or a participant
 // of a round in a reviewing role.
@@ -23,7 +24,7 @@ import {
 // exist". `not_permitted` is for a member who sees the thing but lacks the
 // permission (or the capability). `read_only` is an archived report.
 
-export type Capability = 'admin' | 'template_editor' | 'author' | 'operator'
+export type Capability = 'people' | 'theme' | 'template_editor' | 'author'
 
 export type Grant = Readonly<{ capability: Capability; unit?: string }>
 
@@ -63,9 +64,6 @@ export type Action =
   | Readonly<{ type: 'manage_units' }>
   | Readonly<{ type: 'manage_grants' }>
   | Readonly<{ type: 'issue_reset' }>
-  | Readonly<{ type: 'grant_first_admin' }>
-  | Readonly<{ type: 'deploy' }>
-  | Readonly<{ type: 'backup' }>
   | Readonly<{
       type:
         | 'create_template'
@@ -173,14 +171,11 @@ const authorizeDeployment = (
 ): Authorization | undefined => {
   switch (action.type) {
     case 'set_theme':
+      return need(hasCapability(account, 'theme'))
     case 'manage_units':
     case 'manage_grants':
     case 'issue_reset':
-      return need(hasCapability(account, 'admin'))
-    case 'grant_first_admin':
-    case 'deploy':
-    case 'backup':
-      return need(hasCapability(account, 'operator'))
+      return need(hasCapability(account, 'people'))
     case 'create_template':
     case 'edit_template':
     case 'copy_template':
@@ -196,6 +191,26 @@ const authorizeDeployment = (
       return undefined
   }
 }
+
+// NOTE: Somebody must always be able to manage people: a change that would
+// leave no active account holding `people` is refused. `accounts` is every
+// account of the deployment with its grants as they are now.
+export type PeopleHolderCandidate = Readonly<{
+  id: string
+  active: boolean
+  grants: ReadonlyArray<Grant>
+}>
+
+export const leavesNobodyForPeople = (
+  accounts: ReadonlyArray<PeopleHolderCandidate>,
+  revoked: Readonly<{ accountId: string; capability: Capability }>,
+): boolean =>
+  !accounts.some(
+    candidate =>
+      candidate.active &&
+      hasCapability(candidate, 'people') &&
+      !(candidate.id === revoked.accountId && revoked.capability === 'people'),
+  )
 
 const hasPermission = (role: Role, permission: Permission): boolean =>
   role.permissions.includes(permission)

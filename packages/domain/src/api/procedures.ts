@@ -29,7 +29,8 @@ export type Audience =
   | 'public'
   // Any signed-in account, about itself.
   | 'signed_in'
-  | 'admin'
+  | 'people'
+  | 'theme'
   | 'template_editor'
   // An author capability in the unit.
   | 'unit_author'
@@ -64,14 +65,14 @@ export const PROCEDURES = {
   GetMe: p('session', 'signed_in'),
   SignOut: p('session', 'signed_in'),
   SetNotificationPreferences: p('session', 'signed_in', [], 'D19. Authors only matter.'),
-  ListAccounts: p('accounts', 'admin', ['manage_grants']),
-  IssueReset: p('accounts', 'admin', ['issue_reset']),
-  GrantCapability: p('accounts', 'admin', ['manage_grants']),
-  RevokeCapability: p('accounts', 'admin', ['manage_grants']),
+  ListAccounts: p('accounts', 'people', ['manage_grants']),
+  IssueReset: p('accounts', 'people', ['issue_reset']),
+  GrantCapability: p('accounts', 'people', ['manage_grants']),
+  RevokeCapability: p('accounts', 'people', ['manage_grants'], 'Refused when no active account would keep `people` (leavesNobodyForPeople).'),
   // -- units
-  ListUnits: p('units', 'signed_in', [], 'Administrators all units; others the units they hold a grant in.'),
-  CreateUnit: p('units', 'admin', ['manage_units']),
-  UpdateUnit: p('units', 'admin', ['manage_units']),
+  ListUnits: p('units', 'signed_in', [], 'People holders all units; others the units they hold a grant in.'),
+  CreateUnit: p('units', 'people', ['manage_units']),
+  UpdateUnit: p('units', 'people', ['manage_units']),
   ListUnitMembers: p('units', 'unit_author', ['invite_to_unit']),
   InviteToUnit: p('units', 'unit_author', ['invite_to_unit']),
   // -- committees
@@ -98,7 +99,7 @@ export const PROCEDURES = {
   DiscardTemplateDraft: p('templates', 'template_editor', ['edit_template'], 'Only a draft; also one that cannot be opened.'),
   // -- theme
   GetTheme: p('theme', 'signed_in'),
-  UpdateTheme: p('theme', 'admin', ['set_theme']),
+  UpdateTheme: p('theme', 'theme', ['set_theme']),
   // -- reports
   ListCaseFiles: p('reports', 'unit_author', ['create_report']),
   UpdateCaseFile: p('reports', 'report_author', ['view_report'], 'Authors of a report of the case file.'),
@@ -156,7 +157,7 @@ export const PROCEDURES = {
   ResolveComment: p('comments', 'report_author', ['reply']),
   // -- grid and audit
   GetGrid: p('grid_audit', 'report_author', ['read_grid']),
-  ListAuditEvents: p('grid_audit', 'report_author', ['read_audit'], 'Subject `template`: template editor; `theme`: administrator.'),
+  ListAuditEvents: p('grid_audit', 'report_author', ['read_audit'], 'Subject `template`: template editor; `theme`: the `theme` capability.'),
   // -- notifications
   ListNotifications: p('notifications', 'signed_in'),
   GetUnreadCount: p('notifications', 'signed_in'),

@@ -19,6 +19,8 @@ import {
   update,
 } from './main'
 import { Failure } from './quoroom/failure'
+import * as Inbox from './quoroom/inbox'
+import * as Notifications from './quoroom/notifications'
 
 const password = Redacted.make('synthetic-password')
 
@@ -36,6 +38,24 @@ describe('sign-in', () => {
       update,
       given(configuredModel),
       message(Message.SucceededCheckSession({ me: SYNTHETIC_ME })),
+      Command.resolve(
+        Inbox.LoadInbox,
+        Inbox.Message.SucceededLoadInbox({
+          scope: { reportId: '', generation: 1 },
+          page: { items: [] },
+          zone: 'Europe/Madrid',
+          nowMs: 0,
+        }),
+      ),
+      Command.resolve(
+        Notifications.LoadNotifications,
+        Notifications.Message.SucceededLoadNotifications({
+          scope: { reportId: '', generation: 1 },
+          page: { items: [], unread: 0 },
+          zone: 'Europe/Madrid',
+          nowMs: 0,
+        }),
+      ),
       model(next => {
         expect(next.session).toEqual({ _tag: 'SignedIn', me: SYNTHETIC_ME })
         expect(next.route._tag).toBe('Home')
@@ -55,6 +75,24 @@ describe('sign-in', () => {
       }),
       Command.expectHas(SignIn({ email: SYNTHETIC_USER.email, password })),
       Command.resolve(SignIn, Message.SucceededSignIn({ me: SYNTHETIC_ME })),
+      Command.resolve(
+        Inbox.LoadInbox,
+        Inbox.Message.SucceededLoadInbox({
+          scope: { reportId: '', generation: 2 },
+          page: { items: [] },
+          zone: 'Europe/Madrid',
+          nowMs: 0,
+        }),
+      ),
+      Command.resolve(
+        Notifications.LoadNotifications,
+        Notifications.Message.SucceededLoadNotifications({
+          scope: { reportId: '', generation: 2 },
+          page: { items: [], unread: 0 },
+          zone: 'Europe/Madrid',
+          nowMs: 0,
+        }),
+      ),
       model(next => {
         expect(next.session._tag).toBe('SignedIn')
         expect(Redacted.value(next.loginForm.password)).toBe('')

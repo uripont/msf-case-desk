@@ -140,7 +140,7 @@ export const runKeyboard = async (ctx: KeyboardContext): Promise<void> => {
       const page = await newPage(engine.browser)
       try {
         await signInByKeyboard(page, base, emails.admin, password)
-        for (const path of ['/reports', '/unit', '/templates', `/r/${reports.closing}`, `/r/${reports.closing}/grid`]) {
+        for (const path of ['/reports', '/reports/unit', '/templates', `/r/${reports.closing}`, `/r/${reports.closing}/grid`]) {
           await page.goto(`${base}${path}`)
           await page.locator('h1').first().waitFor()
           await page.waitForTimeout(600)

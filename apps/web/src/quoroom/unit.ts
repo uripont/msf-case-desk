@@ -24,6 +24,7 @@ import {
   loadingText,
   pageShell,
   panel,
+  reportsNav,
   selectField,
   smallButton,
   submitButton,
@@ -32,7 +33,7 @@ import {
 
 // NOTE: The author's unit screens (D13). Co-authors of a
 // report are existing authors of its unit, chosen by ID: an author cannot
-// create one here, and an administrator grants the author capability. What an
+// create one here, and someone with People gives Reports in a unit. What an
 // author can do here is invite a person to take part in the unit's reviews,
 // register reviewers (the unit's own entry: name, number, and whether WhatsApp
 // consent is requested, which only the person can give) and group them into
@@ -713,7 +714,7 @@ const authorsPanel = (model: Model, h: HtmlBuilder<Message>) =>
       ),
     ],
     Option.some(
-      'Co-authors of a report are chosen from this list, by an author of the report. An administrator grants the author capability.',
+      'Co-authors of a report are chosen from this list, by an author of the report. Someone with People gives Reports in this unit.',
     ),
   )
 
@@ -973,7 +974,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
             h.p(
               [h.Role('alert'), h.Class('text-lg font-medium text-msf-alert')],
               [
-                'You are not an author in this unit. An administrator can grant you that.',
+                'You cannot write reports in this unit. Someone with People can give you that.',
               ],
             ),
           ]
@@ -998,28 +999,32 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
 export const view = Submodel.defineView<Model, Message>((model, h) =>
   LoadState.match(model.load, {
     Loading: () =>
-      pageShell(h, 'My unit', 'My unit', '', [loadingText(h, 'Loading.')]),
+      pageShell(h, 'Reviewers and committees', 'Reviewers and committees', '', [loadingText(h, 'Loading.')]),
     Failed: ({ failure }) =>
-      pageShell(h, 'My unit', 'My unit', '', [
+      pageShell(h, 'Reviewers and committees', 'Reviewers and committees', '', [
         failureAlert(h, failure),
         smallButton(h, 'Try again', Message.ClickedRetryLoad()),
       ]),
     Loaded: () =>
       Array.isReadonlyArrayEmpty(model.units)
-        ? pageShell(h, 'My unit', 'My unit', '', [
+        ? pageShell(h, 'Reviewers and committees', 'Reviewers and committees', '', [
             h.p(
               [h.Class('text-lg text-msf-ink')],
               [
-                'There is no unit yet. An administrator creates units and grants the author capability.',
+                'There is no unit yet. Someone with People creates units and gives Reports in a unit.',
               ],
             ),
           ])
         : pageShell(
             h,
-            'My unit',
-            'My unit',
+            'Reviewers and committees',
+            'Reviewers and committees',
             'Invite people, register reviewers and group them into committees.',
-            [unitChooser(model, h), ...dataView(model, h)],
+            [
+              reportsNav(h, 'unit'),
+              unitChooser(model, h),
+              ...dataView(model, h),
+            ],
           ),
   }),
 )

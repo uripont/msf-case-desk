@@ -5,7 +5,7 @@ The contract lives in `packages/domain/src/api/`, and the `Authentication` middl
 ## Rules of the contract
 
 - **One refusal for forbidden and missing.** `NotFound` carries no fields. A report, draft, revision or template the caller may not see answers exactly like one that does not exist.
-- **Refusals map one to one** (`refusalToError`, `api/common.ts`) from the three answers of `authorize`: `not_found` is `NotFound`; `not_permitted` is `NotPermitted` with reason `not_permitted`; `read_only` (an archived report refuses every write) is `NotPermitted` with reason `read_only`. A non-member of a report, and anyone asking about a report that does not exist, always gets `NotFound`; `NotPermitted` reaches only someone who already sees the thing (a member without the permission) or, for the capabilities of the deployment (administrator, template editor, author in a unit, operator), a caller without the capability, whether or not the target exists, since `authorize` never looks at it. Reads and writes that call `authorize` declare both errors.
+- **Refusals map one to one** (`refusalToError`, `api/common.ts`) from the three answers of `authorize`: `not_found` is `NotFound`; `not_permitted` is `NotPermitted` with reason `not_permitted`; `read_only` (an archived report refuses every write) is `NotPermitted` with reason `read_only`. A non-member of a report, and anyone asking about a report that does not exist, always gets `NotFound`; `NotPermitted` reaches only someone who already sees the thing (a member without the permission) or, for the capabilities of the deployment (`people`, `theme`, `template_editor`, author in a unit), a caller without the capability, whether or not the target exists, since `authorize` never looks at it. Reads and writes that call `authorize` declare both errors.
 - **Errors.** `NotPermitted` (reason: `not_permitted`, `read_only`), `Conflict` (reason: `stale_save`, `stale_base`, `already_exists`, `duplicate`, `not_latest`, `already_sent`, `share_incomplete`, `changed_meanwhile`), `Validation` (coded `Problem`s from the domain: source, code, path, fixed message, never report text), `DeadlinePassed`, `NotAllowedInState` (a `FlowErrorCode` or `SaveErrorCode`), `StorageUnavailable`, and for the public group `InvalidCredentials`, `Throttled` (retry delay, at most 15 minutes) and `LinkInvalid` (unknown, used and expired links alike). Every procedure declares an error schema; reads cannot fail with `Conflict` or `DeadlinePassed`.
 - **Payload size** (CPU, see [`decisions.md`](decisions.md), "Logs and CPU"). One section per save (`SaveSection`), one section per share request (`ShareSection`), then a guarded `FinishShare`. No procedure takes or returns a whole document: working copies, drafts and revisions are read as an outline and then section by section.
 - **Sharing on a stale base** does not fail: `FinishShare` answers `ShareOutcome` with `kind: 'stale_base'` and the `Comparison` (conflicts of `compareDrafts`, each side holding only the item). The author resolves with `ResolveMerge` (choices by conflict key) and shares again. "Share and publish" is `FinishShare` with `publish` set.
@@ -27,7 +27,7 @@ Not part of the RPC (`images-route.ts`). `POST /api/images?<ImageChunkQuery>` ta
 
 ## Procedures by area
 
-Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_editor`, `unit_author` (author capability in the unit), `report_author` (member of the report's drafting role with the permission that `authorize` checks), `reviewer` (participant of the round in a reviewing role). The `authorize` actions are those of `packages/domain/src/permissions.ts`; the handler runs them on every request.
+Caller: `public`, `signed_in` (any account, about itself), `people`, `theme`, `template_editor`, `unit_author` (author capability in the unit), `report_author` (member of the report's drafting role with the permission that `authorize` checks), `reviewer` (participant of the round in a reviewing role). The `authorize` actions are those of `packages/domain/src/permissions.ts`; the handler runs them on every request.
 
 ### session (6)
 
@@ -44,18 +44,18 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListAccounts` | admin | `manage_grants` |  |
-| `IssueReset` | admin | `issue_reset` |  |
-| `GrantCapability` | admin | `manage_grants` |  |
-| `RevokeCapability` | admin | `manage_grants` |  |
+| `ListAccounts` | people | `manage_grants` |  |
+| `IssueReset` | people | `issue_reset` |  |
+| `GrantCapability` | people | `manage_grants` |  |
+| `RevokeCapability` | people | `manage_grants` | Refused when no active account would keep `people` (`leavesNobodyForPeople`). |
 
 ### units (5)
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListUnits` | signed_in | - | Administrators all units; others the units they hold a grant in. |
-| `CreateUnit` | admin | `manage_units` |  |
-| `UpdateUnit` | admin | `manage_units` |  |
+| `ListUnits` | signed_in | - | People holders all units; others the units they hold a grant in. |
+| `CreateUnit` | people | `manage_units` |  |
+| `UpdateUnit` | people | `manage_units` |  |
 | `ListUnitMembers` | unit_author | `invite_to_unit` |  |
 | `InviteToUnit` | unit_author | `invite_to_unit` | One shape for new and existing accounts; a link only for a new one (D13). |
 
@@ -89,7 +89,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
 | `GetTheme` | signed_in | - |  |
-| `UpdateTheme` | admin | `set_theme` | Refuses unreadable contrast, unknown tokens and an incomplete logo. The logo is read with `context=theme` by any signed-in account. |
+| `UpdateTheme` | theme | `set_theme` | Refuses unreadable contrast, unknown tokens and an incomplete logo. The logo is read with `context=theme` by any signed-in account. |
 
 ### reports (7)
 
@@ -183,7 +183,7 @@ Caller: `public`, `signed_in` (any account, about itself), `admin`, `template_ed
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
 | `GetGrid` | report_author | `read_grid` |  |
-| `ListAuditEvents` | report_author | `read_audit` | Subject `template`: template editor; `theme`: administrator. `kind` filters a report's log on the server before the page is cut. |
+| `ListAuditEvents` | report_author | `read_audit` | Subject `template`: template editor; `theme`: the `theme` capability. `kind` filters a report's log on the server before the page is cut. |
 
 ### notifications (5)
 

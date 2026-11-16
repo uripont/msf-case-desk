@@ -63,7 +63,7 @@ export const samples = (ctx: SweepContext): Record<AppRoute['_tag'], Sample> => 
     Account: { route: AppRoute.Account(), actor: 'admin' },
     Unit: { route: AppRoute.Unit(), actor: 'admin', empty: AppRoute.Unit() },
     Reports: { route: AppRoute.Reports(), actor: 'admin', empty: AppRoute.Reports() },
-    Admin: { route: AppRoute.Admin(), actor: 'admin' },
+    People: { route: AppRoute.People(), actor: 'admin' },
     Theme: { route: AppRoute.Theme(), actor: 'admin' },
     Templates: { route: AppRoute.Templates(), actor: 'admin' },
     TemplateEditor: {

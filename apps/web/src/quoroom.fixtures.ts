@@ -18,7 +18,11 @@ export const SYNTHETIC_TOKEN = Redacted.make('0123456789abcdef0123456789abcdef')
 export const withGrants = (grants: MeView['grants']): MeView =>
   MeView.make({ ...SYNTHETIC_ME, grants })
 
-export const ADMIN_ME = withGrants([{ capability: 'admin' }])
+export const ADMIN_ME = withGrants([
+  { capability: 'people' },
+  { capability: 'theme' },
+  { capability: 'template_editor' },
+])
 
 export const AUTHOR_ME = withGrants([
   { capability: 'author', unit: SYNTHETIC_UNIT.id },

@@ -406,7 +406,7 @@ export const reportRepositoryContract = (
     test('capability grants: an author grant needs its unit, repeats are reported, revoke removes', async () => {
       const { r } = await setup()
       const grant = (
-        capability: 'admin' | 'author',
+        capability: 'people' | 'author',
         unitId: string | null,
       ) => ({
         userId: BOB,
@@ -422,10 +422,10 @@ export const reportRepositoryContract = (
         'granted',
       )
       expect(await run(r.grantCapability(grant('author', UNIT)))).toBe('exists')
-      expect(await run(r.grantCapability(grant('admin', null)))).toBe('granted')
+      expect(await run(r.grantCapability(grant('people', null)))).toBe('granted')
       expect(await run(r.listGrants(BOB))).toHaveLength(2)
-      expect(await run(r.revokeCapability(BOB, 'admin', null))).toBe(true)
-      expect(await run(r.revokeCapability(BOB, 'admin', null))).toBe(false)
+      expect(await run(r.revokeCapability(BOB, 'people', null))).toBe(true)
+      expect(await run(r.revokeCapability(BOB, 'people', null))).toBe(false)
       expect(await run(r.listGrants(BOB))).toHaveLength(1)
     })
 
@@ -465,6 +465,13 @@ export const reportRepositoryContract = (
           addedAt: 5,
         }),
       ])
+      expect(await run(r.listReviewerUnits(CAROL))).toEqual([
+        { unitId: UNIT, userId: CAROL },
+      ])
+      expect(await run(r.listReviewerUnits())).toContainEqual({
+        unitId: UNIT,
+        userId: CAROL,
+      })
     })
 
     test('an invitation sets the password once, ends sessions and cannot be reused or used late', async () => {

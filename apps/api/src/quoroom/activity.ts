@@ -499,7 +499,7 @@ export const activityHandlers: Pick<
     }),
 
   // NOTE: newest first. A report's log is for its authors, a template's for
-  // template editors and the theme's for administrators.
+  // template editors and the theme's for whoever holds Theme.
   ListAuditEvents: ({ subject, before, kind, limit }) =>
     Effect.gen(function* () {
       const db = yield* store

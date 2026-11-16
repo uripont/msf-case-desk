@@ -868,6 +868,13 @@ export const makeMemoryReportRepository = (
           addAudit(auditInput)
           return 'linked' as const
         }),
+      listReviewerUnits: userId =>
+        Effect.sync(() =>
+          unitReviewers
+            .filter(r => userId === undefined || r.userId === userId)
+            .map(r => ({ unitId: r.unitId, userId: r.userId }))
+            .sort(byKey(r => r.unitId, r => r.userId)),
+        ),
       listUnitReviewers: unitId =>
         Effect.sync(() =>
           unitReviewers

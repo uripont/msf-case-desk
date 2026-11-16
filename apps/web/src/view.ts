@@ -16,7 +16,6 @@ import {
   themeOf,
 } from './main'
 import * as Account from './quoroom/account'
-import * as Admin from './quoroom/admin'
 import * as Audit from './quoroom/audit'
 import * as Comments from './quoroom/comments'
 import * as Downloads from './quoroom/downloads'
@@ -27,6 +26,7 @@ import * as Inbox from './quoroom/inbox'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
 import * as Notifications from './quoroom/notifications'
+import * as People from './quoroom/people'
 import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
@@ -74,45 +74,77 @@ const wordmark = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const hasCapability = (
   me: MeView,
-  capability: 'admin' | 'author' | 'template_editor',
+  capability: MeView['grants'][number]['capability'],
 ): boolean => Array.some(me.grants, grant => grant.capability === capability)
 
-type PageLink = { route: AppRoute; label: string }
+type Tab = 'home' | 'reports' | 'templates' | 'people' | 'theme'
+type PageLink = { route: AppRoute; tab: Tab; label: string }
 
+// NOTE: One tab per permission, shown only to whoever holds it; Home is for
+// everyone and holds the inbox and the notifications.
 const pageLinksFor = (
   me: MeView,
   unread: number,
 ): ReadonlyArray<PageLink> => [
-  { route: AppRoute.Home(), label: 'Home' },
+  {
+    route: AppRoute.Home(),
+    tab: 'home',
+    label: Notifications.unreadLabel('Home', unread),
+  },
   ...(hasCapability(me, 'author')
-    ? [
-        { route: AppRoute.Unit(), label: 'My unit' },
-        { route: AppRoute.Reports(), label: 'Reports' },
-      ]
-    : []),
-  ...(hasCapability(me, 'admin')
-    ? [
-        { route: AppRoute.Admin(), label: 'Administration' },
-        { route: AppRoute.Theme(), label: 'Theme' },
-      ]
+    ? [{ route: AppRoute.Reports(), tab: 'reports' as const, label: 'Reports' }]
     : []),
   ...(hasCapability(me, 'template_editor')
-    ? [{ route: AppRoute.Templates(), label: 'Templates' }]
+    ? [
+        {
+          route: AppRoute.Templates(),
+          tab: 'templates' as const,
+          label: 'Templates',
+        },
+      ]
     : []),
-  { route: AppRoute.Inbox(), label: 'Inbox' },
-  {
-    route: AppRoute.Notifications(),
-    label: Notifications.unreadLabel('Notifications', unread),
-  },
-  { route: AppRoute.Account(), label: 'My account' },
+  ...(hasCapability(me, 'people')
+    ? [{ route: AppRoute.People(), tab: 'people' as const, label: 'People' }]
+    : []),
+  ...(hasCapability(me, 'theme')
+    ? [{ route: AppRoute.Theme(), tab: 'theme' as const, label: 'Theme' }]
+    : []),
 ]
+
+const tabOf = (route: AppRoute): Option.Option<Tab> =>
+  AppRoute.match<Option.Option<Tab>>(route, {
+    Home: () => Option.some('home'),
+    Inbox: () => Option.some('home'),
+    Notifications: () => Option.some('home'),
+    Revision: () => Option.some('home'),
+    Reports: () => Option.some('reports'),
+    Unit: () => Option.some('reports'),
+    Report: () => Option.some('reports'),
+    Share: () => Option.some('reports'),
+    Names: () => Option.some('reports'),
+    Publish: () => Option.some('reports'),
+    Drafts: () => Option.some('reports'),
+    Draft: () => Option.some('reports'),
+    Comments: () => Option.some('reports'),
+    Grid: () => Option.some('reports'),
+    Audit: () => Option.some('reports'),
+    Downloads: () => Option.some('reports'),
+    Templates: () => Option.some('templates'),
+    TemplateEditor: () => Option.some('templates'),
+    People: () => Option.some('people'),
+    Theme: () => Option.some('theme'),
+    Account: () => Option.none(),
+    Link: () => Option.none(),
+    NotFound: () => Option.none(),
+  })
 
 const pageLink = (
   model: Model,
-  { route, label }: PageLink,
+  { route, tab, label }: PageLink,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const isCurrent = pathOf(model.route) === pathOf(route)
+  const isExact = pathOf(model.route) === pathOf(route)
+  const isInTab = Option.contains(tabOf(model.route), tab)
   return h.a(
     [
       h.Href(pathOf(route)),
@@ -120,12 +152,12 @@ const pageLink = (
         clsx(
           'cursor-pointer text-base transition-colors',
           focusRing,
-          isCurrent
+          isInTab
             ? 'font-medium text-msf-black underline decoration-msf-red decoration-2 underline-offset-[6px]'
             : 'text-msf-grey hover:text-msf-ink',
         ),
       ),
-      ...(isCurrent ? [h.AriaCurrent('page')] : []),
+      ...(isExact ? [h.AriaCurrent('page')] : isInTab ? [h.AriaCurrent('true')] : []),
     ],
     [label],
   )
@@ -153,7 +185,17 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
           h.div(
             [h.Class('flex items-baseline gap-x-4')],
             [
-              h.span([], [me.name]),
+              h.a(
+                [
+                  h.Href(pathOf(AppRoute.Account())),
+                  h.AriaLabel(`${me.name}, my account`),
+                  ...(AppRoute.guards.Account(model.route)
+                    ? [h.AriaCurrent('page')]
+                    : []),
+                  h.Class(clsx(textButtonClassName, focusRing)),
+                ],
+                [me.name],
+              ),
               h.button(
                 [
                   h.Class(textButtonClassName),
@@ -232,12 +274,9 @@ const statusMessage = (
     ],
   )
 
-const welcomePage = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.section(
-    [
-      h.AriaLabel('Welcome'),
-      h.Class('flex flex-col items-start gap-4 pb-14 pt-12 md:pb-20 md:pt-16'),
-    ],
+const welcomeHeading = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.div(
+    [h.Class('flex flex-col items-start gap-4')],
     [
       h.h1(
         [
@@ -251,9 +290,57 @@ const welcomePage = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.p(
         [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
         [
-          `Reports for ${themeOf(model).organisationName} are written, reviewed and approved here. They will appear on this page.`,
+          `Reports for ${themeOf(model).organisationName} are written, reviewed and approved here.`,
         ],
       ),
+    ],
+  )
+
+const welcomePage = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.section(
+    [
+      h.AriaLabel('Welcome'),
+      h.Class('flex flex-col items-start gap-4 pb-14 pt-12 md:pb-20 md:pt-16'),
+    ],
+    [welcomeHeading(model, h)],
+  )
+
+// NOTE: Home: what waits for you to review, what happened, and for an author
+// the way to their reports.
+const homePage = (
+  model: Model,
+  me: MeView,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.section(
+    [
+      h.AriaLabel('Home'),
+      h.Class('flex max-w-3xl flex-col gap-10 pb-14 pt-12 md:pt-16'),
+    ],
+    [
+      welcomeHeading(model, h),
+      hasCapability(me, 'author')
+        ? h.a(
+            [
+              h.Href(pathOf(AppRoute.Reports())),
+              h.Class(clsx('text-lg', textButtonClassName)),
+            ],
+            ['Your reports'],
+          )
+        : h.empty,
+      h.submodel({
+        slotId: 'inbox',
+        model: model.inbox,
+        view: Inbox.view,
+        toParentMessage: message => Message.GotInboxMessage({ message }),
+      }),
+      h.submodel({
+        slotId: 'notifications',
+        model: model.notifications,
+        view: Notifications.view,
+        toParentMessage: message =>
+          Message.GotNotificationsMessage({ message }),
+      }),
     ],
   )
 
@@ -390,10 +477,11 @@ const accountPage = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const pageView = (
   model: Model,
+  me: MeView,
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> =>
   AppRoute.match<ReadonlyArray<Html>>(model.route, {
-        Home: () => [welcomePage(model, h)],
+        Home: () => [homePage(model, me, h)],
         Account: () => [accountPage(model, h)],
         Unit: () => [
           h.submodel({
@@ -403,12 +491,12 @@ const pageView = (
             toParentMessage: message => Message.GotUnitMessage({ message }),
           }),
         ],
-        Admin: () => [
+        People: () => [
           h.submodel({
-            slotId: 'admin',
-            model: model.admin,
-            view: Admin.view,
-            toParentMessage: message => Message.GotAdminMessage({ message }),
+            slotId: 'people',
+            model: model.people,
+            view: People.view,
+            toParentMessage: message => Message.GotPeopleMessage({ message }),
           }),
         ],
         Theme: () => [
@@ -496,23 +584,8 @@ const pageView = (
             toParentMessage: message => Message.GotHistoryMessage({ message }),
           }),
         ],
-        Inbox: () => [
-          h.submodel({
-            slotId: 'inbox',
-            model: model.inbox,
-            view: Inbox.view,
-            toParentMessage: message => Message.GotInboxMessage({ message }),
-          }),
-        ],
-        Notifications: () => [
-          h.submodel({
-            slotId: 'notifications',
-            model: model.notifications,
-            view: Notifications.view,
-            toParentMessage: message =>
-              Message.GotNotificationsMessage({ message }),
-          }),
-        ],
+        Inbox: () => [homePage(model, me, h)],
+        Notifications: () => [homePage(model, me, h)],
         Comments: ({ reportId }) => [
           h.submodel({
             slotId: `comments-${reportId}`,
@@ -586,7 +659,7 @@ const mainView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
               ),
             ],
             SignedOut: () => [loginPage(model, h)],
-            SignedIn: () => pageView(model, h),
+            SignedIn: ({ me }) => pageView(model, me, h),
           }),
   })
 

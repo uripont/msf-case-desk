@@ -22,7 +22,7 @@ import {
   update,
 } from './main'
 import { ADMIN_ME } from './quoroom.fixtures'
-import * as Admin from './quoroom/admin'
+import * as People from './quoroom/people'
 import { Failure } from './quoroom/failure'
 import * as Link from './quoroom/link'
 import * as Review from './quoroom/review'
@@ -47,8 +47,8 @@ describe('routes', () => {
   test('each address opens its screen', () => {
     expect(routeOf('/')).toEqual(AppRoute.Home())
     expect(routeOf('/account')).toEqual(AppRoute.Account())
-    expect(routeOf('/unit')).toEqual(AppRoute.Unit())
-    expect(routeOf('/admin')).toEqual(AppRoute.Admin())
+    expect(routeOf('/reports/unit')).toEqual(AppRoute.Unit())
+    expect(routeOf('/people')).toEqual(AppRoute.People())
     expect(routeOf('/link')).toEqual(AppRoute.Link())
     expect(routeOf('/r/rep-1')).toEqual(AppRoute.Report({ reportId: 'rep-1' }))
     expect(routeOf('/r/rep-1/rev/3')).toEqual(
@@ -75,7 +75,7 @@ describe('routes', () => {
       AppRoute.Home(),
       AppRoute.Account(),
       AppRoute.Unit(),
-      AppRoute.Admin(),
+      AppRoute.People(),
       AppRoute.Link(),
       AppRoute.Report({ reportId: 'rep-1' }),
       AppRoute.Revision({ reportId: 'rep-1', revision: 2 }),
@@ -154,46 +154,46 @@ describe('a deep link opened signed out', () => {
   })
 
   test('a session that ends while using a screen returns to that screen', () => {
-    const onAdmin = update(
+    const onPeople = update(
       update(
-        configuredAt('/admin'),
+        configuredAt('/people'),
         Message.SucceededCheckSession({ me: ADMIN_ME }),
       ).model,
       Message.EndedSession(),
     ).model
-    expect(onAdmin.session._tag).toBe('SignedOut')
-    expect(onAdmin.route).toEqual(AppRoute.Admin())
-    const back = update(onAdmin, Message.SucceededSignIn({ me: ADMIN_ME }))
-    expect(back.model.route).toEqual(AppRoute.Admin())
+    expect(onPeople.session._tag).toBe('SignedOut')
+    expect(onPeople.route).toEqual(AppRoute.People())
+    const back = update(onPeople, Message.SucceededSignIn({ me: ADMIN_ME }))
+    expect(back.model.route).toEqual(AppRoute.People())
     const other = update(
-      onAdmin,
+      onPeople,
       Message.SucceededSignIn({ me: { ...ADMIN_ME, id: 'another-admin' } }),
     )
-    expect(other.model.route).toEqual(AppRoute.Admin())
-    expect(namesOf(other)).toContain('LoadAdmin')
+    expect(other.model.route).toEqual(AppRoute.People())
+    expect(namesOf(other)).toContain('LoadPeople')
   })
 
   test('the settings and the session may arrive in either order, and the screen loads once', () => {
     const configFirst = update(
       update(
-        openedAt('/admin').model,
+        openedAt('/people').model,
         Message.SucceededLoadConfig({ config: CONFIG }),
       ).model,
       Message.SucceededCheckSession({ me: ADMIN_ME }),
     )
     const sessionFirst = update(
       update(
-        openedAt('/admin').model,
+        openedAt('/people').model,
         Message.SucceededCheckSession({ me: ADMIN_ME }),
       ).model,
       Message.SucceededLoadConfig({ config: CONFIG }),
     )
     const loads = (step: ReturnType<typeof update>) =>
-      namesOf(step).filter(name => name === Admin.LoadAdmin.name)
+      namesOf(step).filter(name => name === People.LoadPeople.name)
     expect(loads(configFirst)).toHaveLength(1)
     expect(loads(sessionFirst)).toHaveLength(1)
     const early = update(
-      openedAt('/admin').model,
+      openedAt('/people').model,
       Message.SucceededCheckSession({ me: ADMIN_ME }),
     )
     expect(namesOf(early)).toEqual([])
@@ -207,24 +207,24 @@ describe('keeping the address in step', () => {
   ).model
 
   test('a link inside the app opens its screen and pushes the address', () => {
-    const clicked = update(signedIn, clickedLinkTo('/admin'))
-    expect(clicked.model.route).toEqual(AppRoute.Admin())
+    const clicked = update(signedIn, clickedLinkTo('/people'))
+    expect(clicked.model.route).toEqual(AppRoute.People())
     expect(argsOf(clicked, PushUrl.name)).toEqual({
-      url: 'https://quoroom.test/admin',
+      url: 'https://quoroom.test/people',
     })
-    expect(namesOf(clicked)).toContain('LoadAdmin')
+    expect(namesOf(clicked)).toContain('LoadPeople')
   })
 
   test('the address that follows a push changes nothing more', () => {
-    const clicked = update(signedIn, clickedLinkTo('/admin')).model
-    const echoed = update(clicked, Message.ChangedUrl({ url: urlOf('/admin') }))
+    const clicked = update(signedIn, clickedLinkTo('/people')).model
+    const echoed = update(clicked, Message.ChangedUrl({ url: urlOf('/people') }))
     expect(echoed.model).toBe(clicked)
     expect(echoed.commands).toBeUndefined()
   })
 
   test('the back button opens the earlier screen without pushing', () => {
-    const onAdmin = update(signedIn, clickedLinkTo('/admin')).model
-    const back = update(onAdmin, Message.ChangedUrl({ url: urlOf('/') }))
+    const onPeople = update(signedIn, clickedLinkTo('/people')).model
+    const back = update(onPeople, Message.ChangedUrl({ url: urlOf('/') }))
     expect(back.model.route).toEqual(AppRoute.Home())
     expect(namesOf(back)).not.toContain(PushUrl.name)
   })
@@ -243,8 +243,8 @@ describe('keeping the address in step', () => {
   })
 
   test('signing out goes back to the start page', () => {
-    const onAdmin = update(signedIn, clickedLinkTo('/admin')).model
-    const out = update(onAdmin, Message.ClickedSignOut())
+    const onPeople = update(signedIn, clickedLinkTo('/people')).model
+    const out = update(onPeople, Message.ClickedSignOut())
     expect(out.model.route).toEqual(AppRoute.Home())
     expect(argsOf(out, ReplaceUrl.name)).toEqual({ url: '/' })
   })

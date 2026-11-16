@@ -27,7 +27,6 @@ import {
 } from '@case-desk/domain'
 
 import * as Account from './quoroom/account'
-import * as Admin from './quoroom/admin'
 import {
   SESSION_ENDED_EVENT,
   sessionEvents,
@@ -44,6 +43,7 @@ import * as Inbox from './quoroom/inbox'
 import * as Link from './quoroom/link'
 import * as Names from './quoroom/names'
 import * as Notifications from './quoroom/notifications'
+import * as People from './quoroom/people'
 import * as Publish from './quoroom/publish'
 import * as Report from './quoroom/report'
 import * as Reports from './quoroom/reports'
@@ -114,7 +114,7 @@ export const Model = Schema.Struct({
   origin: Schema.String,
   maybeLink: Schema.Option(Link.Model),
   account: Account.Model,
-  admin: Admin.Model,
+  people: People.Model,
   themeScreen: ThemeScreen.Model,
   templates: Templates.Model,
   templateEditor: TemplateEditor.Model,
@@ -161,7 +161,7 @@ export const Message = defineMessageUnion({
   FailedLoadLogo: {},
   GotLinkMessage: { message: Link.Message },
   GotAccountMessage: { message: Account.Message },
-  GotAdminMessage: { message: Admin.Message },
+  GotPeopleMessage: { message: People.Message },
   GotThemeScreenMessage: { message: ThemeScreen.Message },
   GotTemplatesMessage: { message: Templates.Message },
   GotTemplateEditorMessage: { message: TemplateEditor.Message },
@@ -256,7 +256,7 @@ export const initialModel = Model.make({
   origin: '',
   maybeLink: Option.none(),
   account: Account.initialModel,
-  admin: Admin.initialModel,
+  people: People.initialModel,
   themeScreen: ThemeScreen.initialModel,
   templates: Templates.initialModel,
   templateEditor: TemplateEditor.initialModel,
@@ -464,7 +464,7 @@ const signedOut = (model: Model): Model =>
   modifyFields(model, {
     session: () => Session.SignedOut(),
     account: () => Account.initialModel,
-    admin: () => Admin.initialModel,
+    people: () => People.initialModel,
     themeScreen: () => ThemeScreen.initialModel,
     templates: () => Templates.initialModel,
     templateEditor: () => TemplateEditor.initialModel,
@@ -633,11 +633,12 @@ const foldAccount = Update.foldChild({
   toParentMessage: message => Message.GotAccountMessage({ message }),
 })
 
-const foldAdmin = Update.foldChild({
-  update: Admin.update,
-  read: (model: Model) => Option.some(model.admin),
-  write: (model, nextAdmin) => modifyFields(model, { admin: () => nextAdmin }),
-  toParentMessage: message => Message.GotAdminMessage({ message }),
+const foldPeople = Update.foldChild({
+  update: People.update,
+  read: (model: Model) => Option.some(model.people),
+  write: (model, nextPeople) =>
+    modifyFields(model, { people: () => nextPeople }),
+  toParentMessage: message => Message.GotPeopleMessage({ message }),
 })
 
 const foldUnit = Update.foldChild({
@@ -687,13 +688,13 @@ const enterAccount = Update.foldChildStep({
   toParentMessage: message => Message.GotAccountMessage({ message }),
 })
 
-const enterAdmin = (origin: string) =>
+const enterPeople = (origin: string) =>
   Update.foldChildStep({
-    update: (child: Admin.Model) => Admin.enter(child, origin),
-    read: (model: Model) => Option.some(model.admin),
-    write: (model, nextAdmin) =>
-      modifyFields(model, { admin: () => nextAdmin }),
-    toParentMessage: message => Message.GotAdminMessage({ message }),
+    update: (child: People.Model) => People.enter(child, origin),
+    read: (model: Model) => Option.some(model.people),
+    write: (model, nextPeople) =>
+      modifyFields(model, { people: () => nextPeople }),
+    toParentMessage: message => Message.GotPeopleMessage({ message }),
   })
 
 const enterThemeScreen = Update.foldChildStep({
@@ -948,14 +949,28 @@ const enterReport = (origin: string, reportId: string) =>
     toParentMessage: message => Message.GotReportMessage({ message }),
   })
 
+// NOTE: Home holds the inbox and the notifications; `/inbox` and
+// `/notifications` open it too.
+const enterHome = (model: Model): Update.Return<Model, Message> => {
+  const inbox = enterInbox(model.origin)(model)
+  const notifications = enterNotifications(inbox.model)
+  return {
+    model: notifications.model,
+    commands: [...(inbox.commands ?? []), ...(notifications.commands ?? [])],
+  }
+}
+
+const isHomeFailed = (model: Model): boolean =>
+  isFailedLoad(model.inbox.load) || isFailedLoad(model.notifications.load)
+
 const enterRoute = (
   model: Model,
   route: AppRoute,
 ): Update.Return<Model, Message> =>
   AppRoute.match<Update.Return<Model, Message>>(route, {
-    Home: () => ({ model }),
+    Home: () => enterHome(model),
     Account: () => enterAccount(model),
-    Admin: () => enterAdmin(model.origin)(model),
+    People: () => enterPeople(model.origin)(model),
     Theme: () => enterThemeScreen(model),
     Templates: () => enterTemplates(model.origin)(model),
     TemplateEditor: ({ templateId, version }) =>
@@ -971,8 +986,8 @@ const enterRoute = (
       enterHistory(model.origin, reportId, Option.none())(model),
     Draft: ({ reportId, draft }) =>
       enterHistory(model.origin, reportId, Option.some(draft))(model),
-    Inbox: () => enterInbox(model.origin)(model),
-    Notifications: () => enterNotifications(model),
+    Inbox: () => enterHome(model),
+    Notifications: () => enterHome(model),
     Comments: ({ reportId }) => enterComments(model.origin, reportId)(model),
     Grid: ({ reportId }) => enterGrid(model.origin, reportId)(model),
     Audit: ({ reportId }) => enterAudit(model.origin, reportId)(model),
@@ -1161,11 +1176,11 @@ const isFailedLoad = (load: Readonly<{ _tag: string }>): boolean =>
 // screen holds nothing to keep, so it is loaded again after the sign-in.
 const hasFailedLoad = (model: Model): boolean =>
   AppRoute.match(model.route, {
-    Home: () => false,
+    Home: () => isHomeFailed(model),
     Link: () => false,
     NotFound: () => false,
     Account: () => isFailedLoad(model.account.load),
-    Admin: () => isFailedLoad(model.admin.load),
+    People: () => isFailedLoad(model.people.load),
     Theme: () => isFailedLoad(model.themeScreen.load),
     Templates: () => isFailedLoad(model.templates.load),
     TemplateEditor: () => isFailedLoad(model.templateEditor.load),
@@ -1179,8 +1194,8 @@ const hasFailedLoad = (model: Model): boolean =>
     Publish: () => isFailedLoad(model.publish.load),
     Drafts: () => isFailedLoad(model.history.load),
     Draft: () => isFailedLoad(model.history.load),
-    Inbox: () => isFailedLoad(model.inbox.load),
-    Notifications: () => isFailedLoad(model.notifications.load),
+    Inbox: () => isHomeFailed(model),
+    Notifications: () => isHomeFailed(model),
     Comments: () => isFailedLoad(model.comments.load),
     Grid: () => isFailedLoad(model.grid.load),
     Audit: () => isFailedLoad(model.audit.load),
@@ -1298,7 +1313,7 @@ const updateWithoutDialogFocus = (model: Model, message: Message) =>
     FailedLoadLogo: () => ({ model }),
     GotLinkMessage: ({ message }) => foldLink(model, message),
     GotAccountMessage: ({ message }) => foldAccount(model, message),
-    GotAdminMessage: ({ message }) => foldAdmin(model, message),
+    GotPeopleMessage: ({ message }) => foldPeople(model, message),
     GotThemeScreenMessage: ({ message }) => foldThemeScreen(model, message),
     GotTemplatesMessage: ({ message }) => foldTemplates(model, message),
     GotTemplateEditorMessage: ({ message }) =>

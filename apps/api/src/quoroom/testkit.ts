@@ -126,8 +126,8 @@ export const PEOPLE = [
 export const SECRET = 'Ana Garcia'
 export const TEXT = 'Ana Garcia reported the matter on Monday.'
 
-// NOTE: `adam` is an administrator and `tess` a template editor: the
-// deployment capabilities, with no part in any report.
+// NOTE: `adam` holds People and Theme, `tess` Templates: the deployment
+// capabilities, with no part in any report.
 const PEOPLE_ACCOUNTS = [
   ['alice', 'Alice Author', U1],
   ['bob', 'Bob Author', U1],
@@ -137,13 +137,13 @@ const PEOPLE_ACCOUNTS = [
   ['ivy', 'Ivy Observer', null],
   ['frank', 'Frank Outsider', null],
   ['gina', 'Gina Other Unit', U2],
-  ['adam', 'Adam Administrator', null, 'admin'],
+  ['adam', 'Adam Administrator', null, 'people'],
   ['tess', 'Tess Template Editor', null, 'template_editor'],
 ] as const
 
 export type PersonName = (typeof PEOPLE_ACCOUNTS)[number][0]
 
-type PersonRow = readonly [string, string, string | null, ('admin' | 'template_editor')?]
+type PersonRow = readonly [string, string, string | null, ('people' | 'template_editor')?]
 
 const countingStatement = (
   statement: SqlStatement,
@@ -232,6 +232,17 @@ export const makeWorld = async (scenario: Scenario) => {
       }),
     )
     if (created._tag !== 'Created') throw new Error(`account ${id}`)
+    if (capability === 'people') {
+      await run(
+        repository.grantCapability({
+          userId: id,
+          capability: 'theme',
+          unitId: null,
+          grantedBy: null,
+          grantedAt: 1,
+        }),
+      )
+    }
     const token = Array.from(`${id}`, ch => ch.charCodeAt(0).toString(16)).join('').padEnd(64, '0').slice(0, 64)
     tokens.set(id, token)
     await Effect.runPromise(

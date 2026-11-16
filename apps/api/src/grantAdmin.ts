@@ -6,7 +6,7 @@ import { LINK_TTL_MS, UNUSABLE_PASSWORD_HASH } from './links.ts'
 // workerd), so it must be safe to run any number of times. Each generated
 // block carries a unique import id: every statement runs only while that id is
 // absent from `applied_imports`, and the last statement records it. So a block
-// applies once, and a re-run never re-grants what an administrator revoked.
+// applies once, and a re-run never re-grants what was revoked in the app.
 // Inside a block: the account is inserted only if its email is absent, the
 // grants look the account up by email, and the link is inserted only for an
 // account that has no password yet (a reset: that has one). No password is ever
@@ -66,11 +66,12 @@ export const grantAdminSql = (input: GrantAdminInput): string => {
     return `${link}\n${audit}\n${record}\n`
   }
   const grant = (capability: string): string =>
-    `INSERT INTO capability_grants (user_id, capability, unit_id, granted_by, granted_at) SELECT id, ${quote(capability)}, '', NULL, ${now} FROM users WHERE email = ${email} AND ${fresh} ON CONFLICT (user_id, capability, unit_id) DO NOTHING;`
+    `INSERT INTO permission_grants (user_id, capability, unit_id, granted_by, granted_at) SELECT id, ${quote(capability)}, '', NULL, ${now} FROM users WHERE email = ${email} AND ${fresh} ON CONFLICT (user_id, capability, unit_id) DO NOTHING;`
   return [
     `INSERT INTO users (id, email, name, password_hash) SELECT ${quote(input.accountId)}, ${email}, ${quote(input.name.trim())}, ${unusable} WHERE ${fresh} ON CONFLICT (email) DO NOTHING;`,
     `INSERT INTO account_profiles (user_id, whatsapp_consent, notify_on_approval, active, created_at) ${account.replace('SELECT id', `SELECT id, 0, 0, 1, ${now}`)} AND ${fresh} ON CONFLICT (user_id) DO NOTHING;`,
-    grant('admin'),
+    grant('people'),
+    grant('theme'),
     grant('template_editor'),
     link,
     audit,

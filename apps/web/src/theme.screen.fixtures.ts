@@ -5,7 +5,7 @@ import { Message, update } from './main'
 import { adminModel } from './quoroom.fixtures'
 import * as ThemeScreen from './quoroom/themeScreen'
 
-// NOTE: With invented data: an administrator opens the theme screen.
+// NOTE: With invented data: a holder of Theme opens the theme screen.
 
 export const SAVED_THEME: Theme = {
   ...DEFAULT_THEME,

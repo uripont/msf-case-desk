@@ -91,7 +91,13 @@ Each version is one Worker: static assets for the web app, and `/api/*` for the 
 
 Passwords are hashed with PBKDF2-SHA256 from Web Crypto, 100,000 iterations (the most Workers allow), in the format `pbkdf2-sha256$<iterations>$<salt>$<hash>`. Sessions store only the SHA-256 of a random 32-byte hex token; the cookie `case_desk_session` is `HttpOnly`, `Secure`, `SameSite=Strict` and limited to `/api`. The frozen `iter2` reads the same `users` and `sessions` rows, so these formats and a frozen test vector must stay valid in every later version.
 
-There is no sign-up page. Accounts come from invitations and one-time links (D13), and the first administrator of an environment from `pnpm grant-admin` (D21). On the demo only, `pnpm users:add` writes password hashes to `.local/users.sql` (git-ignored), imported after the migrations on each deploy, for accounts shared with `iter2`.
+There is no sign-up page. Accounts come from invitations and one-time links (D13), and the first account of an environment from `pnpm grant-admin` (D21), with People, Theme and Templates. On the demo only, `pnpm users:add` writes password hashes to `.local/users.sql` (git-ignored), imported after the migrations on each deploy, for accounts shared with `iter2`.
+
+## Permissions: one capability, one tab
+
+- **Four capabilities**, each a top tab shown only to whoever holds it: People (accounts, units, grants, activation and reset links), Theme, Templates, and Reports in a unit. Home is for everyone and holds the inbox and the notifications; `/inbox` and `/notifications` open it. A reviewer is not a capability and sees only Home. The account page is reached from the person's name in the header.
+- **Somebody keeps People.** `leavesNobodyForPeople` (domain, unit-tested) refuses a revocation that leaves no active account with People; `RevokeCapability` answers with a validation message.
+- **Migration 0010.** `capability_grants` has a `CHECK` naming `admin`, and SQLite cannot change a CHECK, so the grants move to a new table, `permission_grants`, with no value list. Each `admin` grant becomes `people` and `theme`; `template_editor` and `author` are copied; the old `operator` actions are gone. The old table stays, unused (expand-only); unknown names are ignored when grants are read. A grant file made by an older `grant-admin` and not yet imported writes to the old table, so make it again.
 
 ## Demo and pilot run the same code (D20)
 
@@ -142,7 +148,7 @@ A signed-in call answered `Unauthorised` announces `quoroom-session-ended` on th
 
 ## The theme
 
-- **The logo is served behind the session.** It is an image owned by the theme (uploaded by administrators, readable by any signed-in account). `/api/config` is public and cached for 30 s and carries only a reference to the logo, so the sign-in screen shows the name and colours but no logo. There is no second public image path to keep safe.
+- **The logo is served behind the session.** It is an image owned by the theme (uploaded by whoever holds Theme, readable by any signed-in account). `/api/config` is public and cached for 30 s and carries only a reference to the logo, so the sign-in screen shows the name and colours but no logo. There is no second public image path to keep safe.
 - **Saving.** `UpdateTheme` refuses unreadable contrast, unknown tokens and an incomplete or foreign logo; the screen checks the same `validateTheme` while typing. Saving applies the theme without a reload; a fresh load may see the old public config for up to 30 s. A replaced logo is removed by the notification pass's stale-image cleanup after a day.
 - **Header and footer.** A template's own texts replace the theme's; the theme's apply where the template has none.
 
@@ -192,7 +198,7 @@ For a warm section read at 5 ms, about 0.7 ms is our own code, each of its 3 D1 
 **How to measure again.** On a test environment with invocation logs (they carry `cpuTimeMs`, `wallTimeMs` and `outcome` per request):
 
 ```sh
-pnpm -s grant-admin --env test-<name> --email admin@example.org --name "Admin Example" \
+pnpm -s grant-admin --env test-<name> --email alma.ortega@example.org --name "Alma Ortega" \
   --origin https://test-<name>-pilot.<subdomain>.workers.dev > /tmp/admin-link.txt
 pnpm test-env:up test_<name> --fast --invocation-logs
 pnpm rehearsal https://test-<name>-pilot.<subdomain>.workers.dev --admin-link-file /tmp/admin-link.txt

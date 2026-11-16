@@ -6,7 +6,7 @@ import { join } from 'node:path'
 // demo:  the built-in templates, the account file from `pnpm users:add`, and
 //        the grants from `pnpm grant-admin --env workerd`.
 // pilot: the built-in templates, then the grants file if it exists (D21: the
-//        first administrator, written by `pnpm grant-admin --env workerd`).
+//        first account, written by `pnpm grant-admin --env workerd`).
 //        Never `users.sql`, which holds demo passwords.
 // The synthetic triage cases (`seed/demo-cases.sql`) are only for the frozen
 // iteration 2 on the Cloudflare demo stack, so neither mode embeds them.

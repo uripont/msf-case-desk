@@ -19,12 +19,14 @@ import {
   adminModel,
   authorModel,
   linkPageModel,
+  signedInAs,
+  withGrants,
 } from './quoroom.fixtures'
 import * as Account from './quoroom/account'
-import * as Admin from './quoroom/admin'
 import { Failure } from './quoroom/failure'
 import { givenLinkOf } from './quoroom/issuedLink'
 import * as Link from './quoroom/link'
+import * as People from './quoroom/people'
 import * as Unit from './quoroom/unit'
 import { view } from './view'
 
@@ -97,75 +99,136 @@ describe('link scene', () => {
 })
 
 describe('navigation scene', () => {
-  test('an administrator sees administration, an author sees the unit', () => {
+  test('each permission is a tab, and the name opens the account', () => {
     scene(
       { update, view },
       given(adminModel),
-      expect(role('link', { name: 'Administration' })).toExist(),
-      expect(role('link', { name: 'My account' })).toExist(),
-      expect(role('link', { name: 'My unit' })).toBeAbsent(),
+      expect(role('link', { name: 'Home' })).toExist(),
+      expect(role('link', { name: 'People' })).toExist(),
+      expect(role('link', { name: 'Theme' })).toExist(),
+      expect(role('link', { name: 'Templates' })).toExist(),
+      expect(role('link', { name: 'Reports' })).toBeAbsent(),
+      expect(
+        role('link', { name: `${SYNTHETIC_ME.name}, my account` }),
+      ).toHaveAttr('href', '/account'),
     )
     scene(
       { update, view },
       given(authorModel),
-      expect(role('link', { name: 'My unit' })).toExist(),
-      expect(role('link', { name: 'Administration' })).toBeAbsent(),
+      expect(role('link', { name: 'Reports' })).toExist(),
+      expect(role('link', { name: 'People' })).toBeAbsent(),
+      expect(role('link', { name: 'Your reports' })).toExist(),
+    )
+  })
+
+  test('a reviewer sees only Home, with the inbox and the notifications', () => {
+    scene(
+      { update, view },
+      given(signedInAs(withGrants([]))),
+      expect(role('link', { name: 'Home' })).toExist(),
+      expect(role('link', { name: 'Reports' })).toBeAbsent(),
+      expect(role('link', { name: 'Templates' })).toBeAbsent(),
+      expect(role('link', { name: 'People' })).toBeAbsent(),
+      expect(role('link', { name: 'Theme' })).toBeAbsent(),
+      expect(role('heading', { name: 'Inbox' })).toExist(),
+      expect(role('heading', { name: 'Notifications' })).toExist(),
     )
   })
 })
 
-describe('administration scene', () => {
-  test('the administrator creates a unit and hands over a link', () => {
+const PERSON = {
+  id: 'account-2',
+  email: 'ana@case-desk.test',
+  name: 'Ana Example',
+  active: true,
+  passwordSetAt: 1_000,
+  grants: [{ capability: 'author' as const, unit: SYNTHETIC_UNIT.id }],
+  reviewerIn: [],
+}
+
+const REVIEWER = {
+  id: 'account-3',
+  email: 'rui@case-desk.test',
+  name: 'Rui Reviewer',
+  active: true,
+  grants: [],
+  reviewerIn: [SYNTHETIC_UNIT.id],
+}
+
+const peoplePage = (accounts: ReadonlyArray<typeof PERSON | typeof REVIEWER>) =>
+  enteredPage(adminModel, 'People', [
+    Message.GotPeopleMessage({
+      message: People.Message.SucceededLoadPeople({
+        units: [SYNTHETIC_UNIT],
+        accounts,
+      }),
+    }),
+  ])
+
+describe('people scene', () => {
+  test('a unit folder holds its authors and, greyed, its reviewers', () => {
     scene(
       { update, view },
-      given(
-        enteredPage(adminModel, 'Admin', [
-          Message.GotAdminMessage({
-            message: Admin.Message.SucceededLoadAdmin({
-              units: [],
-              accounts: [],
-            }),
-          }),
-        ]),
+      given(peoplePage([PERSON, REVIEWER])),
+      expect(role('heading', { name: 'People', level: 1 })).toExist(),
+      expect(
+        role('checkbox', { name: 'Reports in Synthetic Unit for Ana Example' }),
+      ).toBeChecked(),
+      expect(role('checkbox', { name: 'People for Ana Example', checked: false })).toExist(),
+      expect(text('Reviewer')).toExist(),
+      expect(role('checkbox', { name: 'People for Rui Reviewer' })).toBeAbsent(),
+      expect(text('Invited, not activated yet')).toExist(),
+      click(role('button', { name: /Synthetic Unit/ })),
+      expect(role('checkbox', { name: 'People for Ana Example' })).toBeAbsent(),
+    )
+  })
+
+  test('a toggle saves at once, and goes back when the save fails', () => {
+    scene(
+      { update, view },
+      given(peoplePage([PERSON])),
+      click(role('checkbox', { name: 'Theme for Ana Example' })),
+      expect(role('checkbox', { name: 'Theme for Ana Example' })).toBeDisabled(),
+      expect(role('checkbox', { name: 'Theme for Ana Example' })).toBeChecked(),
+      Command.resolve(
+        People.ChangeCapability,
+        People.Message.FailedChangeCapability({
+          key: People.toggleKey(PERSON.id, 'theme', Option.none()),
+          failure: Failure.NotAllowed(),
+        }),
       ),
-      expect(role('heading', { name: 'Administration' })).toExist(),
+      expect(role('checkbox', { name: 'Theme for Ana Example', checked: false })).toExist(),
+      expect(role('alert')).toExist(),
+    )
+  })
+
+  test('a new unit is created on the same page', () => {
+    scene(
+      { update, view },
+      given(peoplePage([])),
       type(role('textbox', { name: 'Unit name' }), 'Synthetic Unit'),
       type(role('textbox', { name: 'Unit code' }), 'SYN'),
       click(role('button', { name: 'Create unit' })),
       Command.resolve(
-        Admin.CreateUnit,
-        Admin.Message.SucceededCreateUnit({ unit: SYNTHETIC_UNIT }),
+        People.CreateUnit,
+        People.Message.SucceededCreateUnit({ unit: SYNTHETIC_UNIT }),
       ),
-      expect(text('Synthetic Unit')).toExist(),
+      expect(text('Synthetic Unit (SYN)')).toExist(),
     )
   })
 
-  test('a granted new person comes with a one-time link', () => {
+  test('an added person comes with a one-time link', () => {
     scene(
       { update, view },
-      given(
-        enteredPage(adminModel, 'Admin', [
-          Message.GotAdminMessage({
-            message: Admin.Message.SucceededLoadAdmin({
-              units: [SYNTHETIC_UNIT],
-              accounts: [],
-            }),
-          }),
-        ]),
-      ),
-      type(role('textbox', { name: 'E-mail' }), 'new@case-desk.test'),
-      type(role('textbox', { name: 'Name' }), 'New Author'),
-      click(role('button', { name: 'Give capability' })),
+      given(peoplePage([])),
+      type(role('textbox', { name: 'E-mail' }), PERSON.email),
+      type(role('textbox', { name: 'Name' }), PERSON.name),
+      click(role('checkbox', { name: 'Templates' })),
+      click(role('button', { name: 'Add person' })),
       Command.resolve(
-        Admin.GrantCapability,
-        Admin.Message.SucceededGrantCapability({
-          account: {
-            id: 'account-9',
-            email: 'new@case-desk.test',
-            name: 'New Author',
-            active: true,
-            grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
-          },
+        People.AddPerson,
+        People.Message.SucceededAddPerson({
+          account: PERSON,
           link: Option.some(
             givenLinkOf({
               purpose: 'activate',

@@ -706,7 +706,7 @@ export const allowUnit = (
     )
   })
 
-// NOTE: the capabilities of the deployment (administrator, template editor,
+// NOTE: the capabilities of the deployment (People, Theme, Templates,
 // author in a unit), for any action `authorize` decides from grants alone. The
 // grants are read here and nowhere else; the answer is `NotPermitted` whether
 // or not the thing the caller names exists.

@@ -6,8 +6,8 @@
 # Both serve the same Quoroom code (D20); the mode chooses the imports and the
 # data folder.
 # demo (default): the built-in templates, the accounts from `pnpm users:add`
-# and the first administrator written by `pnpm grant-admin --env workerd`.
-# pilot: the built-in templates and that first administrator only.
+# and the first account written by `pnpm grant-admin --env workerd`.
+# pilot: the built-in templates and that first account only.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)

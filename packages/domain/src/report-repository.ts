@@ -48,7 +48,14 @@ export type UnitRecord = Readonly<{
   createdAt: number
 }>
 
-export type StoreCapabilityName = 'admin' | 'template_editor' | 'author'
+export type StoreCapabilityName = 'people' | 'theme' | 'template_editor' | 'author'
+
+export const STORE_CAPABILITY_NAMES: ReadonlyArray<StoreCapabilityName> = [
+  'people',
+  'theme',
+  'template_editor',
+  'author',
+]
 
 export type GrantRecord = Readonly<{
   userId: string
@@ -875,6 +882,10 @@ export interface ReportRepositoryApi {
   readonly listUnitReviewers: (
     unitId: string,
   ) => Eff<ReadonlyArray<UnitReviewerRecord>>
+  // NOTE: which units' registries hold an account, for every account (or one).
+  readonly listReviewerUnits: (
+    userId?: string,
+  ) => Eff<ReadonlyArray<Readonly<{ unitId: string; userId: string }>>>
   readonly updateUnitReviewer: (
     input: Readonly<{
       unitId: string
@@ -1538,6 +1549,7 @@ export const QUERY_BUDGET: Record<keyof ReportRepositoryApi, number> = {
   putProfile: 1,
   linkReviewer: 4,
   listUnitReviewers: 1,
+  listReviewerUnits: 1,
   updateUnitReviewer: 4,
   listUnitAuthors: 1,
   listProfiles: 1,

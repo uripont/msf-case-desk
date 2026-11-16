@@ -22,10 +22,12 @@ import {
   linkPageModel,
 } from './quoroom.fixtures'
 import * as Account from './quoroom/account'
-import * as Admin from './quoroom/admin'
 import { Failure } from './quoroom/failure'
+import * as Inbox from './quoroom/inbox'
 import { givenLinkOf } from './quoroom/issuedLink'
 import * as Link from './quoroom/link'
+import * as Notifications from './quoroom/notifications'
+import * as People from './quoroom/people'
 import * as Unit from './quoroom/unit'
 
 const strongPassword = Redacted.make('a-long-synthetic-password')
@@ -45,8 +47,8 @@ const run = (
 
 const linkMessage = (message: Link.Message) =>
   Message.GotLinkMessage({ message })
-const adminMessage = (message: Admin.Message) =>
-  Message.GotAdminMessage({ message })
+const peopleMessage = (message: People.Message) =>
+  Message.GotPeopleMessage({ message })
 const unitMessage = (message: Unit.Message) =>
   Message.GotUnitMessage({ message })
 
@@ -136,6 +138,24 @@ describe('opening a link', () => {
       }),
       Command.expectHas(ReplaceUrl({ url: '/' })),
       Command.resolve(ReplaceUrl, Message.CompletedReplaceUrl()),
+      Command.resolve(
+        Inbox.LoadInbox,
+        Inbox.Message.SucceededLoadInbox({
+          scope: { reportId: '', generation: 1 },
+          page: { items: [] },
+          zone: 'Europe/Madrid',
+          nowMs: 0,
+        }),
+      ),
+      Command.resolve(
+        Notifications.LoadNotifications,
+        Notifications.Message.SucceededLoadNotifications({
+          scope: { reportId: '', generation: 1 },
+          page: { items: [], unread: 0 },
+          zone: 'Europe/Madrid',
+          nowMs: 0,
+        }),
+      ),
     )
   })
 
@@ -174,9 +194,9 @@ describe('the new pages load when entered', () => {
     )
   })
 
-  test('the administration page loads units and accounts', () => {
-    expect(namesOf(update(adminModel, clickedPage('Admin')))).toContain(
-      Admin.LoadAdmin.name,
+  test('the People page loads units and accounts', () => {
+    expect(namesOf(update(adminModel, clickedPage('People')))).toContain(
+      People.LoadPeople.name,
     )
   })
 
@@ -188,25 +208,37 @@ describe('the new pages load when entered', () => {
 
   test('signing out forgets the new pages', () => {
     const entered = run(adminModel, [
-      clickedPage('Admin'),
-      adminMessage(
-        Admin.Message.SucceededLoadAdmin({
+      clickedPage('People'),
+      peopleMessage(
+        People.Message.SucceededLoadPeople({
           units: [SYNTHETIC_UNIT],
           accounts: [],
         }),
       ),
       Message.ClickedSignOut(),
     ]).model
-    expect(entered.admin).toEqual(Admin.initialModel)
+    expect(entered.people).toEqual(People.initialModel)
     expect(entered.unit).toEqual(Unit.initialModel)
     expect(entered.account).toEqual(Account.initialModel)
   })
 })
 
-const adminLoaded = run(adminModel, [
-  clickedPage('Admin'),
-  adminMessage(
-    Admin.Message.SucceededLoadAdmin({ units: [SYNTHETIC_UNIT], accounts: [] }),
+const KNOWN = {
+  id: 'account-9',
+  email: 'known@case-desk.test',
+  name: 'Known Person',
+  active: true,
+  grants: [{ capability: 'people' as const }],
+  reviewerIn: [],
+}
+
+const peopleLoaded = run(adminModel, [
+  clickedPage('People'),
+  peopleMessage(
+    People.Message.SucceededLoadPeople({
+      units: [SYNTHETIC_UNIT],
+      accounts: [KNOWN],
+    }),
   ),
 ]).model
 
@@ -221,20 +253,14 @@ describe('link tokens in Messages', () => {
 
   test('a link the server issued is Redacted in every Message that carries one', () => {
     const given = givenLinkOf(activationLink)
-    const reset = Admin.Message.SucceededIssueReset({
+    const reset = People.Message.SucceededIssueReset({
       name: 'Known Person',
       link: given,
     })
     const messages = [
       reset,
-      Admin.Message.SucceededGrantCapability({
-        account: {
-          id: 'account-9',
-          email: 'new@case-desk.test',
-          name: 'New Author',
-          active: true,
-          grants: [],
-        },
+      People.Message.SucceededAddPerson({
+        account: KNOWN,
         link: Option.some(given),
       }),
       Unit.Message.SucceededInviteToUnit({
@@ -252,72 +278,96 @@ describe('link tokens in Messages', () => {
     }
     expect(JSON.stringify(given)).not.toContain(token)
     // NOTE: the Model still gets the usable link, Redacted too.
-    const issued = run(adminLoaded, [adminMessage(reset)]).model
+    const issued = run(peopleLoaded, [peopleMessage(reset)]).model
     expect(
-      Option.map(issued.admin.maybeLink, link => Redacted.value(link.url)),
+      Option.map(issued.people.maybeLink, link => Redacted.value(link.url)),
     ).toEqual(Option.some(`https://quoroom.test/link#${token}`))
-    expect(JSON.stringify(issued.admin.maybeLink)).not.toContain(token)
+    expect(JSON.stringify(issued.people.maybeLink)).not.toContain(token)
   })
 })
 
-describe('the administrator', () => {
+describe('the People screen', () => {
   test('a unit with no name is refused before it is sent', () => {
-    const submitted = run(adminLoaded, [
-      adminMessage(Admin.Message.SubmittedUnit()),
+    const submitted = run(peopleLoaded, [
+      peopleMessage(People.Message.SubmittedUnit()),
     ])
     expect(namesOf(submitted)).toEqual([])
-    expect(submitted.model.admin.unitForm._tag).toBe('Invalid')
+    expect(submitted.model.people.unitForm._tag).toBe('Invalid')
   })
 
   test('creating a unit adds it to the list', () => {
     story(
       update,
-      given(adminLoaded),
+      given(peopleLoaded),
       message(
-        adminMessage(Admin.Message.UpdatedUnitName({ value: 'Second Unit' })),
+        peopleMessage(People.Message.UpdatedUnitName({ value: 'Second Unit' })),
       ),
-      message(adminMessage(Admin.Message.UpdatedUnitCode({ value: 'SEC' }))),
-      message(adminMessage(Admin.Message.SubmittedUnit())),
+      message(peopleMessage(People.Message.UpdatedUnitCode({ value: 'SEC' }))),
+      message(peopleMessage(People.Message.SubmittedUnit())),
       Command.resolve(
-        Admin.CreateUnit,
-        Admin.Message.SucceededCreateUnit({
+        People.CreateUnit,
+        People.Message.SucceededCreateUnit({
           unit: { id: 'unit-2', name: 'Second Unit', code: 'SEC' },
         }),
       ),
       model(next => {
-        expect(next.admin.units.map(unit => unit.code)).toEqual(['SYN', 'SEC'])
+        expect(next.people.units.map(unit => unit.code)).toEqual([
+          'SYN',
+          'SEC',
+        ])
       }),
     )
   })
 
-  test('granting to a new person shows the link once and never stores it as text', () => {
+  test('a person needs a unit or a permission before they are added', () => {
+    const submitted = run(peopleLoaded, [
+      peopleMessage(
+        People.Message.UpdatedPersonEmail({ value: 'new@case-desk.test' }),
+      ),
+      peopleMessage(People.Message.SubmittedPerson()),
+    ])
+    expect(namesOf(submitted)).toEqual([])
+    expect(submitted.model.people.personForm._tag).toBe('Invalid')
+  })
+
+  test('adding a new person shows the link once and never stores it as text', () => {
     story(
       update,
-      given(adminLoaded),
+      given(peopleLoaded),
       message(
-        adminMessage(
-          Admin.Message.UpdatedGrantEmail({ value: 'new@case-desk.test' }),
+        peopleMessage(
+          People.Message.UpdatedPersonEmail({ value: 'new@case-desk.test' }),
         ),
       ),
       message(
-        adminMessage(Admin.Message.UpdatedGrantName({ value: 'New Author' })),
+        peopleMessage(People.Message.UpdatedPersonName({ value: 'New Author' })),
       ),
-      message(adminMessage(Admin.Message.SubmittedGrant())),
+      message(
+        peopleMessage(
+          People.Message.SelectedPersonUnit({ value: SYNTHETIC_UNIT.id }),
+        ),
+      ),
+      message(peopleMessage(People.Message.SubmittedPerson())),
       Command.resolve(
-        Admin.GrantCapability,
-        Admin.Message.SucceededGrantCapability({
+        People.AddPerson,
+        People.Message.SucceededAddPerson({
           account: {
-            id: 'account-9',
+            id: 'account-10',
             email: 'new@case-desk.test',
             name: 'New Author',
             active: true,
             grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
+            reviewerIn: [],
           },
           link: Option.some(givenLinkOf(activationLink)),
         }),
       ),
       model(next => {
-        expect(Option.isSome(next.admin.maybeLink)).toBe(true)
+        expect(Option.isSome(next.people.maybeLink)).toBe(true)
+        expect(next.people.accounts.map(account => account.name)).toEqual([
+          'Known Person',
+          'New Author',
+        ])
         expect(JSON.stringify(next)).not.toContain(
           Redacted.value(SYNTHETIC_TOKEN),
         )
@@ -325,37 +375,109 @@ describe('the administrator', () => {
     )
   })
 
-  test('granting to someone who has an account makes no link', () => {
-    const granted = run(adminLoaded, [
-      adminMessage(
-        Admin.Message.SucceededGrantCapability({
-          account: {
-            id: 'account-9',
-            email: 'known@case-desk.test',
-            name: 'Known Person',
-            active: true,
-            grants: [{ capability: 'admin' }],
-          },
+  test('adding someone who has an account makes no link', () => {
+    const granted = run(peopleLoaded, [
+      peopleMessage(
+        People.Message.SucceededAddPerson({
+          account: KNOWN,
           link: Option.none(),
         }),
       ),
     ]).model
-    expect(Option.isNone(granted.admin.maybeLink)).toBe(true)
-    expect(Option.isSome(granted.admin.maybeNotice)).toBe(true)
+    expect(Option.isNone(granted.people.maybeLink)).toBe(true)
+    expect(Option.isSome(granted.people.maybeNotice)).toBe(true)
+  })
+
+  test('a toggle grants what is not held and revokes what is', () => {
+    const granting = run(peopleLoaded, [
+      peopleMessage(
+        People.Message.ClickedToggle({
+          accountId: KNOWN.id,
+          capability: 'theme',
+          unit: Option.none(),
+        }),
+      ),
+    ])
+    expect(namesOf(granting)).toEqual([People.ChangeCapability.name])
+    expect(granting.model.people.pending).toEqual([
+      People.toggleKey(KNOWN.id, 'theme', Option.none()),
+    ])
+    const again = run(granting.model, [
+      peopleMessage(
+        People.Message.ClickedToggle({
+          accountId: KNOWN.id,
+          capability: 'theme',
+          unit: Option.none(),
+        }),
+      ),
+    ])
+    expect(namesOf(again)).toEqual([])
+    story(
+      update,
+      given(peopleLoaded),
+      message(
+        peopleMessage(
+          People.Message.ClickedToggle({
+            accountId: KNOWN.id,
+            capability: 'people',
+            unit: Option.none(),
+          }),
+        ),
+      ),
+      Command.resolve(
+        People.ChangeCapability,
+        People.Message.SucceededChangeCapability({
+          key: People.toggleKey(KNOWN.id, 'people', Option.none()),
+          account: { ...KNOWN, grants: [] },
+        }),
+      ),
+      model(next => {
+        expect(next.people.pending).toEqual([])
+        expect(next.people.accounts[0]?.grants).toEqual([])
+      }),
+    )
   })
 
   test('issuing a reset link shows it for copying', () => {
-    const issued = run(adminLoaded, [
-      adminMessage(
-        Admin.Message.SucceededIssueReset({
+    const issued = run(peopleLoaded, [
+      peopleMessage(
+        People.Message.SucceededIssueReset({
           name: 'Known Person',
           link: givenLinkOf({ ...activationLink, purpose: 'reset' }),
         }),
       ),
     ]).model
-    expect(Option.map(issued.admin.maybeLink, link => link.purpose)).toEqual(
+    expect(Option.map(issued.people.maybeLink, link => link.purpose)).toEqual(
       Option.some('reset'),
     )
+  })
+})
+
+describe('the folders of the People screen', () => {
+  test('a unit holds its authors and its reviewers; the rest have no unit', () => {
+    const folders = People.foldersOf({
+      ...People.initialModel,
+      units: [SYNTHETIC_UNIT],
+      accounts: [
+        KNOWN,
+        {
+          ...KNOWN,
+          id: 'a-1',
+          name: 'Ana Author',
+          grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
+        },
+        { ...KNOWN, id: 'r-1', name: 'Rui Reviewer', grants: [], reviewerIn: [SYNTHETIC_UNIT.id] },
+      ],
+    })
+    expect(
+      folders.map(folder => [
+        folder.heading,
+        folder.accounts.map(account => account.name),
+      ]),
+    ).toEqual([
+      ['Synthetic Unit (SYN)', ['Ana Author', 'Rui Reviewer']],
+      ['No unit', ['Known Person']],
+    ])
   })
 })
 

@@ -68,7 +68,7 @@ const world = async (network: NetworkPolicy = { kind: 'cloudflare' }, ipHeader =
   const run = <A>(effect: Effect.Effect<A, unknown>) =>
     Effect.runPromise(effect as Effect.Effect<A>)
   await run(reports.createUnit({ id: 'unit-1', name: 'Unit One', code: 'U1', createdAt: 1 }))
-  const seed = async (id: string, name: string, grant?: { capability: 'admin' | 'author'; unitId?: string }) =>
+  const seed = async (id: string, name: string, grant?: { capability: 'people' | 'author'; unitId?: string }) =>
     run(
       reports.createAccount({
         id,
@@ -81,7 +81,7 @@ const world = async (network: NetworkPolicy = { kind: 'cloudflare' }, ipHeader =
         now: 1,
       }),
     )
-  await seed('adam', 'Adam Administrator', { capability: 'admin' })
+  await seed('adam', 'Adam Administrator', { capability: 'people' })
   await seed('alice', 'Alice Author', { capability: 'author', unitId: 'unit-1' })
 
   // NOTE: a person's browser: its own cookie jar, and an address.
@@ -457,11 +457,11 @@ describe('links', () => {
     expect(audit.map(row => row.action)).toEqual(expect.arrayContaining(['account.reset_issued', 'account.password_reset']))
   })
 
-  test('grants need an administrator, and the unit rules hold', async () => {
+  test('grants need People, and the unit rules hold', async () => {
     const w = await world()
     const alice = w.browser()
     await alice.signIn('alice@case-desk.test')
-    expect(tagOf(failureOf(await alice.attempt(c => c.GrantCapability({ email: 'x@case-desk.test', name: 'X Person', capability: 'admin' }))))).toBe('NotPermitted')
+    expect(tagOf(failureOf(await alice.attempt(c => c.GrantCapability({ email: 'x@case-desk.test', name: 'X Person', capability: 'people' }))))).toBe('NotPermitted')
     expect(tagOf(failureOf(await alice.attempt(c => c.ListAccounts())))).toBe('NotPermitted')
     expect((await alice.call(c => c.ListUnits())).map(unit => unit.id)).toContain('unit-1')
     const adam = w.browser()
@@ -469,7 +469,36 @@ describe('links', () => {
     expect(tagOf(failureOf(await adam.attempt(c => c.GrantCapability({ email: 'y@case-desk.test', name: 'Y Person', capability: 'author' }))))).toBe('Validation')
     const accounts = await adam.call(c => c.ListAccounts())
     expect(accounts.map(account => account.id).sort()).toEqual(['adam', 'alice'])
-    // NOTE: the last administrator cannot be revoked.
-    expect(Result.isFailure(await adam.attempt(c => c.RevokeCapability({ accountId: 'adam', capability: 'admin' })))).toBe(true)
+    expect(accounts.find(account => account.id === 'alice')?.reviewerIn).toEqual([])
+  })
+
+  test('People can always be managed: the last active holder keeps it', async () => {
+    const w = await world()
+    const adam = w.browser()
+    await adam.signIn('adam@case-desk.test')
+    const refused = failureOf(await adam.attempt(c => c.RevokeCapability({ accountId: 'adam', capability: 'people' })))
+    expect(tagOf(refused)).toBe('Validation')
+    expect(JSON.stringify(refused)).toContain('Somebody must keep People')
+    // NOTE: other capabilities of the last holder can go.
+    await adam.call(c => c.GrantCapability({ email: 'adam@case-desk.test', capability: 'theme' }))
+    expect((await adam.call(c => c.RevokeCapability({ accountId: 'adam', capability: 'theme' }))).grants).toEqual([{ capability: 'people' }])
+    // NOTE: once Alice holds People too, Adam can give it up.
+    const granted = await adam.call(c => c.GrantCapability({ email: 'alice@case-desk.test', capability: 'people' }))
+    expect(granted.account.grants).toEqual(expect.arrayContaining([{ capability: 'people' }]))
+    expect((await adam.call(c => c.RevokeCapability({ accountId: 'adam', capability: 'people' }))).grants).toEqual([])
+    expect(tagOf(failureOf(await adam.attempt(c => c.ListAccounts())))).toBe('NotPermitted')
+  })
+
+  test('the People list says which unit registries hold an account', async () => {
+    const w = await world()
+    const alice = w.browser()
+    await alice.signIn('alice@case-desk.test')
+    const added = await alice.call(c => c.AddReviewer({ unit: 'unit-1', name: 'Rita Reviewer', email: 'rita@case-desk.test', whatsappConsent: false }))
+    const adam = w.browser()
+    await adam.signIn('adam@case-desk.test')
+    const rita = (await adam.call(c => c.ListAccounts())).find(account => account.id === added.accountId)
+    expect(rita).toMatchObject({ grants: [], reviewerIn: ['unit-1'] })
+    const granted = await adam.call(c => c.GrantCapability({ email: 'rita@case-desk.test', capability: 'template_editor' }))
+    expect(granted.account.reviewerIn).toEqual(['unit-1'])
   })
 })

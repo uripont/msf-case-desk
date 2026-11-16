@@ -6,7 +6,7 @@ A template describes a kind of report: its sections and items, its numbering, co
 
 ### In the app
 
-Template editors (a capability an administrator gives in *Administration*) open **Templates**. The list shows published templates, drafts and retired ones. From there:
+Template editors (a capability given in **People**) open **Templates**. The list shows published templates, drafts and retired ones. From there:
 
 - **New blank template**, or **Copy a template** into a new draft. Built-in templates cannot be edited, only copied.
 - **Edit the draft**: the form has folding panels. *About this template* (name, short name for PDF file names, description, the label of the case reference), *Roles and approval*, *Numbering* (one level per depth of numbered sections), *Sections* (sections, subsections and their items), *Conclusion* (*Add a conclusion*), *Ending the report early (branching)*, *Cover page*, and *Contents, page numbers, header and footer*.

@@ -46,7 +46,7 @@ export const AuditEvent = Schema.Struct({
 export type AuditEvent = typeof AuditEvent.Type
 
 // NOTE: A report's log is for its authors; a template's for template editors;
-// the theme's for administrators.
+// the theme's for holders of `theme`.
 export const AuditSubject = Schema.Union([
   Schema.Struct({ kind: Schema.Literal('report'), reportId: ApiId }),
   Schema.Struct({ kind: Schema.Literal('template'), templateId: TemplateId }),

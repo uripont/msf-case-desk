@@ -12,6 +12,7 @@ import {
   type EventRecord,
   type FinishShareOutcome,
   type GrantRecord,
+  STORE_CAPABILITY_NAMES,
   type ImageRecord,
   type InvitationRecord,
   type JobRecord,
@@ -215,13 +216,24 @@ const unitOf = (r: Row): UnitRecord => ({
   createdAt: n(r['created_at']),
 })
 
-const grantOf = (r: Row): GrantRecord => ({
-  userId: s(r['user_id']),
-  capability: s(r['capability']) as GrantRecord['capability'],
-  unitId: s(r['unit_id']) === '' ? null : s(r['unit_id']),
-  grantedBy: sn(r['granted_by']),
-  grantedAt: n(r['granted_at']),
-})
+// NOTE: a capability this version does not know is ignored, not refused.
+const grantsOf = (found: ReadonlyArray<Row>): ReadonlyArray<GrantRecord> =>
+  found.flatMap(r => {
+    const capability = STORE_CAPABILITY_NAMES.find(
+      name => name === s(r['capability']),
+    )
+    return capability === undefined
+      ? []
+      : [
+          {
+            userId: s(r['user_id']),
+            capability,
+            unitId: s(r['unit_id']) === '' ? null : s(r['unit_id']),
+            grantedBy: sn(r['granted_by']),
+            grantedAt: n(r['granted_at']),
+          },
+        ]
+  })
 
 const PROFILE_COLUMNS = `p.user_id AS p_user_id, p.phone AS p_phone,
   p.whatsapp_consent AS p_consent, p.whatsapp_consent_at AS p_consent_at,
@@ -726,7 +738,7 @@ const ops: Impl = {
     const unitId = grant.unitId ?? ''
     const inserted = await rows(
       db,
-      `INSERT INTO capability_grants (user_id, capability, unit_id, granted_by, granted_at)
+      `INSERT INTO permission_grants (user_id, capability, unit_id, granted_by, granted_at)
         SELECT ?, ?, ?, ?, ? WHERE ? <> 'author' OR EXISTS (SELECT 1 FROM units WHERE id = ?)
         ON CONFLICT DO NOTHING RETURNING user_id`,
       grant.userId,
@@ -740,7 +752,7 @@ const ops: Impl = {
     if (inserted.length === 1) return 'granted'
     const existing = await row(
       db,
-      `SELECT EXISTS (SELECT 1 FROM capability_grants
+      `SELECT EXISTS (SELECT 1 FROM permission_grants
         WHERE user_id = ? AND capability = ? AND unit_id = ?) AS e`,
       grant.userId,
       grant.capability,
@@ -752,7 +764,7 @@ const ops: Impl = {
     (
       await rows(
         db,
-        `DELETE FROM capability_grants WHERE user_id = ? AND capability = ? AND unit_id = ?
+        `DELETE FROM permission_grants WHERE user_id = ? AND capability = ? AND unit_id = ?
           RETURNING user_id`,
         userId,
         capability,
@@ -760,18 +772,19 @@ const ops: Impl = {
       )
     ).length === 1,
   listGrants: async (db, userId) =>
-    (userId === undefined
+    grantsOf(
+      userId === undefined
       ? await rows(
           db,
-          'SELECT * FROM capability_grants ORDER BY user_id, capability, unit_id',
+          'SELECT * FROM permission_grants ORDER BY user_id, capability, unit_id',
         )
       : await rows(
           db,
-          `SELECT * FROM capability_grants WHERE user_id = ?
+          `SELECT * FROM permission_grants WHERE user_id = ?
               ORDER BY user_id, capability, unit_id`,
           userId,
-        )
-    ).map(grantOf),
+        ),
+    ),
   listAccounts: async db =>
     (
       await rows(
@@ -868,7 +881,7 @@ const ops: Impl = {
       input.grant === undefined
         ? null
         : {
-            sql: `INSERT INTO capability_grants (user_id, capability, unit_id, granted_by, granted_at)
+            sql: `INSERT INTO permission_grants (user_id, capability, unit_id, granted_by, granted_at)
               SELECT ?, ?, ?, ?, ? WHERE ? <> 'author' OR EXISTS (SELECT 1 FROM units WHERE id = ?)`,
             values: [
               input.id,
@@ -969,6 +982,15 @@ const ops: Impl = {
     )
     return b(existing?.['e']) ? 'exists' : 'no_unit'
   },
+  listReviewerUnits: async (db, userId) =>
+    (userId === undefined
+      ? await rows(db, 'SELECT unit_id, user_id FROM unit_reviewers ORDER BY unit_id, user_id')
+      : await rows(
+          db,
+          'SELECT unit_id, user_id FROM unit_reviewers WHERE user_id = ? ORDER BY unit_id',
+          userId,
+        )
+    ).map(r => ({ unitId: s(r['unit_id']), userId: s(r['user_id']) })),
   listUnitReviewers: async (db, unitId) =>
     (
       await rows(
@@ -1020,7 +1042,7 @@ const ops: Impl = {
     (
       await rows(
         db,
-        `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM capability_grants g
+        `SELECT u.id, u.email, u.name, ${PROFILE_COLUMNS} FROM permission_grants g
           JOIN users u ON u.id = g.user_id LEFT JOIN account_profiles p ON p.user_id = u.id
           WHERE g.capability = 'author' AND g.unit_id = ? ORDER BY u.name, u.id`,
         unitId,

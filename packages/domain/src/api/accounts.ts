@@ -16,8 +16,11 @@ import {
 // group: the Worker sets or clears the session cookie itself, and the token
 // never appears in a response body.
 
+// NOTE: One per top tab of the app: People, Theme, Templates and Reports
+// (`author`, in a unit).
 export const CapabilityName = Schema.Literals([
-  'admin',
+  'people',
+  'theme',
   'template_editor',
   'author',
 ])
@@ -99,7 +102,7 @@ export const ConsumeLinkRequest = Schema.Struct({
   password: NewPassword,
 })
 
-// ---- Accounts (administrator) ----------------------------------------------------
+// ---- Accounts (the `people` capability) ----------------------------------------------------
 
 export const AccountRow = Schema.Struct({
   id: ApiId,
@@ -110,6 +113,8 @@ export const AccountRow = Schema.Struct({
   // a reviewer (D13). Absent until activation.
   passwordSetAt: Schema.optionalKey(EpochMs),
   grants: Schema.Array(GrantView),
+  // NOTE: The units whose reviewer registry holds the account.
+  reviewerIn: Schema.Array(ApiId),
 })
 export type AccountRow = typeof AccountRow.Type
 

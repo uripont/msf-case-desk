@@ -14,7 +14,7 @@ import { actionButton } from './entryViews'
 import { Failure, failureOf } from './failure'
 import { decisionText, zoneNote } from './rounds'
 import { PageScope, isCurrentPage, pageScopeOf } from './scope'
-import { alertText, failureAlert, loadingText, panel } from './ui'
+import { alertText, failureAlert, loadingText, subPanel } from './ui'
 import { LoadState } from './unit'
 import { countdownText, deadlineText } from './zoned'
 
@@ -269,7 +269,7 @@ const listPanel = (
   Array.match(items, {
     onEmpty: () => h.empty,
     onNonEmpty: rows =>
-      panel(h, heading, [
+      subPanel(h, heading, [
         h.ul(
           [
             h.AriaLabel(heading),
@@ -289,18 +289,10 @@ const shell = (
   h.section(
     [
       h.AriaLabel('Inbox'),
-      h.Class('flex max-w-3xl flex-col gap-8 pb-14 pt-10 md:pt-14'),
+      h.Class('flex flex-col gap-6 border-t-2 border-msf-ink pt-5'),
     ],
     [
-      h.h1(
-        [
-          h.Id('page-heading'),
-          h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
-          ),
-        ],
-        ['Inbox'],
-      ),
+      h.h2([h.Class('text-2xl font-black tracking-tight')], ['Inbox']),
       ...children,
     ],
   )

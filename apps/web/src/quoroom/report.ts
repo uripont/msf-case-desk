@@ -3476,7 +3476,7 @@ const authorsPanel = (
               h.p(
                 [h.Class('text-base text-msf-grey')],
                 [
-                  'Every author of this unit is already on this report. An administrator grants the author capability to others.',
+                  'Every author of this unit is already on this report. Someone with People gives Reports in this unit to others.',
                 ],
               ),
             onNonEmpty: people =>
@@ -3514,7 +3514,7 @@ const authorsPanel = (
         : h.empty,
     ],
     Option.some(
-      'Co-authors are chosen from the existing authors of the unit. An administrator grants the author capability.',
+      'Co-authors are chosen from the existing authors of the unit. Someone with People gives Reports in this unit.',
     ),
   )
 }

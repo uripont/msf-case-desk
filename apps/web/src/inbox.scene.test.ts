@@ -33,7 +33,7 @@ const inboxScreen = (zone: string, items: ReadonlyArray<ReturnType<typeof item>>
     clickedLinkTo('/inbox'),
     Message.GotInboxMessage({
       message: Inbox.Message.SucceededLoadInbox({
-        scope: { reportId: '', generation: 1 },
+        scope: { reportId: '', generation: 2 },
         page: { items },
         zone,
         nowMs: NOW,

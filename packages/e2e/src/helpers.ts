@@ -183,3 +183,30 @@ export const syntheticImage = (
     }
     return btoa(binary)
   }, options)
+
+// NOTE: The People screen's "Add person" form: a unit to write reports in,
+// and any of People, Theme and Templates. A new e-mail gets a one-time link.
+export const addPerson = async (
+  page: Page,
+  who: Readonly<{ email: string; name: string; unit?: string; permissions?: ReadonlyArray<'People' | 'Theme' | 'Templates'> }>,
+): Promise<void> => {
+  const form = page.getByRole('form', { name: 'Add person' })
+  await form.getByLabel('E-mail', { exact: true }).fill(who.email)
+  await form.getByLabel('Name', { exact: true }).fill(who.name)
+  if (who.unit !== undefined) {
+    await form.getByLabel('Reports in unit', { exact: true }).selectOption({ label: who.unit })
+  }
+  for (const permission of who.permissions ?? []) {
+    await form.getByLabel(permission, { exact: true }).check()
+  }
+  await form.getByRole('button', { name: 'Add person' }).click()
+}
+
+// NOTE: The People screen's "New unit" form; the unit's folder appears.
+export const createUnit = async (page: Page, name: string, code: string): Promise<void> => {
+  const form = page.getByRole('form', { name: 'New unit' })
+  await form.getByLabel('Unit name').fill(name)
+  await form.getByLabel('Unit code').fill(code)
+  await form.getByRole('button', { name: 'Create unit' }).click()
+  await page.getByRole('button', { name: new RegExp(`^. ${name} \\(${code}\\)`) }).waitFor()
+}

@@ -59,7 +59,7 @@ import {
 } from './ui'
 import { LoadState } from './unit'
 
-// NOTE: The theme screen of an administrator (D24): the
+// NOTE: The theme screen, for the `theme` capability (D24): the
 // organisation's name, the logo, the colours with the contrast check shown
 // beside each colour, the fonts from the bundled set, the PDF header and
 // footer text, a live preview of an app page and of a PDF page, and saving.

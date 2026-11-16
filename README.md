@@ -76,7 +76,7 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 | Script | What it does |
 | --- | --- |
 | `pnpm workerd [--mode demo\|pilot] [port]` | Builds and serves everything on plain `workerd` with a local database |
-| `pnpm grant-admin` | First administrator of an environment: a one-time activation link, `--reset` for a reset link |
+| `pnpm grant-admin` | First account of an environment (People, Theme, Templates): a one-time activation link, `--reset` for a reset link |
 | `pnpm infra:dev` | Runs the demo stack locally with live reload |
 | `pnpm pilot:plan`, `pilot:deploy`, `pilot:destroy` | The pilot stack, stage `pilot` only |
 | `pnpm test-env:up`, `test-env:down` | A throwaway test environment of the pilot stack |
@@ -99,7 +99,7 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 ## Documentation
 
 - [`docs/self-hosting.md`](docs/self-hosting.md): `workerd`, the pilot and demo stacks, secrets, the host cron.
-- [`docs/pilot.md`](docs/pilot.md): running a pilot, from the first administrator to backups and failures.
+- [`docs/pilot.md`](docs/pilot.md): running a pilot, from the first account to backups and failures.
 - [`docs/templates.md`](docs/templates.md): building a template, and the two built-in ones.
 - [`docs/rpc.md`](docs/rpc.md): the API contract, procedure by procedure, and the image route.
 - [`docs/compatibility.md`](docs/compatibility.md): how versions share one database, and how a version is frozen.

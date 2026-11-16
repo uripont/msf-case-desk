@@ -25,7 +25,9 @@ import { type Page, chromium } from 'playwright-core'
 
 import {
   activate,
+  addPerson,
   copiedLink,
+  createUnit,
   ensureChecked,
   noSideScroll,
   openIn,
@@ -91,7 +93,7 @@ const tick = async (): Promise<void> => {
 }
 
 // NOTE: a person's notifications of one kind about one report, read from the
-// Notifications screen. The cron (or a tick) delivers them; the first cron of
+// Notifications on Home. The cron (or a tick) delivers them; the first cron of
 // a new Worker can take several minutes.
 const notifications = async (page: Page, kind: string, reportId: string): Promise<number> => {
   await tick()
@@ -209,25 +211,23 @@ const main = async (): Promise<void> => {
       await a.getByText('The theme is saved. The app and the next PDF use it.').waitFor()
       await a.getByRole('img', { name: 'Invented Relief Network logo' }).waitFor()
       await shot(a, 'step1-theme')
-      await go(a, '/admin', 'Administration')
-      await a.getByLabel('Unit name').fill('Invented Ethics Unit')
-      await a.getByLabel('Unit code').fill('IEU')
-      await a.getByRole('button', { name: 'Create unit' }).click()
-      await a.getByRole('list', { name: 'Units' }).getByText('Invented Ethics Unit').waitFor()
+      await go(a, '/people', 'People')
+      await createUnit(a, 'Invented Ethics Unit', 'IEU')
       for (const name of [A, B]) {
-        await a.getByLabel('E-mail', { exact: true }).fill(at(name))
-        await a.getByLabel('Name', { exact: true }).fill(name)
-        await a.getByLabel('Capability', { exact: true }).selectOption('author')
-        await a.getByLabel('Unit', { exact: true }).selectOption({ label: 'Invented Ethics Unit (IEU)' })
-        await a.getByRole('button', { name: 'Give capability' }).click()
+        await addPerson(a, { email: at(name), name, unit: 'Invented Ethics Unit (IEU)' })
         if (name === B) links[B] = await copiedLink(a)
         else await a.getByText(`${A} already had an account, so no link was made.`).waitFor()
       }
-      await a.getByText('Author in Invented Ethics Unit').nth(1).waitFor()
+      for (const name of [A, B]) {
+        await ensureChecked(
+          a.getByRole('checkbox', { name: `Reports in Invented Ethics Unit for ${name}` }).first(),
+          `${name} has no Reports in the unit`,
+        )
+      }
       await shot(a, 'step1-admin')
     }],
     ['2. A registers R1 and R2 in a committee; B, R1 and R2 activate (R1 at phone width)', async () => {
-      await go(a, '/unit', 'My unit')
+      await go(a, '/reports/unit', 'Reviewers and committees')
       for (const [name, phone] of [[R1, '+34 600 111 222'], [R2, '']] as const) {
         await a.getByLabel('Reviewer name').fill(name)
         await a.getByLabel('Reviewer e-mail').fill(at(name))
@@ -533,7 +533,7 @@ const main = async (): Promise<void> => {
       await a.getByRole('region', { name: 'Publish this version' }).getByRole('button', { name: 'Publish version 1' }).click()
       await a.getByText(/Published, version 1\./).first().waitFor()
       // The panel: R1, R2 and a new R3 vote by majority, with an observer and a chair.
-      await go(a, '/unit', 'My unit')
+      await go(a, '/reports/unit', 'Reviewers and committees')
       for (const name of [R3, OB, CH]) {
         await a.getByLabel('Reviewer name').fill(name)
         await a.getByLabel('Reviewer e-mail').fill(at(name))

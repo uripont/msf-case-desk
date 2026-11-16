@@ -23,6 +23,7 @@ import {
   loadingText,
   pageShell,
   panel,
+  reportsNav,
   selectField,
   smallButton,
   statusText,
@@ -933,7 +934,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
             h.p(
               [h.Role('alert'), h.Class('text-lg font-medium text-msf-alert')],
               [
-                'You are not an author in this unit. An administrator can grant you that.',
+                'You cannot write reports in this unit. Someone with People can give you that.',
               ],
             ),
           ]
@@ -968,7 +969,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
             h.p(
               [h.Class('text-lg text-msf-ink')],
               [
-                'There is no unit yet. An administrator creates units and grants the author capability.',
+                'There is no unit yet. Someone with People creates units and gives Reports in a unit.',
               ],
             ),
           ])
@@ -977,7 +978,11 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
             'Reports',
             'Reports',
             'Write reports from a template, privately, and see where each one is.',
-            [unitChooser(model, h), ...dataView(model, h)],
+            [
+              reportsNav(h, 'list'),
+              unitChooser(model, h),
+              ...dataView(model, h),
+            ],
           ),
   }),
 )

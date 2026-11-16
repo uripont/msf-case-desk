@@ -16,6 +16,8 @@ import {
   NotPermitted,
   Repository,
   StorageUnavailable,
+  Validation,
+  leavesNobodyForPeople,
   normaliseEmail,
 } from '@case-desk/domain'
 
@@ -28,6 +30,7 @@ import {
   allowCapability,
   fromRepository,
   idOf,
+  problem,
   randomToken,
   store,
   validation,
@@ -80,7 +83,13 @@ export const meFor = (db: Store, userId: string) =>
     return meOf(account, grants)
   })
 
-const rowOf = (account: AccountRecord, grants: ReadonlyArray<GrantRecord>) => ({
+type ReviewerUnit = Readonly<{ unitId: string; userId: string }>
+
+const rowOf = (
+  account: AccountRecord,
+  grants: ReadonlyArray<GrantRecord>,
+  reviewerUnits: ReadonlyArray<ReviewerUnit>,
+) => ({
   id: account.id,
   email: account.email,
   name: account.name,
@@ -89,7 +98,22 @@ const rowOf = (account: AccountRecord, grants: ReadonlyArray<GrantRecord>) => ({
     ? {}
     : { passwordSetAt: account.profile.passwordSetAt }),
   grants: grants.filter(grant => grant.userId === account.id).map(grantView),
+  reviewerIn: reviewerUnits
+    .filter(entry => entry.userId === account.id)
+    .map(entry => entry.unitId),
 })
+
+// NOTE: one account as the People screen shows it, read again after a change.
+const rowFor = (db: Store, accountId: string) =>
+  Effect.gen(function* () {
+    const account = yield* db.getAccount(accountId)
+    if (account === null) return yield* Effect.fail(new NotFound())
+    return rowOf(
+      account,
+      yield* db.listGrants(accountId),
+      yield* db.listReviewerUnits(accountId),
+    )
+  })
 
 // NOTE: an entry of the unit's registry: the unit's own name and number, and
 // whether it asked for consent. Nothing of the account behind it (D13).
@@ -310,9 +334,10 @@ export const accountHandlers: Pick<
       yield* allowCapability(db, { type: 'manage_grants' })
       const accounts = yield* db.listAccounts()
       const grants = yield* db.listGrants()
+      const reviewerUnits = yield* db.listReviewerUnits()
       return accounts
         .slice(0, MAX_ACCOUNTS_LISTED)
-        .map(account => rowOf(account, grants))
+        .map(account => rowOf(account, grants, reviewerUnits))
     }),
 
   IssueReset: ({ accountId }) =>
@@ -400,13 +425,8 @@ export const accountHandlers: Pick<
           })
         }
       }
-      const account = yield* db.getAccount(accountId)
-      if (account === null) {
-        return yield* Effect.fail(new StorageUnavailable({ message: 'account missing' }))
-      }
-      const grants = yield* db.listGrants(accountId)
       return {
-        account: rowOf(account, grants),
+        account: yield* rowFor(db, accountId),
         ...(link === undefined ? {} : { link }),
       }
     }),
@@ -417,14 +437,30 @@ export const accountHandlers: Pick<
       const { user } = yield* allowCapability(db, { type: 'manage_grants' })
       const clock = yield* QuoroomClock
       const now = yield* clock.now
-      const all = yield* db.listGrants()
-      // NOTE: the last administrator cannot be removed: nobody could grant
-      // anything again.
-      if (
-        capability === 'admin' &&
-        all.filter(grant => grant.capability === 'admin').length <= 1
-      ) {
-        return yield* Effect.fail(validation('input', 'last_admin'))
+      if (capability === 'people') {
+        const accounts = yield* db.listAccounts()
+        const grants = yield* db.listGrants()
+        const holders = accounts.map(account => ({
+          id: account.id,
+          active: account.profile?.active ?? true,
+          grants: grants
+            .filter(grant => grant.userId === account.id)
+            .map(grant => ({ capability: grant.capability })),
+        }))
+        if (leavesNobodyForPeople(holders, { accountId, capability })) {
+          return yield* Effect.fail(
+            new Validation({
+              problems: [
+                problem(
+                  'input',
+                  'last_people',
+                  [],
+                  'Somebody must keep People. Give it to another active person first.',
+                ),
+              ],
+            }),
+          )
+        }
       }
       const removed = yield* db.revokeCapability(accountId, capability, unit ?? null)
       if (!removed) return yield* Effect.fail(new NotFound())
@@ -438,23 +474,21 @@ export const accountHandlers: Pick<
           ...(unit === undefined ? {} : { unit }),
         }),
       })
-      const account = yield* db.getAccount(accountId)
-      if (account === null) return yield* Effect.fail(new NotFound())
-      return rowOf(account, yield* db.listGrants(accountId))
+      return yield* rowFor(db, accountId)
     }),
 
-  // NOTE: administrators see every unit; anyone else the units they hold a
-  // grant in.
+  // NOTE: holders of `people` see every unit; anyone else the units they
+  // hold a grant in.
   ListUnits: () =>
     Effect.gen(function* () {
       const user = yield* CurrentUser
       const db = yield* store
       const grants = yield* db.listGrants(user.id)
       const units = yield* db.listUnits()
-      const isAdmin = grants.some(grant => grant.capability === 'admin')
+      const managesPeople = grants.some(grant => grant.capability === 'people')
       const mine = new Set(authorUnits(grants))
       return units
-        .filter(unit => isAdmin || mine.has(unit.id))
+        .filter(unit => managesPeople || mine.has(unit.id))
         .map(unit => ({ id: unit.id, name: unit.name, code: unit.code }))
     }),
 

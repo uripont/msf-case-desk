@@ -8,7 +8,7 @@
 // runs again on every deploy and start, so it only inserts the account when
 // its email is absent: it never changes the password or name of an existing
 // account (a person who set a password through a link keeps it). Quoroom
-// accounts are made in the app, and the first administrator with
+// accounts are made in the app, and the first account with
 // `pnpm grant-admin`.
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'

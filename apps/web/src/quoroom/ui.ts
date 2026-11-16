@@ -8,12 +8,50 @@ import {
   labelClassName,
   primaryButtonClassName,
 } from '../style'
+import { AppRoute, pathOf } from '../route'
 import { type Failure, failureText } from './failure'
 
 // NOTE: Shared pieces for the screens. Each takes the builder of
 // the screen that uses it, so its handlers send that screen's Messages.
 
 export const PAGE_HEADING_ID = 'page-heading'
+
+// NOTE: The Reports tab has two pages: the reports, and the unit's reviewers
+// and committees.
+export const reportsNav = <M>(
+  h: HtmlBuilder<M>,
+  current: 'list' | 'unit',
+): Html =>
+  h.nav(
+    [h.AriaLabel('Reports pages'), h.Class('flex flex-wrap gap-x-6 gap-y-2')],
+    Array.map(
+      [
+        { page: 'list', route: AppRoute.Reports(), label: 'Report list' },
+        {
+          page: 'unit',
+          route: AppRoute.Unit(),
+          label: 'Reviewers and committees',
+        },
+      ] as const,
+      ({ page, route, label }) =>
+        h.a(
+          [
+            h.Href(pathOf(route)),
+            h.Class(
+              clsx(
+                'text-base',
+                focusRing,
+                page === current
+                  ? 'font-medium text-msf-black underline decoration-msf-red decoration-2 underline-offset-[6px]'
+                  : 'text-msf-grey underline hover:text-msf-ink',
+              ),
+            ),
+            ...(page === current ? [h.AriaCurrent('page')] : []),
+          ],
+          [label],
+        ),
+    ),
+  )
 
 export const pageShell = <M>(
   h: HtmlBuilder<M>,
@@ -72,6 +110,18 @@ export const panel = <M>(
       }),
       ...children,
     ],
+  )
+
+// NOTE: A part of a section, under an h2: Home holds the inbox and the
+// notifications, each with its own parts.
+export const subPanel = <M>(
+  h: HtmlBuilder<M>,
+  heading: string,
+  children: ReadonlyArray<Html>,
+): Html =>
+  h.section(
+    [h.AriaLabel(heading), h.Class('flex flex-col gap-4')],
+    [h.h3([h.Class('text-xl font-black')], [heading]), ...children],
   )
 
 export type TextFieldConfig<M> = Readonly<{

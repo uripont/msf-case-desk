@@ -71,11 +71,8 @@ describe('navigation', () => {
         ).model,
       ),
       expect(role('link', { name: 'Home' })).toHaveAttr('href', '/'),
-      expect(role('link', { name: 'Administration' })).toHaveAttr(
-        'href',
-        '/admin',
-      ),
-      expect(role('link', { name: 'My account' })).toHaveAttr(
+      expect(role('link', { name: 'People' })).toHaveAttr('href', '/people'),
+      expect(role('link', { name: /my account$/ })).toHaveAttr(
         'href',
         '/account',
       ),

@@ -19,6 +19,7 @@ import {
   authorize,
   canSeeComment,
   checkNewAuthor,
+  leavesNobodyForPeople,
 } from './index'
 import {
   TEST_UNIT,
@@ -115,27 +116,66 @@ const REPORT_ACTIONS: ReadonlyArray<Action> = [
   { type: 'submit_review', revision: 1, decision: 'approve' },
 ]
 
+describe('somebody keeps People', () => {
+  const holder = (
+    id: string,
+    active: boolean,
+    ...capabilities: ReadonlyArray<Capability>
+  ) => ({ ...account(id, ...capabilities), active })
+
+  test('the last active holder cannot lose People', () => {
+    const accounts = [holder('a', true, 'people', 'theme'), holder('b', true)]
+    expect(
+      leavesNobodyForPeople(accounts, { accountId: 'a', capability: 'people' }),
+    ).toBe(true)
+    expect(
+      leavesNobodyForPeople(accounts, { accountId: 'a', capability: 'theme' }),
+    ).toBe(false)
+  })
+
+  test('another active holder is enough; an inactive one is not', () => {
+    expect(
+      leavesNobodyForPeople(
+        [holder('a', true, 'people'), holder('b', true, 'people')],
+        { accountId: 'a', capability: 'people' },
+      ),
+    ).toBe(false)
+    expect(
+      leavesNobodyForPeople(
+        [holder('a', true, 'people'), holder('b', false, 'people')],
+        { accountId: 'a', capability: 'people' },
+      ),
+    ).toBe(true)
+  })
+
+  test('a deployment with nobody holding People is already refused', () => {
+    expect(
+      leavesNobodyForPeople([holder('a', true, 'theme')], {
+        accountId: 'a',
+        capability: 'theme',
+      }),
+    ).toBe(true)
+  })
+})
+
 describe('capabilities', () => {
   const REQUIRED: ReadonlyArray<readonly [Action, Capability]> = [
-    [{ type: 'set_theme' }, 'admin'],
-    [{ type: 'manage_units' }, 'admin'],
-    [{ type: 'manage_grants' }, 'admin'],
-    [{ type: 'issue_reset' }, 'admin'],
+    [{ type: 'set_theme' }, 'theme'],
+    [{ type: 'manage_units' }, 'people'],
+    [{ type: 'manage_grants' }, 'people'],
+    [{ type: 'issue_reset' }, 'people'],
     [{ type: 'create_template' }, 'template_editor'],
     [{ type: 'edit_template' }, 'template_editor'],
     [{ type: 'copy_template' }, 'template_editor'],
     [{ type: 'publish_template' }, 'template_editor'],
     [{ type: 'retire_template' }, 'template_editor'],
     [{ type: 'preview_template' }, 'template_editor'],
-    [{ type: 'grant_first_admin' }, 'operator'],
-    [{ type: 'deploy' }, 'operator'],
-    [{ type: 'backup' }, 'operator'],
   ]
   const CAPABILITIES: ReadonlyArray<Capability> = [
-    'admin',
+    'people',
+    'theme',
     'template_editor',
     'author',
-    'operator',
   ]
 
   test('each deployment action needs exactly its capability', () => {
@@ -169,19 +209,20 @@ describe('capabilities', () => {
       )
     }
     expect(
-      authorize(account('admin', 'admin'), undefined, {
+      authorize(account('admin', 'people', 'theme'), undefined, {
         type: 'create_report',
         unit: 'unit-a',
       }).allowed,
     ).toBe(false)
   })
 
-  test('the administrator, a template editor and the operator get no report access', () => {
+  test('People, Theme and Templates give no report access', () => {
     const report = intakeReport()
     for (const who of [
-      account('author-1x', 'admin', 'template_editor', 'operator'),
+      account('author-1x', 'people', 'theme', 'template_editor'),
       account('te', 'template_editor'),
-      account('adm', 'admin'),
+      account('adm', 'people'),
+      account('thm', 'theme'),
     ]) {
       for (const action of REPORT_ACTIONS) {
         expect(authorize(who, report, action)).toEqual(NOT_FOUND)
@@ -199,7 +240,7 @@ describe('capabilities', () => {
   test('forbidden and does not exist are indistinguishable', () => {
     const strangers = [
       account('s1'),
-      account('s2', 'admin'),
+      account('s2', 'people'),
       account('s3', ['author', 'unit-b']),
     ]
     for (const who of strangers) {
@@ -595,7 +636,7 @@ describe('regression: the template version of a report is readable by its member
     expect(read(account('r2'), 1)).toEqual(NOT_FOUND)
     expect(read(account('r1'))).toEqual(NOT_FOUND)
     expect(read(account('stranger'), 1)).toEqual(NOT_FOUND)
-    expect(read(account('admin-1', 'admin', 'template_editor'), 1)).toEqual(NOT_FOUND)
+    expect(read(account('admin-1', 'people', 'theme', 'template_editor'), 1)).toEqual(NOT_FOUND)
     expect(
       authorize(account('r1'), undefined, { type: 'read_template_version', revision: 1 }),
     ).toEqual(NOT_FOUND)

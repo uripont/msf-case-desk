@@ -3,7 +3,7 @@ import { Result, Schema } from 'effect'
 import { issuesToProblems } from './richtext'
 import { Furniture, PAGE_TOKENS } from './template'
 
-// NOTE: The theme (D24): one per deployment, set by an administrator. The
+// NOTE: The theme (D24): one per deployment, set by a holder of the `theme` capability. The
 // organisation's name, a logo (a reference to an uploaded image), four colours,
 // a font for headings and one for text from the bundled set (D16), and the
 // default text of the PDF header and footer. A template's own furniture

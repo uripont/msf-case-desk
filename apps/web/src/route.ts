@@ -16,7 +16,7 @@ export const AppRoute = defineRouteUnion({
   Account: {},
   Unit: {},
   Reports: {},
-  Admin: {},
+  People: {},
   Theme: {},
   Templates: {},
   TemplateEditor: { templateId: Schema.String, version: Schema.Int },
@@ -43,12 +43,20 @@ const accountRouter = pipe(
   Route.literal('account'),
   Route.mapTo(AppRoute.Account),
 )
-const unitRouter = pipe(Route.literal('unit'), Route.mapTo(AppRoute.Unit))
+// NOTE: The unit's reviewers and committees, a part of the Reports tab.
+const unitRouter = pipe(
+  Route.literal('reports'),
+  Route.slash(Route.literal('unit')),
+  Route.mapTo(AppRoute.Unit),
+)
 const reportsRouter = pipe(
   Route.literal('reports'),
   Route.mapTo(AppRoute.Reports),
 )
-const adminRouter = pipe(Route.literal('admin'), Route.mapTo(AppRoute.Admin))
+const peopleRouter = pipe(
+  Route.literal('people'),
+  Route.mapTo(AppRoute.People),
+)
 const themeRouter = pipe(Route.literal('theme'), Route.mapTo(AppRoute.Theme))
 const templatesRouter = pipe(
   Route.literal('templates'),
@@ -141,7 +149,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
     accountRouter,
     unitRouter,
     reportsRouter,
-    adminRouter,
+    peopleRouter,
     themeRouter,
     templateEditorRouter,
     templatesRouter,
@@ -169,7 +177,7 @@ export const pathOf = (route: AppRoute): string =>
     Account: () => accountRouter(),
     Unit: () => unitRouter(),
     Reports: () => reportsRouter(),
-    Admin: () => adminRouter(),
+    People: () => peopleRouter(),
     Theme: () => themeRouter(),
     Templates: () => templatesRouter(),
     TemplateEditor: ({ templateId, version }) =>
@@ -201,7 +209,7 @@ export const needsSession = (route: AppRoute): boolean =>
     Account: () => true,
     Unit: () => true,
     Reports: () => true,
-    Admin: () => true,
+    People: () => true,
     Theme: () => true,
     Templates: () => true,
     TemplateEditor: () => true,
