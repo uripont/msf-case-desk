@@ -75,7 +75,7 @@ const world = async (network: NetworkPolicy = { kind: 'cloudflare' }, ipHeader =
         email: `${id}@case-desk.test`,
         name,
         passwordHash: await hashPassword(PASSWORD),
-        profile: { phone: null, whatsappConsent: false, whatsappConsentAt: null, notifyOnApproval: false, active: true },
+        profile: { notifyOnApproval: false, active: true },
         ...(grant === undefined ? {} : { grant }),
         createdBy: null,
         now: 1,
@@ -279,18 +279,16 @@ describe('the reviewer registry holds the unit\'s own entries (D13)', () => {
     const w = await world()
     const adam = w.browser()
     await adam.signIn('adam@case-desk.test')
-    await adam.call(c =>
-      c.SetNotificationPreferences({ notifyOnApproval: false, phone: '+34600000001', whatsappConsent: true }),
-    )
+    await adam.call(c => c.SetNotificationPreferences({ notifyOnApproval: true }))
     const alice = w.browser()
     await alice.signIn('alice@case-desk.test')
     const before = await adam.call(c => c.GetMe())
 
     const added = await alice.call(c =>
-      c.AddReviewer({ unit: 'unit-1', name: 'Typed By Alice', email: 'adam@case-desk.test', phone: '+34999999999', whatsappConsent: true }),
+      c.AddReviewer({ unit: 'unit-1', name: 'Typed By Alice', email: 'adam@case-desk.test' }),
     )
     const fresh = await alice.call(c =>
-      c.AddReviewer({ unit: 'unit-1', name: 'New Reviewer', email: 'rev@case-desk.test', phone: '+34988888888', whatsappConsent: false }),
+      c.AddReviewer({ unit: 'unit-1', name: 'New Reviewer', email: 'rev@case-desk.test' }),
     )
     // NOTE: the same shape for an existing and a new account, and the link
     // only for the new one; nothing of the stored account in the answer.
@@ -300,58 +298,21 @@ describe('the reviewer registry holds the unit\'s own entries (D13)', () => {
     expect(added.link).toBeUndefined()
     expect(fresh.link).toBeDefined()
     expect(JSON.stringify(added)).not.toContain('Adam Administrator')
-    expect(JSON.stringify(added)).not.toContain('+34600000001')
+    expect(JSON.stringify(added)).not.toContain('notifyOnApproval')
 
     const updated = await alice.call(c =>
-      c.UpdateReviewer({ unit: 'unit-1', accountId: added.accountId, name: 'Renamed By Alice', phone: '+34111111111', whatsappConsent: true }),
+      c.UpdateReviewer({ unit: 'unit-1', accountId: added.accountId, name: 'Renamed By Alice' }),
     )
-    expect(updated).toMatchObject({ name: 'Renamed By Alice', phone: '+34111111111', consentRequested: true })
+    expect(updated).toMatchObject({ name: 'Renamed By Alice' })
 
-    // NOTE: the account itself is untouched: name, phone and consent.
+    // NOTE: the account itself is untouched: its name and preferences.
     expect(await adam.call(c => c.GetMe())).toEqual(before)
 
     const listed = await alice.call(c => c.ListReviewers({ unit: 'unit-1' }))
     expect(listed.find(entry => entry.accountId === added.accountId)).toMatchObject({ name: 'Renamed By Alice' })
     expect(JSON.stringify(listed)).not.toContain('passwordSetAt')
-    expect(JSON.stringify(listed)).not.toContain('whatsappConsentAt')
+    expect(JSON.stringify(listed)).not.toContain('notifyOnApproval')
     expect(JSON.stringify(listed)).not.toContain('Adam Administrator')
-
-    // NOTE: consent is given by the reviewer, on their own account.
-    const mine = await adam.call(c => c.SetNotificationPreferences({ notifyOnApproval: false, whatsappConsent: false }))
-    expect(mine.whatsappConsent).toBe(false)
-  })
-})
-
-describe('a changed phone number loses the WhatsApp consent', () => {
-  test('consent given for one number does not carry to another; it is given again in the same request or not at all', async () => {
-    const w = await world()
-    const alice = w.browser()
-    await alice.signIn('alice@case-desk.test')
-    const given = await alice.call(c =>
-      c.SetNotificationPreferences({ notifyOnApproval: false, phone: '+34600000001', whatsappConsent: true }),
-    )
-    expect(given).toMatchObject({ phone: '+34600000001', whatsappConsent: true })
-    // The same number, nothing about consent: it stays.
-    const same = await alice.call(c =>
-      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000001' }),
-    )
-    expect(same.whatsappConsent).toBe(true)
-    // Another number and no word about consent: not given.
-    const changed = await alice.call(c =>
-      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000002' }),
-    )
-    expect(changed).toMatchObject({ phone: '+34600000002', whatsappConsent: false })
-    expect((await alice.call(c => c.GetMe())).profile.whatsappConsent).toBe(false)
-    // Consent given again for the new number, in the same request.
-    const again = await alice.call(c =>
-      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000003', whatsappConsent: true }),
-    )
-    expect(again).toMatchObject({ phone: '+34600000003', whatsappConsent: true })
-    // Another number with consent explicitly refused: not given.
-    const refused = await alice.call(c =>
-      c.SetNotificationPreferences({ notifyOnApproval: true, phone: '+34600000004', whatsappConsent: false }),
-    )
-    expect(refused.whatsappConsent).toBe(false)
   })
 })
 
@@ -493,7 +454,7 @@ describe('links', () => {
     const w = await world()
     const alice = w.browser()
     await alice.signIn('alice@case-desk.test')
-    const added = await alice.call(c => c.AddReviewer({ unit: 'unit-1', name: 'Rita Reviewer', email: 'rita@case-desk.test', whatsappConsent: false }))
+    const added = await alice.call(c => c.AddReviewer({ unit: 'unit-1', name: 'Rita Reviewer', email: 'rita@case-desk.test' }))
     const adam = w.browser()
     await adam.signIn('adam@case-desk.test')
     const rita = (await adam.call(c => c.ListAccounts())).find(account => account.id === added.accountId)

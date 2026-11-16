@@ -22,7 +22,7 @@ export const SYNTHETIC_ME = MeView.make({
   email: SYNTHETIC_USER.email,
   name: SYNTHETIC_USER.name,
   grants: [],
-  profile: { whatsappConsent: false, notifyOnApproval: false },
+  profile: { notifyOnApproval: false },
 })
 
 export const ORIGIN = 'https://quoroom.test'

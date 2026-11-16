@@ -119,12 +119,6 @@ describe('revision rows', () => {
       { type: 'notified', revision: 1, accountId: 'r2', at: T0 },
       { type: 'read', revision: 1, accountId: 'r1', at: T0 + 30 * 60_000 },
       {
-        type: 'whatsapp_opened',
-        revision: 1,
-        accountId: 'r1',
-        at: T0 + 60_000,
-      },
-      {
         type: 'reminded',
         revision: 1,
         accountId: 'r2',
@@ -182,9 +176,7 @@ describe('revision rows', () => {
     const r2 = one.cells.find(c => c.accountId === 'r2')
     expect(r1?.sent).toEqual({ at: T0 })
     expect(r1?.read).toEqual({ at: T0 + 30 * 60_000 })
-    expect(r1?.whatsappOpened).toEqual({ at: T0 + 60_000 })
     expect(r2?.read).toBeUndefined()
-    expect(r2?.whatsappOpened).toBeUndefined()
     expect(r1?.decision).toEqual({ decision: 'request_changes', at: T0 + HOUR })
     expect(r2?.decision).toEqual({ decision: 'approve', at: T0 + 2 * HOUR })
     expect(r1?.reviews.map(r => [r.id, r.standing])).toEqual([

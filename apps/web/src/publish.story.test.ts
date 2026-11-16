@@ -1,16 +1,8 @@
-import { Option } from 'effect'
 import { describe, expect, test } from 'vitest'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'
-import {
-  CHOICES,
-  LINK,
-  ROUND,
-  SCOPE,
-  loaded,
-  revision,
-} from './publish.fixtures'
+import { CHOICES, SCOPE, loaded, revision } from './publish.fixtures'
 import { authorModel } from './quoroom.fixtures'
 import * as Publish from './quoroom/publish'
 import * as PublishForm from './quoroom/publishForm'
@@ -140,61 +132,5 @@ describe('publishing', () => {
       ),
     )
     expect(names(step)).toEqual([])
-  })
-})
-
-describe('the WhatsApp list', () => {
-  const entry = {
-    accountId: 'reviewer-1',
-    name: 'Reviewer One',
-    roleName: 'Committee',
-    isReady: true,
-    isPreparing: false,
-    maybeLink: Option.some(LINK),
-    isOpened: false,
-  }
-  const screen = () =>
-    publishScreen({
-      revisions: [revision(2, 'open')],
-      round: ROUND,
-      whatsapp: [entry],
-    })
-
-  test('a tap fetches the number for that person only', () => {
-    const step = update(
-      publishScreen({
-        revisions: [revision(2, 'open')],
-        round: ROUND,
-        whatsapp: [{ ...entry, isReady: true, maybeLink: Option.none() }],
-      }),
-      publishMessage(
-        Publish.Message.ClickedPrepareWhatsApp({ accountId: 'reviewer-1' }),
-      ),
-    )
-    expect(names(step)).toEqual(['PrepareWhatsAppLink'])
-    expect(JSON.stringify(step.model)).toContain('"isPreparing":true')
-  })
-
-  test('opening the link records it once through the existing procedure', () => {
-    const step = update(
-      screen(),
-      publishMessage(
-        Publish.Message.OpenedWhatsApp({ accountId: 'reviewer-1' }),
-      ),
-    )
-    expect(names(step)).toEqual(['RecordWhatsAppOpened'])
-  })
-
-  test('the recorded answer marks the person as opened', () => {
-    const step = update(
-      screen(),
-      publishMessage(
-        Publish.Message.SucceededRecordWhatsApp({
-          scope: SCOPE,
-          accountId: 'reviewer-1',
-        }),
-      ),
-    )
-    expect(JSON.stringify(step.model)).toContain('"isOpened":true')
   })
 })

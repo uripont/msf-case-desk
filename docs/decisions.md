@@ -159,13 +159,22 @@ A template draft has a revision counter: a save or a publish that did not see th
 ## The notification pass
 
 - **State machine of a job** (`notification_jobs`): `pending` (due at `due_at`) -> `claimed` (until `lease_until`, by one pass) -> `done` | `skipped` | `failed`. A `failed` job with a `retry_at` is claimed again at that time. A claim whose lease has run out is claimed again, so a pass that stops halfway loses nothing. `attempts` counts real channel failures (at most `MAX_ATTEMPTS`, 5; back-off 1, 2, 4, 8 minutes, at most 15). `deferrals` counts lease takeovers and storage errors, with its own cap `MAX_DEFERRALS` (50), so a killed pass never fails a job for good. A job released unprocessed goes back to `pending` with its attempt given back.
-- **No duplicates.** The claim is one `UPDATE ... WHERE id IN (SELECT ... ORDER BY due_at LIMIT ?) RETURNING`, and every write that finishes a job is guarded by `state = 'claimed' AND claimed_by = ?`. The in-app inbox item is the `done` job row itself. Channels that leave the app (WhatsApp) are at least once and get the job's idempotency key.
+- **No duplicates.** The claim is one `UPDATE ... WHERE id IN (SELECT ... ORDER BY due_at LIMIT ?) RETURNING`, and every write that finishes a job is guarded by `state = 'claimed' AND claimed_by = ?`. The in-app inbox item is the `done` job row itself.
 - **Recheck.** Before sending, each job is checked with `isJobNeeded` against fresh state; not needed means `skipped`. The pass loads each report with the same `loadReport` the handlers use, which decides a round past its deadline and writes its `round_decided` jobs, delivered in the same pass.
 - **Sizing for Workers Free.** At most 5 jobs per claim, 1 report per run, and 50 D1 queries per pass (the pass counts them and releases what it cannot reach). An idle run is one raw SQL query before any Effect layer; housekeeping (`cleanupStale`, pruning) runs only in the first minute of each hour.
-- **Channel.** `NotificationChannel.send(message)` takes the template name and ordered parameters (shaped for Meta), a link and an idempotency key, and returns `Sent` or `Failed {retryable}`. WhatsApp will use the same interface.
+- **Channel.** `NotificationChannel.send(message)` takes the message kind, the recipient, a link and an idempotency key, and returns `Sent` or `Failed {retryable}`. The in-app inbox is the only channel.
 - **Starting the pass.** The Worker's `scheduled` handler (a Cron Trigger every minute on `app`, the pilot and test stages; errors logged, never rethrown) and `POST /api/tick` for hosts without cron (guarded by `TICK_SECRET` with a constant-time compare; 404 for every other request). The frozen Workers have no cron and no `TICK_SECRET`, so nothing is sent twice.
 - **Timings** come from `NOTIFY_REQUEST_DELAY_MINUTES`, `NOTIFY_FIRST_REMINDER_MINUTES` and `NOTIFY_FINAL_REMINDER_MINUTES`, read once per isolate by handlers and the pass alike. Invalid values fall back to the defaults with a logged line.
 - **Inbox.** `ListNotifications` carries no case reference, title or content, only generic lines, ids, times and the deadline with its zone. `GetUnreadCount` polls every 30 s, backs off to 5 min when nothing changes, and pauses while the tab is hidden.
+
+## External notifications
+
+Not built. The WhatsApp links of earlier versions were removed on 16 Nov. Notifications appear only in the app, on Home; My account and Home say e-mail notifications are coming soon.
+
+- **Route, if wanted.** Cloudflare Email Service: a `send_email` binding used from the existing cron's notification pass, as a second `NotificationChannel`.
+- **Cost.** It needs a domain on Cloudflare DNS (about $10/year). Workers Paid ($5/month) includes 3,000 e-mails a month, then $0.35 per 1,000. On Workers Free only addresses verified in the account can receive mail, so it cannot reach reviewers.
+- **Content.** A message would carry only a notice and a link, never report content.
+- **Left in the DB.** The phone and consent columns (`account_profiles`, `unit_reviewers`) and the job's provider and delivery columns stay, since migrations are expand-only and the frozen `iter2` shares the database. The code no longer reads or writes them; their defaults fill new rows.
 
 ## Browsers for the end-to-end tests
 

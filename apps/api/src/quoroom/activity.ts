@@ -35,15 +35,15 @@ import { auditOf, deadlineTooFarFailure, member } from './support'
 import { roundViewOf } from './views'
 
 // NOTE: Report extras (co-authors, case file title, deadline, removing a
-// reviewer), the grid and audit log, the notification inbox, WhatsApp link
-// data and downloads metadata.
+// reviewer), the grid and audit log, the notification inbox and downloads
+// metadata.
 
 type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
 
 // ---- Events ------------------------------------------------------------------------------------
 
-// NOTE: the log of a report is read bounded: the newest events. Reads and
-// WhatsApp taps are stored once per person, so only the repeatable kinds
+// NOTE: the log of a report is read bounded: the newest events. Reads are
+// stored once per person, so only the repeatable kinds
 // (sent, reminded) can grow, and slowly.
 const EVENT_LIMIT = 2000
 
@@ -65,6 +65,7 @@ const eventsFor = (db: Store, loaded: Loaded) =>
         })
       }
     }
+    // NOTE: a stored kind this version no longer writes is ignored.
     for (const event of logged) {
       if (event.kind === 'draft_read') {
         extra.push({
@@ -77,13 +78,6 @@ const eventsFor = (db: Store, loaded: Loaded) =>
         const revision = event.revisionNumber
         if (event.kind === 'read') {
           extra.push({ type: 'read', revision, accountId: event.accountId, at: event.at })
-        } else if (event.kind === 'whatsapp_opened') {
-          extra.push({
-            type: 'whatsapp_opened',
-            revision,
-            accountId: event.accountId,
-            at: event.at,
-          })
         } else if (event.kind === 'notified') {
           extra.push({ type: 'notified', revision, accountId: event.accountId, at: event.at })
         } else if (event.kind === 'reminded') {
@@ -128,78 +122,6 @@ const metaOf = (text: string): Record<string, string | number | boolean> => {
   }
 }
 
-// ---- WhatsApp ----------------------------------------------------------------------------------
-
-// NOTE: building an `Intl.DateTimeFormat` loads the zone's data and costs
-// milliseconds on Workers, so one is built per zone and kept for the isolate
-// (`null`: `Intl` cannot format that zone).
-const formatters = new Map<string, Intl.DateTimeFormat | null>()
-
-const formatterFor = (zone: string): Intl.DateTimeFormat | null => {
-  const known = formatters.get(zone)
-  if (known !== undefined) return known
-  let made: Intl.DateTimeFormat | null
-  try {
-    made = new Intl.DateTimeFormat('en-GB', {
-      timeZone: zone,
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    })
-  } catch {
-    made = null
-  }
-  // NOTE: the zone is stored text; bound what a caller can make us keep.
-  if (formatters.size < 64) formatters.set(zone, made)
-  return made
-}
-
-// NOTE: never throws, whatever was stored: a time or a zone `Intl` cannot
-// format reads as a plain "its deadline".
-export const when = (at: number, zone: string): string => {
-  try {
-    const parts = formatterFor(zone)?.formatToParts(at)
-    if (parts === undefined) return 'its deadline'
-    const part = (type: string) => parts.find(entry => entry.type === type)?.value ?? ''
-    const city = (zone.split('/').pop() ?? zone).replaceAll('_', ' ')
-    return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')} ${city} time`
-  } catch {
-    return 'its deadline'
-  }
-}
-
-const originOf = (headers: Readonly<Record<string, string | undefined>>): string => {
-  const host = (headers['host'] ?? 'localhost').replaceAll(/[^A-Za-z0-9.:-]/g, '')
-  const local = /^(localhost|127\.|\[?::1)/.test(host)
-  const forwarded = headers['x-forwarded-proto']
-  const proto = forwarded === 'http' || forwarded === 'https' ? forwarded : local ? 'http' : 'https'
-  return `${proto}://${host}`
-}
-
-// NOTE: the participant of an open round, who has a phone number and agreed to
-// WhatsApp. Anything else is `NotFound` or a refusal.
-const whatsAppTarget = (loaded: Loaded, db: Store, revision: number, accountId: string) =>
-  Effect.gen(function* () {
-    const entry = roundOf(loaded, revision)
-    const participant = entry?.participants.find(
-      p => p.userId === accountId && p.removedAt === null,
-    )
-    if (entry === undefined || participant === undefined) {
-      return yield* Effect.fail(new NotFound())
-    }
-    if (entry.round.state !== 'open') {
-      return yield* Effect.fail(new Conflict({ reason: 'not_latest' }))
-    }
-    const account = yield* db.getAccount(accountId)
-    const phone = account?.profile?.phone ?? null
-    if (account === null || phone === null || account.profile?.whatsappConsent !== true) {
-      return yield* Effect.fail(validation('input', 'no_whatsapp_consent'))
-    }
-    return { entry, account, number: phone.replace(/^\+/, '') }
-  })
-
 // ---- Handlers ----------------------------------------------------------------------------------
 
 export const activityHandlers: Pick<
@@ -213,9 +135,6 @@ export const activityHandlers: Pick<
   | 'ListNotifications'
   | 'GetUnreadCount'
   | 'MarkNotificationsRead'
-  | 'GetWhatsAppLink'
-  | 'ListWhatsAppLinks'
-  | 'RecordWhatsAppOpened'
   | 'GetDownloads'
   | 'GetApprovalRecordData'
 > = {
@@ -600,64 +519,6 @@ export const activityHandlers: Pick<
         .filter(id => Number.isInteger(id) && id >= 0)
       yield* db.markInboxRead(user.id, numbers, now)
       return { unread: yield* db.countUnread(user.id) }
-    }),
-
-  // NOTE: never names the case or the report: the deadline in its own time zone
-  // and the link only (D17). Authors only; the reviewer must be in the open
-  // round and have a number and consent.
-  GetWhatsAppLink: ({ reportId, revision, accountId }, { headers }) =>
-    Effect.gen(function* () {
-      const { loaded, db } = yield* member(reportId, { type: 'publish_revision' })
-      const target = yield* whatsAppTarget(loaded, db, revision, accountId)
-      const deadline = target.entry.round
-      const text = `A report is waiting for your review in Quoroom, due ${when(
-        deadline.deadlineAt,
-        deadline.deadlineZone,
-      )}. ${originOf(headers)}/`
-      return {
-        accountId,
-        name: target.account.name,
-        number: target.number,
-        text,
-        url: `https://wa.me/${target.number}?text=${encodeURIComponent(text)}`,
-      }
-    }),
-
-  // NOTE: one read of the round and one of the profiles of its people, however
-  // many there are. It says who can be sent a link, never the numbers: a number
-  // is read only when the author taps for that person (`GetWhatsAppLink`).
-  ListWhatsAppLinks: ({ reportId, revision }) =>
-    Effect.gen(function* () {
-      const { loaded, db } = yield* member(reportId, { type: 'publish_revision' })
-      const entry = roundOf(loaded, revision)
-      if (entry === undefined) return yield* Effect.fail(new NotFound())
-      if (entry.round.state !== 'open') return []
-      const active = entry.participants.filter(p => p.removedAt === null)
-      const profiles = yield* db.listProfiles(active.map(p => p.userId))
-      const byId = new Map(profiles.map(profile => [profile.userId, profile]))
-      return active.map(p => {
-        const profile = byId.get(p.userId)
-        return {
-          accountId: p.userId,
-          ready:
-            profile !== undefined &&
-            profile.phone !== null &&
-            profile.whatsappConsent === true,
-        }
-      })
-    }),
-
-  RecordWhatsAppOpened: ({ reportId, revision, accountId }) =>
-    Effect.gen(function* () {
-      const { loaded, db } = yield* member(reportId, { type: 'publish_revision' })
-      yield* whatsAppTarget(loaded, db, revision, accountId)
-      yield* db.recordEvent({
-        reportId,
-        kind: 'whatsapp_opened',
-        accountId,
-        revisionNumber: revision,
-        at: loaded.now,
-      })
     }),
 
   GetDownloads: ({ reportId }) =>

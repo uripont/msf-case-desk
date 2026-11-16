@@ -20,9 +20,8 @@ import { type Template } from './template'
 // known only if the reader opened the revision in the app.
 //
 // - A draft cell: whether that author shared the draft, and when they read it.
-// - A revision cell: told (`sent`), opened (`read`), WhatsApp opened by an
-//   author for that reviewer (D17), every review with its decision and time,
-//   the standing decision (the latest approve or request changes), and the
+// - A revision cell: told (`sent`), opened (`read`), every review with its
+//   decision and time, the standing decision (the latest approve or request changes), and the
 //   reminders. A reviewer removed from the round keeps their cell, marked
 //   `removed`.
 // - A revision row: the deadline, the rule status per voting role (what the
@@ -52,7 +51,6 @@ export type RevisionCell = Readonly<{
   removed: boolean
   sent: Fact | undefined
   read: Fact | undefined
-  whatsappOpened: Fact | undefined
   reviews: ReadonlyArray<ReviewCell>
   decision: DecisionFact | undefined
   reminders: ReadonlyArray<Readonly<{ kind: ReminderKind; at: number }>>
@@ -138,7 +136,6 @@ const revisionRows = (input: GridInput): ReadonlyArray<RevisionRow> => {
   const { template, flow, events } = input
   const notified = eventsOfType(events, 'notified')
   const read = eventsOfType(events, 'read')
-  const whatsapp = eventsOfType(events, 'whatsapp_opened')
   const reminded = eventsOfType(events, 'reminded')
   return flow.rounds.map((round, index): RevisionRow => {
     const reviews = reviewFactsOf(events, round.revision)
@@ -173,7 +170,6 @@ const revisionRows = (input: GridInput): ReadonlyArray<RevisionRow> => {
         removed: person.removed,
         sent: factOf(mine(notified), person.accountId),
         read: factOf(mine(read), person.accountId),
-        whatsappOpened: factOf(mine(whatsapp), person.accountId),
         reviews: reviews
           .filter(review => review.reviewerId === person.accountId)
           .map(review => ({

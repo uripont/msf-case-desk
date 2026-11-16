@@ -456,7 +456,7 @@ describe('regression: inviting and adding never discloses an existing account (D
   it('has nothing that says whether the email had an account', () => {
     for (const name of ['InviteToUnit', 'AddReviewer']) {
       const found = fieldNames(success(name))
-      for (const field of ['existing', 'active', 'passwordSetAt', 'whatsappConsentAt', 'grants']) {
+      for (const field of ['existing', 'active', 'passwordSetAt', 'grants']) {
         expect(found.has(field), `${name} carries ${field}`).toBe(false)
       }
     }

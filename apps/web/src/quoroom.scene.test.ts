@@ -291,7 +291,7 @@ describe('unit scene', () => {
     )
   })
 
-  test('a reviewer is registered with a number and a consent request', () => {
+  test('a reviewer is registered with a name and an e-mail', () => {
     scene(
       { update, view },
       given(
@@ -313,11 +313,6 @@ describe('unit scene', () => {
       ),
       type(role('textbox', { name: 'Reviewer name' }), 'Rae Viewer'),
       type(role('textbox', { name: 'Reviewer e-mail' }), 'rae@case-desk.test'),
-      type(
-        role('textbox', { name: 'Reviewer phone number' }),
-        '+34 600 000 000',
-      ),
-      click(role('checkbox', { name: 'Ask for WhatsApp consent' })),
       click(role('button', { name: 'Register reviewer' })),
       Command.resolve(
         Unit.AddReviewer,
@@ -337,8 +332,6 @@ describe('unit scene', () => {
               unit: SYNTHETIC_UNIT.id,
               name: 'Rae Viewer',
               email: 'rae@case-desk.test',
-              phone: '+34600000000',
-              consentRequested: true,
               active: true,
             },
           ],
@@ -351,7 +344,7 @@ describe('unit scene', () => {
 })
 
 describe('account scene', () => {
-  test('consent needs a number, and only the person can give it', () => {
+  test('says e-mail notifications are coming soon, as plain text with no field for it', () => {
     scene(
       { update, view },
       given(
@@ -361,13 +354,8 @@ describe('account scene', () => {
           }),
         ]),
       ),
-      click(
-        role('checkbox', {
-          name: 'I agree to receive messages from Quoroom on WhatsApp at this number',
-        }),
-      ),
-      click(role('button', { name: 'Save preferences' })),
-      expect(role('alert')).toExist(),
+      expect(text(Account.EMAIL_COMING_SOON)).toExist(),
+      expect(role('textbox')).toBeAbsent(),
     )
   })
 

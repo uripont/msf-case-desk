@@ -101,7 +101,6 @@ const grid: typeof GridView.Type = {
             removed: false,
             sent: { at: T0 },
             read: { at: T0 + 120_000 },
-            whatsappOpened: { at: T0 + 30_000 },
             reviews: [
               { id: 'review-1', decision: 'approve', hasComments: true, at: T0 + 600_000, standing: true },
             ],
@@ -180,7 +179,6 @@ describe('the status grid', () => {
       expect(text('Open for review')).toExist(),
       expect(text(`Told ${momentText(T0)}`)).toExist(),
       expect(text(`Read ${momentText(T0 + 120_000)}`)).toExist(),
-      expect(text(`WhatsApp opened ${momentText(T0 + 30_000)}`)).toExist(),
       expect(text(`Approved, ${momentText(T0 + 600_000)}`)).toExist(),
       expect(text('With comments')).toExist(),
       expect(text(`Reminder ${momentText(T0 + 7_200_000)}`)).toExist(),

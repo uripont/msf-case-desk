@@ -56,8 +56,6 @@ const grantView = (grant: GrantRecord) => ({
 })
 
 const profileView = (account: AccountRecord) => ({
-  ...(account.profile?.phone == null ? {} : { phone: account.profile.phone }),
-  whatsappConsent: account.profile?.whatsappConsent ?? false,
   notifyOnApproval: account.profile?.notifyOnApproval ?? false,
 })
 
@@ -115,15 +113,13 @@ const rowFor = (db: Store, accountId: string) =>
     )
   })
 
-// NOTE: an entry of the unit's registry: the unit's own name and number, and
-// whether it asked for consent. Nothing of the account behind it (D13).
+// NOTE: an entry of the unit's registry: the unit's own name for the person.
+// Nothing of the account behind it (D13).
 const reviewerOf = (entry: UnitReviewerRecord) => ({
   accountId: entry.userId,
   unit: entry.unitId,
   name: entry.name,
   email: entry.email,
-  ...(entry.phone === null ? {} : { phone: entry.phone }),
-  consentRequested: entry.consentRequested,
   active: entry.active,
 })
 
@@ -176,7 +172,6 @@ type NewAccountInput = Readonly<{
   reviewerOfUnit?: string
   // NOTE: what the unit holds for the person (the registry entry).
   reviewerEntry?: ReviewerEntryInput
-  phone?: string | null
 }>
 
 // NOTE: a new account: no password (an unusable hash), its profile, the grant
@@ -190,12 +185,7 @@ export const createInvited = (db: Store, input: NewAccountInput) =>
       input.createdBy,
       input.now,
     )
-    // NOTE: a brand new account gets the number the author typed, but never
-    // consent: only the person gives that, on their own account.
     const profile: ProfileInput = {
-      phone: input.phone ?? null,
-      whatsappConsent: false,
-      whatsappConsentAt: null,
       notifyOnApproval: false,
       active: true,
     }
@@ -287,35 +277,15 @@ export const accountHandlers: Pick<
       setCookie(headers, clearedSessionCookie())
     }),
 
-  SetNotificationPreferences: ({ notifyOnApproval, phone, whatsappConsent }) =>
+  SetNotificationPreferences: ({ notifyOnApproval }) =>
     Effect.gen(function* () {
       const { user, now } = yield* toNowAndActor
       const db = yield* store
       const account = yield* db.getAccount(user.id)
       const current = account?.profile ?? null
-      // NOTE: the person's own number and consent, on their own account.
-      const nextPhone = phone === undefined ? (current?.phone ?? null) : phone
-      // NOTE: consent is for one number: a changed number loses it unless the
-      // owner gives it again in the same request.
-      const phoneChanged = nextPhone !== (current?.phone ?? null)
-      const consent =
-        nextPhone === null
-          ? false
-          : phoneChanged
-            ? whatsappConsent === true
-            : (whatsappConsent ?? current?.whatsappConsent ?? false)
       yield* db.putProfile(
         user.id,
         {
-          phone: nextPhone,
-          whatsappConsent: consent,
-          whatsappConsentAt: !consent
-            ? null
-            : !phoneChanged &&
-              current?.whatsappConsent === true &&
-              current.whatsappConsentAt !== null
-              ? current.whatsappConsentAt
-              : now,
           notifyOnApproval,
           active: current?.active ?? true,
         },
@@ -569,7 +539,7 @@ export const accountHandlers: Pick<
     }),
 
   // NOTE: a person to take part in this unit's reviews: an entry of the
-  // reviewer registry, with no phone and no grant.
+  // reviewer registry, with no grant.
   InviteToUnit: ({ unit, email, name }) =>
     Effect.gen(function* () {
       const db = yield* store
@@ -586,7 +556,7 @@ export const accountHandlers: Pick<
           now,
           action: 'account.invited',
           reviewerOfUnit: unit,
-          reviewerEntry: { displayName: name, phone: null, consentRequested: false },
+          reviewerEntry: { displayName: name },
         })
         return { account: { id: created.id, name }, link: created.link }
       }
@@ -601,7 +571,7 @@ export const accountHandlers: Pick<
           action: 'unit.reviewer_linked',
           meta: JSON.stringify({ accountId: existing.id, unit }),
         },
-        { displayName: name, phone: null, consentRequested: false },
+        { displayName: name },
       )
       if (linked === 'no_unit') {
         return yield* Effect.fail(validation('input', 'unknown_unit'))
@@ -618,32 +588,18 @@ export const accountHandlers: Pick<
 
   // NOTE: D13. The answer is built from what the caller typed. A new email
   // makes an account; an existing one is only linked into this unit's
-  // registry, with the unit's own entry (the typed name and number), and
-  // nothing of the account is read, changed or revealed. Consent is only
-  // requested.
-  AddReviewer: ({ unit, name, email, phone, whatsappConsent }) =>
+  // registry, with the unit's own entry (the typed name), and nothing of the
+  // account is read, changed or revealed.
+  AddReviewer: ({ unit, name, email }) =>
     Effect.gen(function* () {
       const db = yield* store
       const { user } = yield* allowCapability(db, { type: 'manage_committees', unit })
       const clock = yield* QuoroomClock
       const now = yield* clock.now
-      if (whatsappConsent && phone === undefined) {
-        return yield* Effect.fail(validation('input', 'phone_required_for_consent'))
-      }
       const address = normaliseEmail(email)
       const existing = yield* db.findAccountByEmail(address)
-      const echoed = {
-        unit,
-        name,
-        email,
-        ...(phone === undefined ? {} : { phone }),
-        whatsappConsent,
-      }
-      const entry = {
-        displayName: name,
-        phone: phone ?? null,
-        consentRequested: whatsappConsent,
-      }
+      const echoed = { unit, name, email }
+      const entry = { displayName: name }
       if (existing === null) {
         const created = yield* createInvited(db, {
           email: address,
@@ -653,7 +609,6 @@ export const accountHandlers: Pick<
           action: 'reviewer.added',
           reviewerOfUnit: unit,
           reviewerEntry: entry,
-          phone: phone ?? null,
         })
         return { accountId: created.id, ...echoed, link: created.link }
       }
@@ -676,9 +631,9 @@ export const accountHandlers: Pick<
       return { accountId: existing.id, ...echoed }
     }),
 
-  // NOTE: only the unit's own entry changes: the account's name and number
-  // are the person's, and WhatsApp consent is theirs to give.
-  UpdateReviewer: ({ unit, accountId, name, phone, whatsappConsent }) =>
+  // NOTE: only the unit's own entry changes: the account's name is the
+  // person's.
+  UpdateReviewer: ({ unit, accountId, name }) =>
     Effect.gen(function* () {
       const db = yield* store
       const { user } = yield* allowCapability(db, { type: 'manage_committees', unit })
@@ -688,19 +643,10 @@ export const accountHandlers: Pick<
         entry => entry.userId === accountId,
       )
       if (target === undefined) return yield* Effect.fail(new NotFound())
-      const nextPhone = phone === undefined ? target.phone : phone
-      if (whatsappConsent === true && nextPhone === null) {
-        return yield* Effect.fail(validation('input', 'phone_required_for_consent'))
-      }
-      // NOTE: no number, no request for consent.
-      const consentRequested =
-        nextPhone === null ? false : whatsappConsent
       const updated = yield* db.updateUnitReviewer({
         unitId: unit,
         userId: accountId,
         ...(name === undefined ? {} : { displayName: name }),
-        ...(phone === undefined ? {} : { phone }),
-        ...(consentRequested === undefined ? {} : { consentRequested }),
         audit: {
           at: now,
           actorId: user.id,

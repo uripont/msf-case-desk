@@ -123,10 +123,8 @@ describe.each([intake, intakeOnSqlite])('the scripted scenario of D12 and D19, $
     await pass(w, channel)
     expect(summary(channel.sent)).toEqual(['review_request:carol', 'review_request:dan'])
     const request = channel.sent[0] as OutgoingMessage
-    expect(request.template.name).toBe('quoroom_review_request')
     expect(request.link).toBe(`/r/${reportId}/rev/1`)
-    // The deadline in its own time zone, and no case or report words.
-    expect(request.parameters).toEqual(['19 Nov, 10:00 Madrid time'])
+    // No case or report words.
     expect(JSON.stringify(request)).not.toMatch(/Ana|Garcia|REF-/)
     // Running it again at once sends nothing more.
     await pass(w, channel)
@@ -144,7 +142,6 @@ describe.each([intake, intakeOnSqlite])('the scripted scenario of D12 and D19, $
       'reminder_first:carol',
       'reminder_first:dan',
     ])
-    expect((channel.sent[2] as OutgoingMessage).template.name).toBe('quoroom_reminder')
 
     // Carol approves; the author is not told (D19: off by default).
     await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
@@ -185,7 +182,7 @@ describe.each([intake, intakeOnSqlite])('the scripted scenario of D12 and D19, $
     const w = await make(scenario)
     const channel = makeRecordingChannel()
     const { reportId } = await w.published()
-    await w.call('alice', c => c.SetNotificationPreferences({ notifyOnApproval: true, whatsappConsent: false }))
+    await w.call('alice', c => c.SetNotificationPreferences({ notifyOnApproval: true }))
     await pass(w, channel)
     await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     w.clock.advance(MINUTE)
@@ -466,7 +463,7 @@ describe('storage that fails is not the job\'s fault', () => {
     const w = await make(intakeOnSqlite)
     const channel = makeRecordingChannel()
     const { reportId } = await w.published()
-    await w.call('alice', c => c.SetNotificationPreferences({ notifyOnApproval: true, whatsappConsent: false }))
+    await w.call('alice', c => c.SetNotificationPreferences({ notifyOnApproval: true }))
     await pass(w, channel)
     await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     w.clock.advance(MINUTE)
@@ -528,7 +525,7 @@ describe('a decision the store keeps refusing', () => {
   test('the worst case of one report stays inside its reserve, and a pass over many such reports inside 50 queries', async () => {
     const w = await make(intakeOnSqlite)
     const channel = makeRecordingChannel()
-    await w.call('alice', c => c.SetNotificationPreferences({ notifyOnApproval: true, whatsappConsent: false }))
+    await w.call('alice', c => c.SetNotificationPreferences({ notifyOnApproval: true }))
     const reports: Array<string> = []
     for (let index = 0; index < 6; index += 1) reports.push((await w.published()).reportId)
     for (const reportId of reports) {
@@ -630,29 +627,4 @@ describe('the inbox never carries the case (D14, D17)', () => {
       if (who !== 'alice') expect(total).toBeGreaterThan(100)
     }
   }, 120_000)
-})
-
-describe('the "Send on WhatsApp" link (D17)', () => {
-  test('the number as digits only and exactly the generic text with the deadline in its own zone and the link', async () => {
-    const w = await make()
-    const { reportId } = await w.published()
-    await Effect.runPromise(
-      w.repository.putProfile(
-        'carol',
-        { phone: '+34600000001', whatsappConsent: true, whatsappConsentAt: 1, notifyOnApproval: false, active: true },
-        1,
-      ) as unknown as Effect.Effect<void>,
-    )
-    const link = await w.call('alice', c => c.GetWhatsAppLink({ reportId, revision: 1, accountId: 'carol' }))
-    const text =
-      'A report is waiting for your review in Quoroom, due 19 Nov, 10:00 Madrid time. http://localhost/'
-    expect(link.number).toBe('34600000001')
-    expect(link.text).toBe(text)
-    expect(link.url).toBe(`https://wa.me/34600000001?text=${encodeURIComponent(text)}`)
-    // The list that opens the buttons carries no number.
-    const list = await w.call('alice', c => c.ListWhatsAppLinks({ reportId, revision: 1 }))
-    expect(JSON.stringify(list)).not.toContain('34600000001')
-    expect(list.find(entry => entry.accountId === 'carol')?.ready).toBe(true)
-    expect(list.find(entry => entry.accountId === 'dan')?.ready).toBe(false)
-  })
 })

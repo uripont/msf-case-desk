@@ -508,15 +508,7 @@ const reviewerRow = (
         ],
       ),
       td(h, [cell.roleName, votes ? '' : ' (comments only)']),
-      td(h, [
-        fact(h, 'Told ', cell.sent?.at, 'Not told yet'),
-        cell.whatsappOpened === undefined
-          ? h.empty
-          : h.span(
-              [h.Class('block text-sm text-msf-grey')],
-              [`WhatsApp opened ${momentText(cell.whatsappOpened.at)}`],
-            ),
-      ]),
+      td(h, [fact(h, 'Told ', cell.sent?.at, 'Not told yet')]),
       td(h, [fact(h, 'Read ', cell.read?.at, 'Not opened')]),
       td(h, [decisionCell(h, cell, votes)]),
       td(h, [

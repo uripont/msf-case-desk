@@ -216,9 +216,6 @@ export const makeWorld = async (scenario: Scenario) => {
         name,
         passwordHash: 'not-a-real-hash',
         profile: {
-          phone: null,
-          whatsappConsent: false,
-          whatsappConsentAt: null,
           notifyOnApproval: false,
           active: true,
         },
@@ -277,7 +274,7 @@ export const makeWorld = async (scenario: Scenario) => {
         null,
         1,
         { at: 1, actorId: null, action: 'reviewer.linked' },
-        { displayName: name, phone: null, consentRequested: false },
+        { displayName: name },
       ),
     )
   }

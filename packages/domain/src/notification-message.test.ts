@@ -4,7 +4,6 @@ import {
   IN_APP_TEXT,
   LEASE_MS,
   MAX_ATTEMPTS,
-  MESSAGE_TEMPLATES,
   MINUTE,
   NOTIFICATION_KINDS,
   isMessageKind,
@@ -14,32 +13,19 @@ import {
 } from './index'
 
 describe('what each notification says', () => {
-  test('every kind with a recipient has a template and a line, and the deadline has none', () => {
+  test('every kind with a recipient has a line, and the deadline has none', () => {
     const kinds = NOTIFICATION_KINDS.filter(isMessageKind)
     expect(kinds).toHaveLength(NOTIFICATION_KINDS.length - 1)
     expect(isMessageKind('deadline')).toBe(false)
     for (const kind of kinds) {
-      expect(MESSAGE_TEMPLATES[kind].name).toMatch(/^quoroom_[a-z_]+$/)
       expect(IN_APP_TEXT[kind].length).toBeGreaterThan(10)
     }
-    expect(
-      new Set(kinds.map(kind => MESSAGE_TEMPLATES[kind].name)).size,
-    ).toBe(kinds.length)
   })
 
-  test('the lines never name a case or a report, and the reminders carry the deadline', () => {
+  test('the lines never name a case or a report', () => {
     for (const kind of NOTIFICATION_KINDS.filter(isMessageKind)) {
       expect(IN_APP_TEXT[kind]).not.toMatch(/case|ethics|intake|investigation/i)
     }
-    for (const kind of [
-      'review_request',
-      'reminder_first',
-      'reminder_final',
-      'revision_replaced',
-    ] as const) {
-      expect(MESSAGE_TEMPLATES[kind].parameters).toEqual(['deadline'])
-    }
-    expect(MESSAGE_TEMPLATES.round_decided.parameters).toEqual([])
   })
 
   test('links go to the revision for a reviewer and to the right screen for an author', () => {

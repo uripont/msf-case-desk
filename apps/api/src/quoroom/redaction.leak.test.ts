@@ -332,7 +332,7 @@ const REQUESTS: Readonly<Record<string, (c: Context) => unknown>> = {
   ListUnitMembers: () => ({ unit: 'unit-1' }),
   InviteToUnit: () => ({ unit: 'unit-1', email: 'new@case-desk.test', name: 'New Author' }),
   ListReviewers: () => ({ unit: 'unit-1' }),
-  AddReviewer: () => ({ unit: 'unit-1', name: 'New Reviewer', email: 'nr@case-desk.test', whatsappConsent: false }),
+  AddReviewer: () => ({ unit: 'unit-1', name: 'New Reviewer', email: 'nr@case-desk.test' }),
   UpdateReviewer: () => ({ unit: 'unit-1', accountId: 'dan', name: 'Dan Reviewer' }),
   ListCommittees: () => ({ unit: 'unit-1' }),
   CreateCommittee: () => ({ unit: 'unit-1', name: 'Committee', memberIds: [] }),
@@ -428,9 +428,6 @@ const REQUESTS: Readonly<Record<string, (c: Context) => unknown>> = {
   ListNotifications: () => ({ limit: 50 }),
   GetUnreadCount: () => ({}),
   MarkNotificationsRead: () => ({ ids: ['1'] }),
-  GetWhatsAppLink: c => ({ ...REVISION(c), accountId: 'dan' }),
-  ListWhatsAppLinks: REVISION,
-  RecordWhatsAppOpened: c => ({ ...REVISION(c), accountId: 'dan' }),
   GetDownloads: R,
   GetApprovalRecordData: R,
 }

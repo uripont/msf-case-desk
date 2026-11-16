@@ -75,6 +75,20 @@ describe('the notifications screen', () => {
     )
   })
 
+  test('Home says e-mail notifications are coming soon, as plain text', () => {
+    scene(
+      { update, view },
+      given(notificationsScreen([entry('n1', 'review_request')], 1)),
+      expect(text(Notifications.EMAIL_COMING_SOON)).toExist(),
+      expect(
+        text(
+          'Notifications by e-mail are coming soon. For now they appear here, in Quoroom.',
+        ),
+      ).toExist(),
+      expect(role('textbox')).toBeAbsent(),
+    )
+  })
+
   test('the Home tab shows how many are not read', () => {
     scene(
       { update, view },

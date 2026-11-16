@@ -228,13 +228,9 @@ const main = async (): Promise<void> => {
     }],
     ['2. A registers R1 and R2 in a committee; B, R1 and R2 activate (R1 at phone width)', async () => {
       await go(a, '/reports/unit', 'Reviewers and committees')
-      for (const [name, phone] of [[R1, '+34 600 111 222'], [R2, '']] as const) {
+      for (const name of [R1, R2]) {
         await a.getByLabel('Reviewer name').fill(name)
         await a.getByLabel('Reviewer e-mail').fill(at(name))
-        if (phone !== '') {
-          await a.getByLabel('Reviewer phone number').fill(phone)
-          await a.getByLabel('Ask for WhatsApp consent').check()
-        }
         await a.getByRole('button', { name: 'Register reviewer' }).click()
         links[name] = await copiedLink(a)
       }
@@ -249,11 +245,8 @@ const main = async (): Promise<void> => {
       }
       const r1 = who(R1)
       await go(r1, '/account', 'Your account')
-      await r1.getByLabel('Phone number').fill('+34 600 111 222')
-      await r1.getByLabel('I agree to receive messages from Quoroom on WhatsApp at this number').check()
-      await r1.getByRole('button', { name: 'Save preferences' }).click()
-      await r1.getByText('Saved.').waitFor()
-      await shot(r1, 'step2-r1-consent')
+      await r1.getByText('Notifications by e-mail are coming soon. For now they appear on Home, in Quoroom.').waitFor()
+      await shot(r1, 'step2-r1-account')
     }],
     ['3. A creates a case file and an intake report, adds B; each starts a working copy and sees the other', async () => {
       const b = who(B)
@@ -331,7 +324,7 @@ const main = async (): Promise<void> => {
       await go(a, `/r/${ids.intake}/drafts/1`, /Draft 1/)
       await a.getByText('Name the medical coordinator too.').waitFor()
     }],
-    ['5. A accepts two names, adds an alias, marks the image safe, checks the redaction, shares and publishes Revision 1; R1 and R2 are notified; WhatsApp for R1', async () => {
+    ['5. A accepts two names, adds an alias, marks the image safe, checks the redaction, shares and publishes Revision 1; R1 and R2 are notified', async () => {
       await go(a, `/r/${ids.intake}`, 'Intake and initial assessment')
       await a.getByRole('button', { name: 'Start again from the latest shared draft' }).click()
       await a.getByRole('alertdialog').getByRole('button', { name: 'Discard and start again' }).click()
@@ -360,12 +353,8 @@ const main = async (): Promise<void> => {
         await who(name).locator(`[data-inbox-item="${ids.intake}/1"]`).waitFor()
       }
       await shot(who(R1), 'step5-r1-inbox')
-      await a.getByRole('link', { name: 'Review round, deadline and WhatsApp requests' }).click()
-      await a.getByRole('button', { name: `Prepare the WhatsApp message for ${R1}` }).click()
-      const wa = (await a.getByRole('link', { name: `Send on WhatsApp to ${R1}` }).getAttribute('href')) ?? ''
-      assert.ok(wa.startsWith('https://wa.me/34600111222?text='), 'no WhatsApp link for R1')
-      assert.ok(!/Veltkamp|Nwosu|water/.test(decodeURIComponent(wa)), 'report content in the WhatsApp text')
-      assert.equal(await a.getByRole('button', { name: `Prepare the WhatsApp message for ${R2}` }).count(), 0, 'WhatsApp offered without consent')
+      await a.getByRole('link', { name: 'Review round and deadline' }).click()
+      await a.locator('[data-current-round="1"]').waitFor()
       await shot(a, 'step5-round')
       for (const name of [R1, R2]) await waitForNotice(who(name), 'review_request', ids.intake)
       await shot(who(R1), 'step5-r1-notified')

@@ -7,7 +7,7 @@ import { PEOPLE, SCENARIOS, SECRET, type World, makeWorld } from './testkit'
 
 // NOTE: Activity through the real RPC stack: templates and the
 // theme, the capabilities that have no part in a report, the grid and the
-// audit log, the notification inbox, WhatsApp link data, downloads and the
+// audit log, the notification inbox, downloads and the
 // report extras. All people and data are invented.
 
 const worlds: Array<World> = []
@@ -48,7 +48,6 @@ describe.each(SCENARIOS)('$name', scenario => {
           c.ExtendDeadline({ reportId, revision: 1, deadline: { at: w.clock.now() + 99 * 24 * 3_600_000, timeZone: 'Europe/Madrid' } }),
         ),
         w.refused(who, c => c.RemoveReviewer({ reportId, revision: 1, accountId: 'carol' })),
-        w.refused(who, c => c.GetWhatsAppLink({ reportId, revision: 1, accountId: 'carol' })),
       ])
       for (const error of refusals) expect(tagOf(error)).toBe('NotFound')
     }
@@ -292,64 +291,6 @@ describe.each(SCENARIOS)('$name', scenario => {
     expect(tagOf(await w.refused('alice', c => c.RemoveReviewer({ reportId, revision: 1, accountId: 'frank' })))).toBe('NotFound')
     const log = await w.call('alice', c => c.ListAuditEvents({ subject: { kind: 'report', reportId }, limit: 50 }))
     expect(log.events.map(event => event.action)).toEqual(expect.arrayContaining(['round.deadline_extended', 'round.reviewer_removed']))
-  })
-
-  test('WhatsApp link data needs a number and consent, names no case, and opening it is recorded', async () => {
-    const w = await world()
-    const { reportId } = await w.published()
-    expect(tagOf(await w.refused('alice', c => c.GetWhatsAppLink({ reportId, revision: 1, accountId: 'carol' })))).toBe('Validation')
-    await run(
-      w.repository.putProfile(
-        'carol',
-        { phone: '+34600000001', whatsappConsent: true, whatsappConsentAt: 1, notifyOnApproval: false, active: true },
-        1,
-      ),
-    )
-    const link = await w.call('alice', c => c.GetWhatsAppLink({ reportId, revision: 1, accountId: 'carol' }))
-    expect(link).toMatchObject({ accountId: 'carol', name: 'Carol Reviewer', number: '34600000001' })
-    expect(link.url.startsWith('https://wa.me/34600000001?text=')).toBe(true)
-    expect(decodeURIComponent(link.url.split('?text=')[1] ?? '')).toBe(link.text)
-    expect(link.text).toMatch(/due \d{1,2} [A-Z][a-z]{2}, \d\d:\d\d Madrid time/)
-    expect(link.text).not.toContain(SECRET)
-    expect(link.text).not.toContain('REF-')
-    expect(link.url).not.toContain('%2B')
-
-    // NOTE: only people of the round.
-    expect(tagOf(await w.refused('alice', c => c.GetWhatsAppLink({ reportId, revision: 1, accountId: 'frank' })))).toBe('NotFound')
-    expect(tagOf(await w.refused('carol', c => c.GetWhatsAppLink({ reportId, revision: 1, accountId: 'carol' })))).toBe('NotFound')
-
-    await w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }))
-    const grid = await w.call('alice', c => c.GetGrid({ reportId }))
-    const cell = grid.grid.revisions[0]?.cells.find(entry => entry.accountId === 'carol')
-    expect(cell?.whatsappOpened?.at).toBe(w.clock.now())
-  })
-
-  test('the WhatsApp list says who can be sent a link, with no number, and a repeated tap is recorded once', async () => {
-    const w = await world()
-    const { reportId } = await w.published()
-    await run(
-      w.repository.putProfile(
-        'carol',
-        { phone: '+34600000001', whatsappConsent: true, whatsappConsentAt: 1, notifyOnApproval: false, active: true },
-        1,
-      ),
-    )
-    const list = await w.call('alice', c => c.ListWhatsAppLinks({ reportId, revision: 1 }))
-    expect(list.find(entry => entry.accountId === 'carol')).toEqual({ accountId: 'carol', ready: true })
-    expect(list.find(entry => entry.accountId === 'dan')).toEqual({ accountId: 'dan', ready: false })
-    expect(JSON.stringify(list)).not.toContain('34600000001')
-    expect(tagOf(await w.refused('carol', c => c.ListWhatsAppLinks({ reportId, revision: 1 })))).toBe('NotFound')
-
-    const first = w.clock.now()
-    await w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }))
-    w.clock.advance(60_000)
-    await w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }))
-    const taps = (await run(w.repository.listEvents(reportId, 100))).filter(
-      event => event.kind === 'whatsapp_opened',
-    )
-    expect(taps).toHaveLength(1)
-    const grid = await w.call('alice', c => c.GetGrid({ reportId }))
-    expect(grid.grid.revisions[0]?.cells.find(entry => entry.accountId === 'carol')?.whatsappOpened?.at).toBe(first)
   })
 
   test('the audit kind filter is applied before the page is cut, and only the actors of the page are read', async () => {

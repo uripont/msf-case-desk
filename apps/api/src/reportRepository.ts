@@ -235,8 +235,7 @@ const grantsOf = (found: ReadonlyArray<Row>): ReadonlyArray<GrantRecord> =>
         ]
   })
 
-const PROFILE_COLUMNS = `p.user_id AS p_user_id, p.phone AS p_phone,
-  p.whatsapp_consent AS p_consent, p.whatsapp_consent_at AS p_consent_at,
+const PROFILE_COLUMNS = `p.user_id AS p_user_id,
   p.notify_on_approval AS p_notify, p.active AS p_active,
   p.password_set_at AS p_password_set_at`
 
@@ -245,9 +244,6 @@ const profileOf = (r: Row): AccountProfile | null =>
     ? null
     : {
         userId: s(r['p_user_id']),
-        phone: sn(r['p_phone']),
-        whatsappConsent: b(r['p_consent']),
-        whatsappConsentAt: nn(r['p_consent_at']),
         notifyOnApproval: b(r['p_notify']),
         active: b(r['p_active']),
         passwordSetAt: nn(r['p_password_set_at']),
@@ -520,8 +516,6 @@ const jobOf = (r: Row): JobRecord => ({
   attempts: n(r['attempts']),
   deferrals: n(r['deferrals']),
   deadlineZone: sn(r['deadline_zone']),
-  providerMessageId: sn(r['provider_message_id']),
-  deliveryStatus: sn(r['delivery_status']),
   retryAt: nn(r['retry_at']),
   lastError: sn(r['last_error']),
   createdAt: n(r['created_at']),
@@ -847,14 +841,11 @@ const ops: Impl = {
         expectChanges: 1,
       },
       {
-        sql: `INSERT INTO account_profiles (user_id, phone, whatsapp_consent,
-          whatsapp_consent_at, notify_on_approval, active, password_set_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+        sql: `INSERT INTO account_profiles (user_id, notify_on_approval, active,
+          password_set_at, created_at)
+          VALUES (?, ?, ?, NULL, ?)`,
         values: [
           input.id,
-          profile.phone,
-          flag(profile.whatsappConsent),
-          profile.whatsappConsentAt,
           flag(profile.notifyOnApproval),
           flag(profile.active),
           input.now,
@@ -863,17 +854,14 @@ const ops: Impl = {
       input.reviewerOfUnit === undefined
         ? null
         : {
-            sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at,
-              display_name, phone, consent_requested)
-              SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)`,
+            sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at, display_name)
+              SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)`,
             values: [
               input.reviewerOfUnit,
               input.id,
               input.createdBy,
               input.now,
               input.reviewerEntry?.displayName ?? input.name,
-              input.reviewerEntry?.phone ?? null,
-              flag(input.reviewerEntry?.consentRequested ?? false),
               input.reviewerOfUnit,
             ],
             expectChanges: 1,
@@ -934,17 +922,12 @@ const ops: Impl = {
   putProfile: async (db, userId, profile, now) => {
     await exec(
       db,
-      `INSERT INTO account_profiles (user_id, phone, whatsapp_consent, whatsapp_consent_at,
-        notify_on_approval, active, password_set_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
-        ON CONFLICT (user_id) DO UPDATE SET phone = excluded.phone,
-          whatsapp_consent = excluded.whatsapp_consent,
-          whatsapp_consent_at = excluded.whatsapp_consent_at,
+      `INSERT INTO account_profiles (user_id, notify_on_approval, active, password_set_at,
+        created_at)
+        VALUES (?, ?, ?, NULL, ?)
+        ON CONFLICT (user_id) DO UPDATE SET
           notify_on_approval = excluded.notify_on_approval, active = excluded.active`,
       userId,
-      profile.phone,
-      flag(profile.whatsappConsent),
-      profile.whatsappConsentAt,
       flag(profile.notifyOnApproval),
       flag(profile.active),
       now,
@@ -953,9 +936,8 @@ const ops: Impl = {
   linkReviewer: async (db, unitId, userId, addedBy, now, audit, entry) => {
     const outcome = await runBatch(db, [
       {
-        sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at,
-          display_name, phone, consent_requested)
-          SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)
+        sql: `INSERT INTO unit_reviewers (unit_id, user_id, added_by, added_at, display_name)
+          SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM units WHERE id = ?)
           AND NOT EXISTS (SELECT 1 FROM unit_reviewers WHERE unit_id = ? AND user_id = ?)`,
         values: [
           unitId,
@@ -963,8 +945,6 @@ const ops: Impl = {
           addedBy,
           now,
           entry.displayName,
-          entry.phone,
-          flag(entry.consentRequested),
           unitId,
           unitId,
           userId,
@@ -996,7 +976,7 @@ const ops: Impl = {
       await rows(
         db,
         `SELECT r.unit_id, r.user_id, u.email, COALESCE(NULLIF(r.display_name, ''), u.name) AS name,
-          r.phone, r.consent_requested, COALESCE(p.active, 1) AS active, r.added_at
+          COALESCE(p.active, 1) AS active, r.added_at
           FROM unit_reviewers r JOIN users u ON u.id = r.user_id
           LEFT JOIN account_profiles p ON p.user_id = u.id
           WHERE r.unit_id = ? ORDER BY name, r.user_id`,
@@ -1008,8 +988,6 @@ const ops: Impl = {
         userId: s(r['user_id']),
         email: s(r['email']),
         name: s(r['name']),
-        phone: sn(r['phone']),
-        consentRequested: b(r['consent_requested']),
         active: b(r['active']),
         addedAt: n(r['added_at']),
       }),
@@ -1018,17 +996,10 @@ const ops: Impl = {
   updateUnitReviewer: async (db, input) => {
     const outcome = await runBatch(db, [
       {
-        sql: `UPDATE unit_reviewers SET
-          display_name = COALESCE(?, display_name),
-          phone = CASE WHEN ? THEN ? ELSE phone END,
-          consent_requested = CASE WHEN ? THEN ? ELSE consent_requested END
+        sql: `UPDATE unit_reviewers SET display_name = COALESCE(?, display_name)
           WHERE unit_id = ? AND user_id = ?`,
         values: [
           input.displayName ?? null,
-          flag(input.phone !== undefined),
-          input.phone ?? null,
-          flag(input.consentRequested !== undefined),
-          flag(input.consentRequested ?? false),
           input.unitId,
           input.userId,
         ],
@@ -1100,9 +1071,9 @@ const ops: Impl = {
         expectChanges: 1,
       },
       {
-        sql: `INSERT INTO account_profiles (user_id, whatsapp_consent, notify_on_approval,
-          active, password_set_at, created_at)
-          SELECT user_id, 0, 0, 1, ?, ? FROM invitations WHERE token_hash = ?
+        sql: `INSERT INTO account_profiles (user_id, notify_on_approval, active,
+          password_set_at, created_at)
+          SELECT user_id, 0, 1, ?, ? FROM invitations WHERE token_hash = ?
           ON CONFLICT (user_id) DO UPDATE SET password_set_at = excluded.password_set_at`,
         values: [now, now, tokenHash],
       },
@@ -3205,23 +3176,6 @@ const ops: Impl = {
               WHERE ${mine} AND id IN (SELECT value FROM json_each(?))`,
             values: [input.now, input.claimedBy, JSON.stringify(input.done)],
           },
-      input.delivered === undefined || input.delivered.length === 0
-        ? null
-        : {
-            sql: `UPDATE notification_jobs SET
-                provider_message_id = (SELECT json_extract(d.value, '$.providerMessageId')
-                  FROM json_each(?) d WHERE json_extract(d.value, '$.id') = notification_jobs.id),
-                delivery_status = (SELECT json_extract(d.value, '$.deliveryStatus')
-                  FROM json_each(?) d WHERE json_extract(d.value, '$.id') = notification_jobs.id)
-              WHERE state = 'done' AND done_at = ?
-                AND id IN (SELECT json_extract(value, '$.id') FROM json_each(?))`,
-            values: [
-              JSON.stringify(input.delivered),
-              JSON.stringify(input.delivered),
-              input.now,
-              JSON.stringify(input.delivered),
-            ],
-          },
       input.skipped.length === 0
         ? null
         : {
@@ -3310,10 +3264,7 @@ const ops: Impl = {
           )
         ).length,
   recordEvent: async (db, event) => {
-    const once =
-      event.kind === 'draft_read' ||
-      event.kind === 'read' ||
-      event.kind === 'whatsapp_opened'
+    const once = event.kind === 'draft_read' || event.kind === 'read'
     await exec(
       db,
       `INSERT INTO report_events (report_id, kind, account_id, draft_number, revision_number, at, detail)

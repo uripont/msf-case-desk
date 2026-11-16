@@ -30,9 +30,6 @@ export const DisplayName = Schema.Trimmed.check(
   Schema.isMaxLength(200),
 )
 
-// NOTE: E.164, with the plus sign. The `wa.me` link carries digits only.
-export const Phone = Schema.String.check(Schema.isPattern(/^\+[1-9]\d{6,14}$/))
-
 export const NewPassword = Schema.String.check(
   Schema.isMinLength(10),
   Schema.isMaxLength(200),

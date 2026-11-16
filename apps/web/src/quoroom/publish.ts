@@ -20,13 +20,12 @@ import {
   RevisionHeader,
   RoundView,
   Template,
-  WhatsAppLink,
   draftLabel,
 } from '@case-desk/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'
-import { type QuoroomClient, withQuoroom } from './api'
+import { withQuoroom } from './api'
 import { actionButton } from './entryViews'
 import { Failure, failureOf, failureText } from './failure'
 import * as PublishForm from './publishForm'
@@ -39,25 +38,10 @@ import { LoadState } from './unit'
 // publishes the latest shared draft as the next revision with a deadline and,
 // for every reviewing role, a committee or a list of people (D23). The screen
 // also shows the open round with its deadline and countdown, the revisions and
-// whether each is still open or was superseded (D11), and, after publishing,
-// one "Send on WhatsApp" link per reviewer with a number and consent (D17).
-// The link holds the deadline and the address of Quoroom, never anything of
-// the report; Quoroom only records that the author opened it.
+// whether each is still open or was superseded (D11). Reviewers are told in
+// Quoroom (D17).
 
 const CLOCK_TICK_SECONDS = 30
-
-export const WhatsAppEntry = Schema.Struct({
-  accountId: Schema.String,
-  name: Schema.String,
-  roleName: Schema.String,
-  // NOTE: whether a link can be made (a number and consent). The number itself
-  // is not here: it is read only when the author taps for this person.
-  isReady: Schema.Boolean,
-  isPreparing: Schema.Boolean,
-  maybeLink: Schema.Option(WhatsAppLink),
-  isOpened: Schema.Boolean,
-})
-export type WhatsAppEntry = typeof WhatsAppEntry.Type
 
 export const Model = Schema.Struct({
   origin: Schema.String,
@@ -69,7 +53,6 @@ export const Model = Schema.Struct({
   maybeChoices: Schema.Option(PublishChoices),
   revisions: Schema.Array(RevisionHeader),
   maybeRound: Schema.Option(RoundView),
-  whatsapp: Schema.Array(WhatsAppEntry),
   form: PublishForm.Model,
   nowMs: Schema.Int,
   isPublishing: Schema.Boolean,
@@ -89,7 +72,6 @@ export const initialModel = Model.make({
   maybeChoices: Option.none(),
   revisions: [],
   maybeRound: Option.none(),
-  whatsapp: [],
   form: PublishForm.initialModel,
   nowMs: 0,
   isPublishing: false,
@@ -104,7 +86,6 @@ export const LoadedPublish = Schema.Struct({
   choices: PublishChoices,
   revisions: Schema.Array(RevisionHeader),
   maybeRound: Schema.Option(RoundView),
-  whatsapp: Schema.Array(WhatsAppEntry),
   nowMs: Schema.Int,
   timeZone: Schema.String,
 })
@@ -118,73 +99,11 @@ export const Message = defineMessageUnion({
   ClickedPublish: {},
   SucceededPublishRevision: { scope: PageScope, revision: RevisionHeader },
   FailedPublishRevision: { scope: PageScope, failure: Failure },
-  ClickedPrepareWhatsApp: { accountId: Schema.String },
-  SucceededPrepareWhatsApp: { scope: PageScope, link: WhatsAppLink },
-  FailedPrepareWhatsApp: {
-    scope: PageScope,
-    accountId: Schema.String,
-    failure: Failure,
-  },
-  OpenedWhatsApp: { accountId: Schema.String },
-  SucceededRecordWhatsApp: { scope: PageScope, accountId: Schema.String },
-  FailedRecordWhatsApp: { scope: PageScope, failure: Failure },
   TickedClock: { nowMs: Schema.Int },
 })
 export type Message = typeof Message.Type
 
 // COMMAND
-
-// NOTE: one call for the whole round, whatever its size: who can be sent a
-// link. A failure is not hidden as "no number": the page fails to load.
-const readinessOf = (
-  client: QuoroomClient,
-  reportId: string,
-  round: RoundView,
-) =>
-  Effect.gen(function* () {
-    const readiness = yield* client.ListWhatsAppLinks({
-      reportId,
-      revision: round.revision,
-    })
-    return Array.filter(round.participants, participant => !participant.removed).map(
-      (participant): WhatsAppEntry => ({
-        accountId: participant.accountId,
-        name: participant.name,
-        roleName: participant.roleName,
-        isReady: Array.some(
-          readiness,
-          entry => entry.accountId === participant.accountId && entry.ready,
-        ),
-        isPreparing: false,
-        maybeLink: Option.none(),
-        isOpened: false,
-      }),
-    )
-  })
-
-export const PrepareWhatsAppLink = Command.define('PrepareWhatsAppLink', {
-  args: { scope: PageScope, revision: Schema.Int, accountId: Schema.String },
-  messages: [Message.SucceededPrepareWhatsApp, Message.FailedPrepareWhatsApp],
-  execute: ({ scope, revision, accountId }) =>
-    withQuoroom(client =>
-      client.GetWhatsAppLink({
-        reportId: scope.reportId,
-        revision,
-        accountId,
-      }),
-    ).pipe(
-      Effect.map(link => Message.SucceededPrepareWhatsApp({ scope, link })),
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedPrepareWhatsApp({
-            scope,
-            accountId,
-            failure: failureOf(error),
-          }),
-        ),
-      ),
-    ),
-})
 
 export const LoadPublish = Command.define('LoadPublish', {
   args: { scope: PageScope },
@@ -212,9 +131,6 @@ export const LoadPublish = Command.define('LoadPublish', {
               }),
             )
           : Option.none()
-        const whatsapp = Option.isSome(maybeRound)
-          ? yield* readinessOf(client, reportId, maybeRound.value)
-          : []
         const nowMs = yield* Clock.currentTimeMillis
         return {
           detail,
@@ -224,7 +140,6 @@ export const LoadPublish = Command.define('LoadPublish', {
           maybeRound,
           nowMs,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          whatsapp,
         }
       }),
     ).pipe(
@@ -274,26 +189,6 @@ export const PublishRevision = Command.define('PublishRevision', {
       Effect.catch(error =>
         Effect.succeed(
           Message.FailedPublishRevision({ scope, failure: failureOf(error) }),
-        ),
-      ),
-    ),
-})
-
-export const RecordWhatsAppOpened = Command.define('RecordWhatsAppOpened', {
-  args: { scope: PageScope, revision: Schema.Int, accountId: Schema.String },
-  messages: [Message.SucceededRecordWhatsApp, Message.FailedRecordWhatsApp],
-  execute: ({ scope, revision, accountId }) =>
-    withQuoroom(client =>
-      client.RecordWhatsAppOpened({
-        reportId: scope.reportId,
-        revision,
-        accountId,
-      }),
-    ).pipe(
-      Effect.map(() => Message.SucceededRecordWhatsApp({ scope, accountId })),
-      Effect.catch(error =>
-        Effect.succeed(
-          Message.FailedRecordWhatsApp({ scope, failure: failureOf(error) }),
         ),
       ),
     ),
@@ -408,7 +303,6 @@ const updateCurrent = (model: Model, message: Message) =>
         maybeChoices: () => Option.some(loaded.choices),
         revisions: () => loaded.revisions,
         maybeRound: () => loaded.maybeRound,
-        whatsapp: () => loaded.whatsapp,
         nowMs: () => loaded.nowMs,
         form: () => PublishForm.defaultsFor(loaded.nowMs, loaded.timeZone),
         isPublishing: () => false,
@@ -444,75 +338,6 @@ const updateCurrent = (model: Model, message: Message) =>
         isPublishing: () => false,
         maybeFailure: () => Option.some(failure),
       }),
-    }),
-    ClickedPrepareWhatsApp: ({ accountId }) =>
-      Option.match(model.maybeRound, {
-        onNone: () => ({ model }),
-        onSome: round => ({
-          model: modifyFields(model, {
-            whatsapp: entries =>
-              Array.map(entries, entry =>
-                entry.accountId === accountId
-                  ? { ...entry, isPreparing: true }
-                  : entry,
-              ),
-          }),
-          commands: [
-            PrepareWhatsAppLink({
-              scope: pageScopeOf(model),
-              revision: round.revision,
-              accountId,
-            }),
-          ],
-        }),
-      }),
-    SucceededPrepareWhatsApp: ({ link }) => ({
-      model: modifyFields(model, {
-        whatsapp: entries =>
-          Array.map(entries, entry =>
-            entry.accountId === link.accountId
-              ? { ...entry, isPreparing: false, maybeLink: Option.some(link) }
-              : entry,
-          ),
-      }),
-    }),
-    FailedPrepareWhatsApp: ({ accountId, failure }) => ({
-      model: modifyFields(model, {
-        whatsapp: entries =>
-          Array.map(entries, entry =>
-            entry.accountId === accountId
-              ? { ...entry, isPreparing: false }
-              : entry,
-          ),
-        maybeFailure: () => Option.some(failure),
-      }),
-    }),
-    OpenedWhatsApp: ({ accountId }) =>
-      Option.match(model.maybeRound, {
-        onNone: () => ({ model }),
-        onSome: round => ({
-          model,
-          commands: [
-            RecordWhatsAppOpened({
-              scope: pageScopeOf(model),
-              revision: round.revision,
-              accountId,
-            }),
-          ],
-        }),
-      }),
-    SucceededRecordWhatsApp: ({ accountId }) => ({
-      model: modifyFields(model, {
-        whatsapp: entries =>
-          Array.map(entries, entry =>
-            entry.accountId === accountId
-              ? { ...entry, isOpened: true }
-              : entry,
-          ),
-      }),
-    }),
-    FailedRecordWhatsApp: ({ failure }) => ({
-      model: modifyFields(model, { maybeFailure: () => Option.some(failure) }),
     }),
     TickedClock: ({ nowMs }) => ({
       model: modifyFields(model, { nowMs: () => nowMs }),
@@ -604,102 +429,6 @@ const roundsPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
       'Only the latest revision counts. Publishing a new one replaces the open round.',
     ),
   )
-
-const whatsAppRow = (h: HtmlBuilder<Message>, entry: WhatsAppEntry): Html =>
-  h.keyed('li')(
-    entry.accountId,
-    [
-      h.Class('flex flex-col gap-2 py-3'),
-      h.DataAttribute('whatsapp', entry.accountId),
-    ],
-    [
-      h.p(
-        [h.Class('text-lg text-msf-ink')],
-        [`${entry.name} (${entry.roleName})`],
-      ),
-      Option.match(entry.maybeLink, {
-        onNone: () =>
-          entry.isReady
-            ? h.button(
-                [
-                  h.Type('button'),
-                  h.Disabled(entry.isPreparing),
-                  h.AriaLabel(`Prepare the WhatsApp message for ${entry.name}`),
-                  h.Class(
-                    clsx(
-                      'inline-flex min-h-12 cursor-pointer items-center self-start border border-msf-ink px-4 text-lg font-medium text-msf-ink hover:bg-msf-mist disabled:opacity-60',
-                      focusRing,
-                    ),
-                  ),
-                  h.OnClick(
-                    Message.ClickedPrepareWhatsApp({
-                      accountId: entry.accountId,
-                    }),
-                  ),
-                ],
-                [entry.isPreparing ? 'Preparing…' : 'Prepare WhatsApp message'],
-              )
-            : h.p(
-                [h.Class('text-base text-msf-grey')],
-                ['No WhatsApp number or consent. They are told in Quoroom only.'],
-              ),
-        onSome: link =>
-          h.div(
-            [h.Class('flex flex-col gap-1')],
-            [
-              h.a(
-                [
-                  h.Href(link.url),
-                  h.Target('_blank'),
-                  h.Rel('noopener noreferrer'),
-                  h.AriaLabel(`Send on WhatsApp to ${entry.name}`),
-                  h.Class(
-                    clsx(
-                      'inline-flex min-h-12 items-center self-start border border-msf-ink px-4 text-lg font-medium text-msf-ink hover:bg-msf-mist',
-                      focusRing,
-                    ),
-                  ),
-                  h.OnClick(
-                    Message.OpenedWhatsApp({ accountId: entry.accountId }),
-                  ),
-                ],
-                ['Send on WhatsApp'],
-              ),
-              entry.isOpened
-                ? h.p(
-                    [h.Role('status'), h.Class('text-base text-msf-grey')],
-                    ['You opened WhatsApp for this person.'],
-                  )
-                : h.empty,
-            ],
-          ),
-      }),
-    ],
-  )
-
-const whatsAppPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
-  Array.match(model.whatsapp, {
-    onEmpty: () => h.empty,
-    onNonEmpty: entries =>
-      panel(
-        h,
-        'Send the first request on WhatsApp',
-        [
-          h.ul(
-            [
-              h.AriaLabel('Reviewers'),
-              h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
-              ),
-            ],
-            Array.map(entries, entry => whatsAppRow(h, entry)),
-          ),
-        ],
-        Option.some(
-          'Each button opens WhatsApp on your phone with the message ready. The message holds the deadline and the address of Quoroom, never the report. You tap send; Quoroom only records that you opened it, because it cannot know whether the message was sent. Reviewers also get it in their Quoroom inbox.',
-        ),
-      ),
-  })
 
 const publishPanel = (
   h: HtmlBuilder<Message>,
@@ -861,7 +590,6 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
                   ),
               }),
               roundsPanel(h, model),
-              whatsAppPanel(h, model),
               publishPanel(h, model, context, detail),
             ]),
         },

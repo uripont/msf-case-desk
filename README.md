@@ -15,7 +15,7 @@ What it does:
 - **Templates** with sections, numbered subsections, repeated entries, rich text, branching, a cover, contents and a conclusion step, built in a template editor ([`docs/templates.md`](docs/templates.md)).
 - **Private drafting.** Each author works on an autosaved working copy and shares it as the next draft. Two drafts shared at once are compared item by item.
 - **Names and redaction.** Authors list each person with every spelling of their name; reviewers who should not see names only ever receive the redacted text, produced on the server. Images stay withheld until an author marks them safe.
-- **Review rounds.** A revision goes to a committee with a deadline. Reviewers comment on selected text or whole sections and approve, request changes or comment. Reminders and outcomes arrive in an in-app inbox; the first request can be sent by WhatsApp from the author's phone.
+- **Review rounds.** A revision goes to a committee with a deadline. Reviewers comment on selected text or whole sections and approve, request changes or comment. Requests, reminders and outcomes arrive in an in-app inbox on Home; e-mail notifications are not built yet.
 - **Closing.** A round is decided by its approval rule or its deadline. The report ends with a closing revision or on approval and is archived, read-only, with a status grid and an audit log. Any draft or revision downloads as a PDF, made in the browser and never stored.
 
 Iterations 1 and 2 were **Case Desk**, a triage desk for incoming cases. They stay online, frozen, on the demo environment, built from the git tags `iter1` and `iter2`; their code and scoring rules are in those tags.
@@ -115,10 +115,9 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 | --- | --- | --- |
 | Iterations 1 and 2 (Case Desk) | until 6 Nov 2026 | Triage dashboard, case entry, rules per operational centre, backend on Cloudflare, sign-in |
 | Iteration 3 (Quoroom) | 12 to 16 Nov 2026 | Templates as data, private drafting, redaction, review rounds, notifications, PDFs, template editor, theme, pilot stack |
-| WhatsApp | next | Review requests and reminders through the WhatsApp Cloud API, first on the demo, then on the pilot |
 | Pilot | 16 to 30 Nov 2026 | Real reports with the ethics unit, if it agrees |
-| Guides for MSF | after WhatsApp | How to use Quoroom, for administrators, authors and reviewers |
-| `iter3` freeze | after WhatsApp | Iteration 3 frozen at its tag on the demo environment, with its own contract tests |
+| Guides for MSF | later | How to use Quoroom, for administrators, authors and reviewers |
+| `iter3` freeze | next | Iteration 3 frozen at its tag on the demo environment, with its own contract tests |
 
 ## Licence
 

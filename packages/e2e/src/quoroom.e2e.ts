@@ -306,17 +306,15 @@ const main = async (): Promise<void> => {
     })
 
     let reviewerLink = ''
-    await step('the author registers a reviewer with a number and a consent request', async () => {
+    await step('the author registers a reviewer with a name and an e-mail', async () => {
       await ana.getByLabel('Reviewer name').fill('Rae Viewer')
       await ana.getByLabel('Reviewer e-mail').fill('rae.viewer@case-desk.test')
-      await ana.getByLabel('Reviewer phone number').fill('+34 600 000 000')
-      await ana.getByLabel('Ask for WhatsApp consent').check()
       await ana.getByRole('button', { name: 'Register reviewer' }).click()
       await ana.getByRole('textbox', { name: 'Link' }).waitFor()
       reviewerLink = await copiedLink(ana)
       await ana
         .getByRole('list', { name: 'Reviewers' })
-        .getByText('+34600000000 · WhatsApp consent requested')
+        .getByText('rae.viewer@case-desk.test')
         .waitFor()
       await shot(ana, 'ana-4-reviewer')
     })
@@ -340,21 +338,13 @@ const main = async (): Promise<void> => {
       await activate(rae, reviewerLink, 'rae')
     })
 
-    await step('only the reviewer gives WhatsApp consent, on their own account', async () => {
+    await step('the account says e-mail notifications are coming soon, with no field for them', async () => {
       await rae.getByRole('link', { name: /, my account$/ }).click()
       await rae.getByRole('heading', { name: 'Your account' }).waitFor()
-      assert.equal(
-        await rae
-          .getByLabel('I agree to receive messages from Quoroom on WhatsApp at this number')
-          .isChecked(),
-        false,
-      )
-      await rae.getByLabel('Phone number').fill('+34 600 000 000')
       await rae
-        .getByLabel('I agree to receive messages from Quoroom on WhatsApp at this number')
-        .check()
-      await rae.getByRole('button', { name: 'Save preferences' }).click()
-      await rae.getByText('Saved.').waitFor()
+        .getByText('Notifications by e-mail are coming soon. For now they appear on Home, in Quoroom.')
+        .waitFor()
+      assert.equal(await rae.getByRole('textbox').count(), 0, 'a field on the account page')
       await shot(rae, 'rae-1-account')
     })
 
@@ -1671,20 +1661,17 @@ const main = async (): Promise<void> => {
     })
 
     // NOTE: At 375 px: an author publishes Revision 1 to a committee
-    // with a deadline after confirming the preview, sees the round and the
-    // WhatsApp buttons (a link holding the deadline and no report content), then
+    // with a deadline after confirming the preview, sees the round, then
     // publishes Revision 2 and Revision 1 shows as superseded.
-    await step('publishing on a phone: a committee and a deadline, the round, wa.me links with no report content, a second revision supersedes the first', async () => {
+    await step('publishing on a phone: a committee and a deadline, the round, a second revision supersedes the first', async () => {
       const pia = pilotPage
       assert.ok(pia !== undefined, 'no pilot page')
 
-      // A reviewer with a number and consent, in a committee.
+      // A reviewer in a committee.
       await pia.goto(`${pilotUrl}/reports/unit`)
       await pia.getByRole('heading', { name: 'Reviewers and committees' }).waitFor()
       await pia.getByLabel('Reviewer name').fill('Pat Panel')
       await pia.getByLabel('Reviewer e-mail').fill('pat.panel@case-desk.test')
-      await pia.getByLabel('Reviewer phone number').fill('+34 611 000 111')
-      await pia.getByLabel('Ask for WhatsApp consent').check()
       await pia.getByRole('button', { name: 'Register reviewer' }).click()
       await pia.getByRole('textbox', { name: 'Link' }).waitFor()
       const patLink = await copiedLink(pia)
@@ -1696,14 +1683,6 @@ const main = async (): Promise<void> => {
 
       const pat = await person(launched)
       await activate(pat, patLink, 'pat')
-      await pat.getByRole('link', { name: /, my account$/ }).click()
-      await pat.getByRole('heading', { name: 'Your account' }).waitFor()
-      await pat.getByLabel('Phone number').fill('+34 611 000 111')
-      await pat
-        .getByLabel('I agree to receive messages from Quoroom on WhatsApp at this number')
-        .check()
-      await pat.getByRole('button', { name: 'Save preferences' }).click()
-      await pat.getByText('Saved.').waitFor()
 
       // A report with a sentence in it, shared and published in one go.
       await pia.goto(`${pilotUrl}/reports`)
@@ -1745,22 +1724,11 @@ const main = async (): Promise<void> => {
         .getByRole('button', { name: /^Confirm the redacted version, share as Draft \d+ and publish/ })
         .click()
       await pia.locator('[data-published="1"]').waitFor()
-      await pia.getByRole('link', { name: 'Review round, deadline and WhatsApp requests' }).click()
+      await pia.getByRole('link', { name: 'Review round and deadline' }).click()
       await pia.locator('[data-current-round="1"]').waitFor()
       await pia.getByText(/Due .*left\./).first().waitFor()
       await noSideScroll(pia)
-      // NOTE: no number is on the page until the author taps for that person.
-      assert.equal(await pia.locator('a[href^="https://wa.me/"]').count(), 0, 'a number is on the page before the tap')
-      await pia.getByRole('button', { name: 'Prepare the WhatsApp message for Pat Panel' }).click()
-      const button = pia.getByRole('link', { name: 'Send on WhatsApp to Pat Panel' })
-      await button.waitFor()
-      const href = (await button.getAttribute('href')) ?? ''
-      assert.ok(href.startsWith('https://wa.me/34611000111?text='), `href ${href}`)
-      const decoded = decodeURIComponent(href)
-      assert.ok(!decoded.includes('unmistakable'), 'report content is in the WhatsApp link')
-      assert.ok(!decoded.includes('Synthetic publishing case file'), 'the case title is in the link')
-      assert.ok(/Due|due/.test(decoded) || /\d{1,2}/.test(decoded), 'no deadline in the link')
-      await shot(pia, 'publish-2-round-and-whatsapp')
+      await shot(pia, 'publish-2-round')
 
       // Revision 2: a change, a new draft, published from the publish screen.
       await save('A second, different sentence for Revision Two.')
@@ -2256,6 +2224,9 @@ const main = async (): Promise<void> => {
 
       await pia.goto(`${pilotUrl}/notifications`)
       await pia.getByRole('heading', { name: 'Notifications' }).waitFor()
+      await pia
+        .getByText('Notifications by e-mail are coming soon. For now they appear here, in Quoroom.')
+        .waitFor()
       await pia.getByText('The review round is decided.').first().waitFor()
       await pia.getByRole('link', { name: /^Home \(\d+\)$/ }).waitFor()
       await noSideScroll(pia)

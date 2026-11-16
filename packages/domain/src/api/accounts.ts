@@ -8,7 +8,6 @@ import {
   EpochMs,
   LinkToken,
   NewPassword,
-  Phone,
 } from './common'
 
 // NOTE: Session, accounts, capabilities, units, unit membership, the reviewer
@@ -32,8 +31,6 @@ export const GrantView = Schema.Struct({
 })
 
 export const ProfileView = Schema.Struct({
-  phone: Schema.optionalKey(Phone),
-  whatsappConsent: Schema.Boolean,
   // NOTE: D19. Off by default.
   notifyOnApproval: Schema.Boolean,
 })
@@ -70,7 +67,7 @@ export type ActivationLink = typeof ActivationLink.Type
 
 // NOTE: One shape for a new account and for an email that already has one
 // (D13). `account` is the ID and the name the caller typed, never what is
-// stored for an existing account: no name, phone or email of an account the
+// stored for an existing account: no name or email of an account the
 // caller did not create is ever returned. A new account comes with the
 // activation `link` to hand over; an existing one only gets the role, grant or
 // membership (logged) and never a link, so `link` is absent.
@@ -148,35 +145,28 @@ export const UnitMember = Schema.Struct({
 // ---- Reviewer registry and committees ----------------------------------------------
 
 // NOTE: An entry of a unit's reviewer registry: what the unit holds about a
-// person (the name and number its authors typed, and whether they asked for
-// WhatsApp consent). It is never the person's own account data: the account's
-// name and number, whether and when the person consented, and whether the
-// person has set a password are not part of it (D13). Only the person gives
-// WhatsApp consent, on their own account (`SetNotificationPreferences`).
+// person (the name its authors typed). It is never the person's own account
+// data: the account's name and whether the person has set a password are not
+// part of it (D13).
 export const Reviewer = Schema.Struct({
   accountId: ApiId,
   unit: ApiId,
   name: DisplayName,
   email: Schema.String,
-  phone: Schema.optionalKey(Phone),
-  // NOTE: The unit asked for consent; it says nothing about the answer.
-  consentRequested: Schema.Boolean,
   active: Schema.Boolean,
 })
 export type Reviewer = typeof Reviewer.Type
 
 // NOTE: What was added: the ID, and what the caller supplied, echoed. It never
-// carries what is stored for an account that already existed (name, phone,
-// consent, whether it is active); the caller reads what is visible in their
-// unit with `ListReviewers`. Same shape for a new and an existing account; the
+// carries what is stored for an account that already existed (name, whether
+// it is active); the caller reads what is visible in their unit with
+// `ListReviewers`. Same shape for a new and an existing account; the
 // activation `link` only for a new one (D13).
 export const ReviewerAdded = Schema.Struct({
   accountId: ApiId,
   unit: ApiId,
   name: DisplayName,
   email: Email,
-  phone: Schema.optionalKey(Phone),
-  whatsappConsent: Schema.Boolean,
   link: Schema.optionalKey(ActivationLink),
 })
 export type ReviewerAdded = typeof ReviewerAdded.Type

@@ -4,7 +4,6 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { INTAKE_TEMPLATE, INVESTIGATION_TEMPLATE } from '@case-desk/domain'
 import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
 
-import { when } from './activity'
 import {
   PEOPLE,
   type Scenario,
@@ -670,13 +669,5 @@ describe('deadlines are bounded', () => {
       c.ExtendDeadline({ reportId, revision: 1, deadline: { at: w.clock.now() + YEAR, timeZone: 'UTC' } }),
     )
     expect(extended.deadline.at).toBe(w.clock.now() + YEAR)
-  })
-
-  test('the WhatsApp text and the approval record never throw on a stored time or zone', () => {
-    for (const at of [8.7e15, -8.7e15, Number.NaN]) {
-      expect(typeof when(at, 'Europe/Madrid')).toBe('string')
-    }
-    expect(when(0, 'Not/AZone')).toBe('its deadline')
-    expect(when(Date.UTC(2026, 10, 24, 17, 0), 'Europe/Madrid')).toBe('24 Nov, 18:00 Madrid time')
   })
 })

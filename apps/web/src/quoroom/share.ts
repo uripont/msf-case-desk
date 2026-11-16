@@ -1967,7 +1967,7 @@ const loadedView = (
                         ),
                       ),
                     ],
-                    ['Review round, deadline and WhatsApp requests'],
+                    ['Review round and deadline'],
                   ),
                 ],
               ),

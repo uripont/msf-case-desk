@@ -5,7 +5,6 @@ import {
   type PublishChoices,
   type RevisionHeader,
   type RoundView,
-  type WhatsAppLink,
 } from '@case-desk/domain'
 
 import * as Publish from './quoroom/publish'
@@ -107,20 +106,11 @@ export const ROUND: typeof RoundView.Type = {
   },
 }
 
-export const LINK: typeof WhatsAppLink.Type = {
-  accountId: 'reviewer-1',
-  name: 'Reviewer One',
-  number: '34600000001',
-  text: 'A report is waiting for your review in Quoroom, due 16 Nov, 14:00 Madrid time. https://desk.test/',
-  url: 'https://wa.me/34600000001?text=A%20report%20is%20waiting%20for%20your%20review%20in%20Quoroom%2C%20due%2016%20Nov%2C%2014%3A00%20Madrid%20time.%20https%3A%2F%2Fdesk.test%2F',
-}
-
 export const loaded = (
   options: Readonly<{
     choices?: typeof PublishChoices.Type
     revisions?: ReadonlyArray<RevisionHeader>
     round?: typeof RoundView.Type
-    whatsapp?: Publish.LoadedPublish['whatsapp']
   }> = {},
 ): Publish.LoadedPublish => ({
   detail: detailOf(INTAKE_TEMPLATE, 'in_review', ['publish']),
@@ -129,7 +119,6 @@ export const loaded = (
   revisions: options.revisions ?? [],
   maybeRound:
     options.round === undefined ? Option.none() : Option.some(options.round),
-  whatsapp: options.whatsapp ?? [],
   nowMs: NOW,
   timeZone: 'Europe/Madrid',
 })

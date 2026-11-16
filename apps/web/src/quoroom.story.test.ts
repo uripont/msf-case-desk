@@ -14,7 +14,6 @@ import {
 } from './main'
 import {
   ADMIN_ME,
-  AUTHOR_ME,
   SYNTHETIC_TOKEN,
   SYNTHETIC_UNIT,
   adminModel,
@@ -541,33 +540,14 @@ describe('the author', () => {
     expect(Option.isSome(invited.unit.maybeNotice)).toBe(true)
   })
 
-  test('a number needs its country code', () => {
-    const typed = typedReviewer([
-      Unit.Message.UpdatedReviewerPhone({ value: '600 000 000' }),
-    ])
-    expect(namesOf(typed)).toEqual([])
-    expect(typed.model.unit.reviewerForm._tag).toBe('Invalid')
-  })
-
-  test('asking for consent needs a number', () => {
-    const typed = typedReviewer([Unit.Message.ToggledReviewerConsent()])
-    expect(namesOf(typed)).toEqual([])
-    expect(typed.model.unit.reviewerForm._tag).toBe('Invalid')
-  })
-
-  test('registering a reviewer sends the number and the consent request', () => {
-    const typed = typedReviewer([
-      Unit.Message.UpdatedReviewerPhone({ value: '+34 600 000 000' }),
-      Unit.Message.ToggledReviewerConsent(),
-    ])
+  test('registering a reviewer sends the name and the e-mail', () => {
+    const typed = typedReviewer([])
     expect(typed.model.unit.reviewerForm._tag).toBe('Submitting')
     expect(namesOf(typed)).toEqual([Unit.AddReviewer.name])
     expect(typed.commands?.[0]?.args).toEqual({
       unit: SYNTHETIC_UNIT.id,
       name: 'Rae Viewer',
       email: 'rae@case-desk.test',
-      phone: Option.some('+34600000000'),
-      whatsappConsent: true,
     })
   })
 
@@ -635,13 +615,23 @@ describe('the author', () => {
 })
 
 describe('the person', () => {
-  test('consent stays off until the person turns it on', () => {
-    const loaded = run(adminModel, [
+  test('the approval preference is read from the account and saved as it is', () => {
+    const toggled = run(adminModel, [
       Message.GotAccountMessage({
         message: Account.Message.SucceededLoadAccount({ me: ADMIN_ME }),
       }),
-    ]).model
-    expect(loaded.account.whatsappConsent).toBe(false)
-    expect(AUTHOR_ME.profile.whatsappConsent).toBe(false)
+      Message.GotAccountMessage({
+        message: Account.Message.ToggledNotifyOnApproval(),
+      }),
+      Message.GotAccountMessage({
+        message: Account.Message.SubmittedPreferences(),
+      }),
+    ])
+    expect(toggled.model.account.notifyOnApproval).toBe(
+      !ADMIN_ME.profile.notifyOnApproval,
+    )
+    expect(toggled.commands?.[0]?.args).toEqual({
+      notifyOnApproval: !ADMIN_ME.profile.notifyOnApproval,
+    })
   })
 })

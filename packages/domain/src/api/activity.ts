@@ -11,8 +11,7 @@ import {
 } from './common'
 import { TemplateId } from '../template'
 
-// NOTE: Audit log, notification inbox, WhatsApp link data and downloads
-// metadata.
+// NOTE: Audit log, notification inbox and downloads metadata.
 
 // ---- Audit ---------------------------------------------------------------------------------
 
@@ -91,27 +90,6 @@ export const NotificationPage = Schema.Struct({
   unread: Count,
   // NOTE: pass as `before` for the next, older page.
   next: Schema.optionalKey(Count),
-})
-
-// ---- WhatsApp (D17) ------------------------------------------------------------------------------
-
-export const WhatsAppLink = Schema.Struct({
-  accountId: ApiId,
-  name: Schema.String,
-  // NOTE: Digits only, without `+`.
-  number: Schema.String.check(Schema.isPattern(/^[1-9]\d{6,14}$/)),
-  // NOTE: Never names the case or the report: only the deadline in its own
-  // time zone and the link.
-  text: Schema.String.check(Schema.isMaxLength(500)),
-  url: Schema.String.check(Schema.isMaxLength(1500)),
-})
-
-// NOTE: One row per active participant of the round: whether a link can be
-// made for them (a number and consent). No number: the number is fetched, with
-// `GetWhatsAppLink`, only when the author taps for that person.
-export const WhatsAppReadiness = Schema.Struct({
-  accountId: ApiId,
-  ready: Schema.Boolean,
 })
 
 // ---- Downloads (D4) -----------------------------------------------------------------------------

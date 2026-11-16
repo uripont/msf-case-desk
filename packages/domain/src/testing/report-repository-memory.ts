@@ -180,8 +180,6 @@ export const makeMemoryReportRepository = (
       unitId: string
       userId: string
       displayName: string
-      phone: string | null
-      consentRequested: boolean
       addedAt: number
     }> = []
     const committees: Array<{
@@ -298,8 +296,6 @@ export const makeMemoryReportRepository = (
           attempts: 0,
           deferrals: 0,
           deadlineZone: null,
-          providerMessageId: null,
-          deliveryStatus: null,
           retryAt: null,
           lastError: null,
           createdAt: now,
@@ -818,8 +814,6 @@ export const makeMemoryReportRepository = (
               unitId: input.reviewerOfUnit,
               userId: input.id,
               displayName: input.reviewerEntry?.displayName ?? input.name,
-              phone: input.reviewerEntry?.phone ?? null,
-              consentRequested: input.reviewerEntry?.consentRequested ?? false,
               addedAt: input.now,
             })
           }
@@ -861,8 +855,6 @@ export const makeMemoryReportRepository = (
             unitId,
             userId,
             displayName: entry.displayName,
-            phone: entry.phone,
-            consentRequested: entry.consentRequested,
             addedAt: now,
           })
           addAudit(auditInput)
@@ -889,8 +881,6 @@ export const makeMemoryReportRepository = (
                       userId: r.userId,
                       email: user.email,
                       name: r.displayName === '' ? user.name : r.displayName,
-                      phone: r.phone,
-                      consentRequested: r.consentRequested,
                       active: profiles.get(user.id)?.active ?? true,
                       addedAt: r.addedAt,
                     },
@@ -913,9 +903,6 @@ export const makeMemoryReportRepository = (
           unitReviewers[index] = {
             ...current,
             displayName: input.displayName ?? current.displayName,
-            phone: input.phone === undefined ? current.phone : input.phone,
-            consentRequested:
-              input.consentRequested ?? current.consentRequested,
           }
           addAudit(input.audit)
           return 'updated' as const
@@ -974,9 +961,6 @@ export const makeMemoryReportRepository = (
           const profile = profiles.get(invitation.userId)
           profiles.set(invitation.userId, {
             userId: invitation.userId,
-            phone: profile?.phone ?? null,
-            whatsappConsent: profile?.whatsappConsent ?? false,
-            whatsappConsentAt: profile?.whatsappConsentAt ?? null,
             notifyOnApproval: profile?.notifyOnApproval ?? false,
             active: profile?.active ?? true,
             passwordSetAt: now,
@@ -2740,8 +2724,6 @@ export const makeMemoryReportRepository = (
         }),
       finishJobs: input =>
         Effect.sync(() => {
-          const detail = (id: number) =>
-            input.delivered?.find(entry => entry.id === id)
           const failure = (id: number) =>
             input.failed?.find(entry => entry.id === id)
           jobs.forEach((job, index) => {
@@ -2749,18 +2731,11 @@ export const makeMemoryReportRepository = (
               return
             }
             if (input.done.includes(job.id)) {
-              const told = detail(job.id)
               jobs[index] = {
                 ...job,
                 state: 'done',
                 doneAt: input.now,
                 leaseUntil: null,
-                ...(told === undefined
-                  ? {}
-                  : {
-                      providerMessageId: told.providerMessageId,
-                      deliveryStatus: told.deliveryStatus,
-                    }),
               }
               const noted =
                 job.kind === 'review_request'
@@ -2881,10 +2856,7 @@ export const makeMemoryReportRepository = (
         }),
       recordEvent: event =>
         Effect.sync(() => {
-          const once =
-            event.kind === 'draft_read' ||
-            event.kind === 'read' ||
-            event.kind === 'whatsapp_opened'
+          const once = event.kind === 'draft_read' || event.kind === 'read'
           if (
             once &&
             events.some(

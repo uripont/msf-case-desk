@@ -35,7 +35,7 @@ Signed in, that person:
 
 A saved theme shows at once for whoever saved it; other people see it the next time they open the app, within a minute (the browser keeps the theme for 30 seconds).
 
-Authors then open **Reports**, *Reviewers and committees*, to invite co-authors, register reviewers (name, e-mail, phone number) and group them into committees. Each new person gets an activation link from whoever invited them.
+Authors then open **Reports**, *Reviewers and committees*, to invite co-authors, register reviewers (name, e-mail) and group them into committees. Each new person gets an activation link from whoever invited them.
 
 ## 3. The pilot script
 
@@ -45,7 +45,7 @@ The same steps are the automated end-to-end test and the walkthrough with the fi
 2. A registers reviewers R1 and R2 in **Reports**, *Reviewers and committees*, and adds them to a committee. B, R1 and R2 activate their accounts from their links.
 3. A opens **Reports**, creates a case file and an *Intake and initial assessment* report (Draft 0), and adds B as co-author. A and B each start a working copy and see that the other is drafting.
 4. A fills in some sections, adds a table and an image, marks one section *not applicable*, adds an allegation, and shares Draft 1. B, who added another allegation and changed one of the same fields, shares next: both allegations are kept, B chooses for the one field, comments on Draft 1, and gets Draft 2.
-5. A opens **People and names**, accepts name suggestions, adds an alias, marks the image safe to share, checks the redacted view, and chooses *share and publish*: Draft 3 becomes Revision 1, with a deadline. R1 and R2 see it in their inbox on **Home**; A uses *Send on WhatsApp* for R1 (shown for a reviewer who gave a number and WhatsApp consent).
+5. A opens **People and names**, accepts name suggestions, adds an alias, marks the image safe to share, checks the redacted view, and chooses *share and publish*: Draft 3 becomes Revision 1, with a deadline. R1 and R2 see it in their inbox on **Home**, which says e-mail notifications are coming soon.
 6. R1, on a phone, selects a phrase and comments on it, comments on a section for the whole committee, and requests changes. R2 sees the shared comment, not the other one, and approves. A and B are told about R1's review.
 7. A answers the comments, shares Draft 4 and publishes Revision 2. Both reviewers are asked again; R2's approval of Revision 1 stays as history and no longer counts.
 8. Reminders reach whoever has not decided. R1 and R2 approve Revision 2; the round is decided and the authors are told.

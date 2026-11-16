@@ -33,8 +33,6 @@ import {
   DownloadSet,
   NotificationPage,
   AuditKind,
-  WhatsAppLink,
-  WhatsAppReadiness,
 } from './activity'
 import {
   ApiId,
@@ -42,7 +40,6 @@ import {
   Count,
   Deadline,
   DisplayName,
-  Phone,
   PublicError,
   ReadError,
   ReportStateSchema,
@@ -149,10 +146,6 @@ export class QuoroomRpcs extends RpcGroup.make(
   Rpc.make('SetNotificationPreferences', {
     payload: {
       notifyOnApproval: Schema.Boolean,
-      // NOTE: the person's own number (`null` clears it, and with it the
-      // consent) and their own WhatsApp consent. Nobody else can set either.
-      phone: Schema.optionalKey(Schema.NullOr(Phone)),
-      whatsappConsent: Schema.optionalKey(Schema.Boolean),
     },
     success: ProfileView,
     error: StorageError,
@@ -220,9 +213,6 @@ export class QuoroomRpcs extends RpcGroup.make(
       unit: ApiId,
       name: DisplayName,
       email: Email,
-      phone: Schema.optionalKey(Phone),
-      // NOTE: asks the person for consent; it does not give it.
-      whatsappConsent: Schema.Boolean,
     },
     success: ReviewerAdded,
     error: WriteError,
@@ -231,12 +221,8 @@ export class QuoroomRpcs extends RpcGroup.make(
     payload: {
       unit: ApiId,
       accountId: ApiId,
+      // NOTE: the unit's own entry only.
       name: Schema.optionalKey(DisplayName),
-      // NOTE: the unit's own entry only. `null` clears the number (and with it
-      // the request for consent).
-      phone: Schema.optionalKey(Schema.NullOr(Phone)),
-      // NOTE: asks the person for consent; it does not give it.
-      whatsappConsent: Schema.optionalKey(Schema.Boolean),
     },
     success: Reviewer,
     error: WriteError,
@@ -720,7 +706,7 @@ export class QuoroomRpcs extends RpcGroup.make(
     error: ReadError,
   }),
 
-  // -- Notifications and WhatsApp
+  // -- Notifications
   Rpc.make('ListNotifications', {
     payload: { before: Schema.optionalKey(Count), limit: Limit },
     success: NotificationPage,
@@ -737,20 +723,6 @@ export class QuoroomRpcs extends RpcGroup.make(
     },
     success: Schema.Struct({ unread: Count }),
     error: StorageError,
-  }),
-  Rpc.make('GetWhatsAppLink', {
-    payload: { ...ReportId, revision: Revision, accountId: ApiId },
-    success: WhatsAppLink,
-    error: WriteError,
-  }),
-  Rpc.make('ListWhatsAppLinks', {
-    payload: { ...ReportId, revision: Revision },
-    success: Schema.Array(WhatsAppReadiness),
-    error: WriteError,
-  }),
-  Rpc.make('RecordWhatsAppOpened', {
-    payload: { ...ReportId, revision: Revision, accountId: ApiId },
-    error: TimedError,
   }),
 
   // -- Downloads metadata

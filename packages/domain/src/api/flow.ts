@@ -92,12 +92,6 @@ export const ReportEventSchema = Schema.Union([
     at: EpochMs,
   }),
   Schema.Struct({
-    type: Schema.Literal('whatsapp_opened'),
-    revision: Revision,
-    accountId: ApiId,
-    at: EpochMs,
-  }),
-  Schema.Struct({
     type: Schema.Literal('review'),
     id: ApiId,
     reviewerId: ApiId,
@@ -149,7 +143,6 @@ export const GridRevisionCell = Schema.Struct({
   removed: Schema.Boolean,
   sent: Schema.optional(Fact),
   read: Schema.optional(Fact),
-  whatsappOpened: Schema.optional(Fact),
   reviews: Schema.Array(GridReviewCell),
   decision: Schema.optional(
     Schema.Struct({ decision: ReviewDecisionSchema, at: EpochMs }),

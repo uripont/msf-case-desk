@@ -35,15 +35,10 @@ import {
 // report are existing authors of its unit, chosen by ID: an author cannot
 // create one here, and someone with People gives Reports in a unit. What an
 // author can do here is invite a person to take part in the unit's reviews,
-// register reviewers (the unit's own entry: name, number, and whether WhatsApp
-// consent is requested, which only the person can give) and group them into
-// committees.
+// register reviewers (the unit's own entry: the name it knows them by) and
+// group them into committees.
 
 const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+$/
-const PHONE_FORMAT = /^\+[1-9]\d{6,14}$/
-
-export const normalisePhone = (typed: string): string =>
-  typed.replaceAll(/[\s\-().]/g, '')
 
 // MODEL
 
@@ -68,8 +63,6 @@ export const Model = Schema.Struct({
   inviteForm: FormState,
   reviewerName: Schema.String,
   reviewerEmail: Schema.String,
-  reviewerPhone: Schema.String,
-  reviewerConsent: Schema.Boolean,
   reviewerForm: FormState,
   committeeName: Schema.String,
   committeeForm: FormState,
@@ -93,8 +86,6 @@ export const initialModel = Model.make({
   inviteForm: FormState.Editing(),
   reviewerName: '',
   reviewerEmail: '',
-  reviewerPhone: '',
-  reviewerConsent: false,
   reviewerForm: FormState.Editing(),
   committeeName: '',
   committeeForm: FormState.Editing(),
@@ -127,8 +118,6 @@ export const Message = defineMessageUnion({
   FailedInviteToUnit: { failure: Failure },
   UpdatedReviewerName: { value: Schema.String },
   UpdatedReviewerEmail: { value: Schema.String },
-  UpdatedReviewerPhone: { value: Schema.String },
-  ToggledReviewerConsent: {},
   SubmittedReviewer: {},
   SucceededAddReviewer: {
     name: Schema.String,
@@ -211,23 +200,10 @@ export const AddReviewer = Command.define('AddReviewer', {
     unit: Schema.String,
     name: Schema.String,
     email: Schema.String,
-    phone: Schema.Option(Schema.String),
-    whatsappConsent: Schema.Boolean,
   },
   messages: [Message.SucceededAddReviewer, Message.FailedAddReviewer],
-  execute: ({ unit, name, email, phone, whatsappConsent }) =>
-    withQuoroom(client =>
-      client.AddReviewer({
-        unit,
-        name,
-        email,
-        whatsappConsent,
-        ...Option.match(phone, {
-          onNone: () => ({}),
-          onSome: value => ({ phone: value }),
-        }),
-      }),
-    ).pipe(
+  execute: ({ unit, name, email }) =>
+    withQuoroom(client => client.AddReviewer({ unit, name, email })).pipe(
       Effect.map(added =>
         Message.SucceededAddReviewer({
           name: added.name,
@@ -436,23 +412,11 @@ export const update = (model: Model, message: Message) =>
         reviewerEmail: () => value,
       }),
     }),
-    UpdatedReviewerPhone: ({ value }) => ({
-      model: modifyFields(withEditedForm(model, 'reviewerForm'), {
-        reviewerPhone: () => value,
-      }),
-    }),
-    ToggledReviewerConsent: () => ({
-      model: modifyFields(withEditedForm(model, 'reviewerForm'), {
-        reviewerConsent: consent => !consent,
-      }),
-    }),
     SubmittedReviewer: () => submitReviewer(model),
     SucceededAddReviewer: ({ name, link: given }) => ({
       model: modifyFields(noticesCleared(model), {
         reviewerName: () => '',
         reviewerEmail: () => '',
-        reviewerPhone: () => '',
-        reviewerConsent: () => false,
         reviewerForm: () => FormState.Editing(),
         maybeLink: () =>
           Option.map(given, link => issuedLinkOf(model.origin, name, link)),
@@ -597,7 +561,6 @@ const submitReviewer = (model: Model): Update.Return<Model, Message> => {
   }
   const name = model.reviewerName.trim()
   const email = model.reviewerEmail.trim()
-  const phone = normalisePhone(model.reviewerPhone)
   if (name === '') {
     return invalid(model, 'reviewerForm', 'Write the name of the reviewer.')
   }
@@ -608,31 +571,9 @@ const submitReviewer = (model: Model): Update.Return<Model, Message> => {
       'Write the e-mail address of the reviewer.',
     )
   }
-  if (phone !== '' && !PHONE_FORMAT.test(phone)) {
-    return invalid(
-      model,
-      'reviewerForm',
-      'Write the number with its country code, for example +34 600 000 000.',
-    )
-  }
-  if (phone === '' && model.reviewerConsent) {
-    return invalid(
-      model,
-      'reviewerForm',
-      'Add a number to ask for WhatsApp consent.',
-    )
-  }
   return {
     model: modifyFields(model, { reviewerForm: () => FormState.Submitting() }),
-    commands: [
-      AddReviewer({
-        unit: model.selectedUnit,
-        name,
-        email,
-        phone: phone === '' ? Option.none() : Option.some(phone),
-        whatsappConsent: model.reviewerConsent,
-      }),
-    ],
+    commands: [AddReviewer({ unit: model.selectedUnit, name, email })],
   }
 }
 
@@ -767,15 +708,7 @@ const reviewerRow = (reviewer: Reviewer, h: HtmlBuilder<Message>) =>
       h.span([h.Class('text-base text-msf-grey')], [reviewer.email]),
       h.span(
         [h.Class('text-sm text-msf-grey')],
-        [
-          [
-            reviewer.phone ?? 'No number',
-            reviewer.consentRequested
-              ? 'WhatsApp consent requested'
-              : 'No WhatsApp consent requested',
-            reviewer.active ? 'Active' : 'Inactive',
-          ].join(' · '),
-        ],
+        [reviewer.active ? 'Active' : 'Inactive'],
       ),
     ],
   )
@@ -820,24 +753,6 @@ const reviewersPanel = (model: Model, h: HtmlBuilder<Message>) =>
             value: model.reviewerEmail,
             onInput: value => Message.UpdatedReviewerEmail({ value }),
           }),
-          textField(h, {
-            id: 'reviewer-phone',
-            label: 'Reviewer phone number',
-            type: 'tel',
-            hint: 'Optional, with the country code.',
-            value: model.reviewerPhone,
-            onInput: value => Message.UpdatedReviewerPhone({ value }),
-          }),
-          checkboxField(
-            h,
-            'reviewer-consent',
-            'Ask for WhatsApp consent',
-            model.reviewerConsent,
-            Message.ToggledReviewerConsent(),
-            Option.some(
-              'This asks. Only the reviewer can give consent, on their own account.',
-            ),
-          ),
           formStatus(h, model.reviewerForm, 'Registering.'),
           submitButton(
             h,

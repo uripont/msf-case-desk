@@ -338,7 +338,7 @@ const deadlineFields = <M>(
       h.p(
         [h.Class('text-base text-msf-grey')],
         [
-          'Reviewers see the deadline on their own clock. The message sent on WhatsApp names the deadline in this time zone.',
+          'Reviewers see the deadline on their own clock, with this time zone named beside it.',
         ],
       ),
     ],

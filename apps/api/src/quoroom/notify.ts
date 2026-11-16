@@ -1,7 +1,6 @@
 import { Context, Effect, Layer, Result } from 'effect'
 
 import {
-  type DeliveryStatus,
   type JobRecord,
   type MessageKind,
   type NotificationConfig,
@@ -11,7 +10,6 @@ import {
   MAX_ATTEMPTS,
   MAX_DEFERRALS,
   MINUTE,
-  MESSAGE_TEMPLATES,
   THROTTLE_WINDOW_MS,
   dedupeKey,
   deferredAt,
@@ -21,7 +19,6 @@ import {
   retryAt,
 } from '@case-desk/domain'
 
-import { when } from './activity'
 import {
   type Loaded,
   type Deps,
@@ -62,47 +59,32 @@ import {
 //   that was killed never makes a job fail for good by itself.
 // - The in-app inbox needs no delivery step: the inbox is the list of the
 //   recipient's `done` jobs, so finishing the job is writing the inbox item,
-//   and a job cannot be delivered twice. A channel outside the app (WhatsApp)
-//   is at-least-once: a pass that stops after sending and before
-//   finishing sends again once the lease has run out. It receives the job's
-//   idempotency key and the attempt number so it can guard against that.
+//   and a job cannot be delivered twice. A channel outside the app would be
+//   at-least-once: a pass that stops after sending and before finishing sends
+//   again once the lease has run out. It receives the job's idempotency key
+//   and the attempt number so it can guard against that.
 // - Every claimed job is rechecked against fresh state before it is sent.
 
 // ---- The channel ---------------------------------------------------------------------------
 
 export type SendResult =
-  | Readonly<{
-      _tag: 'Sent'
-      // NOTE: The provider's own ID for the message (Meta: `wamid...`).
-      providerMessageId: string | null
-      status: DeliveryStatus
-    }>
+  | Readonly<{ _tag: 'Sent' }>
   | Readonly<{ _tag: 'Failed'; retryable: boolean; reason: string }>
 
-// NOTE: Shaped for Meta: a template name, its parameters, a link, and back a
-// provider message ID and a delivery status. `send` never fails as an Effect:
-// a problem is a `Failed` result, so the pass always records it.
+// NOTE: `send` never fails as an Effect: a problem is a `Failed` result, so
+// the pass always records it.
 export interface NotificationChannel {
   readonly send: (message: OutgoingMessage) => Effect.Effect<SendResult>
 }
 
 export class NotificationChannels extends Context.Service<
   NotificationChannels,
-  Readonly<{
-    inbox: NotificationChannel
-    // NOTE: WhatsApp, not built yet.
-    whatsapp?: NotificationChannel
-  }>
+  Readonly<{ inbox: NotificationChannel }>
 >()('NotificationChannels') {}
 
 // NOTE: The inbox "sends" nothing: see the state machine above.
 export const inboxChannel: NotificationChannel = {
-  send: () =>
-    Effect.succeed({
-      _tag: 'Sent',
-      providerMessageId: null,
-      status: 'delivered',
-    }),
+  send: () => Effect.succeed({ _tag: 'Sent' }),
 }
 
 export const NotificationChannelsInbox = Layer.succeed(NotificationChannels, {
@@ -124,20 +106,13 @@ export const makeRecordingChannel = (
         const failure = options.fail?.(message)
         if (failure !== undefined) return failure
         sent.push(message)
-        return {
-          _tag: 'Sent',
-          providerMessageId: `test-${message.jobId}`,
-          status: 'sent',
-        } satisfies SendResult
+        return { _tag: 'Sent' } satisfies SendResult
       }),
   }
   return {
     sent,
     attempts,
-    layer: Layer.succeed(NotificationChannels, {
-      inbox: channel,
-      whatsapp: channel,
-    }),
+    layer: Layer.succeed(NotificationChannels, { inbox: channel }),
   }
 }
 
@@ -197,11 +172,6 @@ export type PassResult = Readonly<{
 type Outcome = {
   done: Array<number>
   skipped: Array<number>
-  delivered: Array<{
-    id: number
-    providerMessageId: string | null
-    deliveryStatus: string | null
-  }>
   failed: Array<{ id: number; retryAt: number | null; error: string }>
   deferred: Array<{ id: number; retryAt: number; error: string }>
   released: Array<number>
@@ -210,7 +180,6 @@ type Outcome = {
 const emptyOutcome = (): Outcome => ({
   done: [],
   skipped: [],
-  delivered: [],
   failed: [],
   deferred: [],
   released: [],
@@ -242,29 +211,14 @@ const defer = (outcome: Outcome, job: JobRecord, now: number, error: string) => 
   })
 }
 
-const messageFor = (
-  job: JobRecord,
-  loaded: Loaded,
-): OutgoingMessage | undefined => {
+const messageFor = (job: JobRecord): OutgoingMessage | undefined => {
   if (!isMessageKind(job.kind) || job.recipientId === null) return undefined
   const kind: MessageKind = job.kind
-  const template = MESSAGE_TEMPLATES[kind]
-  const round = loaded.rounds.find(entry => entry.round.revision === job.revision)
   return {
     idempotencyKey: dedupeKey(job.reportId, job.key),
     jobId: job.id,
     kind,
     recipientId: job.recipientId,
-    template,
-    // NOTE: worked out when a channel reads it: the in-app inbox never does,
-    // and formatting a deadline in its zone is the costliest thing of a send.
-    get parameters() {
-      const deadline =
-        round === undefined
-          ? 'its deadline'
-          : when(round.round.deadlineAt, round.round.deadlineZone)
-      return template.parameters.map(() => deadline)
-    },
     link: notificationLink(kind, job.reportId, job.revision),
     attempt: job.attempts + 1,
   }
@@ -352,17 +306,12 @@ const processReport = (
         outcome.skipped.push(job.id)
         continue
       }
-      const message = messageFor(job, loaded)
-      const channel = job.channel === 'inbox' ? channels.inbox : channels.whatsapp
-      if (message === undefined || channel === undefined) {
-        outcome.failed.push({
-          id: job.id,
-          retryAt: null,
-          error: message === undefined ? 'no recipient' : 'channel not configured',
-        })
+      const message = messageFor(job)
+      if (message === undefined) {
+        outcome.failed.push({ id: job.id, retryAt: null, error: 'no recipient' })
         continue
       }
-      const result = yield* channel.send(message).pipe(
+      const result = yield* channels.inbox.send(message).pipe(
         Effect.catchCause(() =>
           Effect.succeed<SendResult>({
             _tag: 'Failed',
@@ -373,13 +322,6 @@ const processReport = (
       )
       if (result._tag === 'Sent') {
         outcome.done.push(job.id)
-        if (job.channel !== 'inbox') {
-          outcome.delivered.push({
-            id: job.id,
-            providerMessageId: result.providerMessageId,
-            deliveryStatus: result.status,
-          })
-        }
       } else {
         outcome.failed.push(
           result.retryable
@@ -486,7 +428,6 @@ export const runPass = (
           claimedBy,
           done: outcome.done,
           skipped: outcome.skipped,
-          delivered: outcome.delivered,
           failed: outcome.failed,
           deferred: outcome.deferred,
           released: outcome.released,

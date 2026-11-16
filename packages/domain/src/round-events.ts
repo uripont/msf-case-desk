@@ -56,12 +56,6 @@ export type ReportEvent =
       at: number
     }>
   | Readonly<{
-      type: 'whatsapp_opened'
-      revision: number
-      accountId: string
-      at: number
-    }>
-  | Readonly<{
       type: 'reviewer_removed'
       revision: number
       accountId: string

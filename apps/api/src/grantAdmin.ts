@@ -69,7 +69,7 @@ export const grantAdminSql = (input: GrantAdminInput): string => {
     `INSERT INTO permission_grants (user_id, capability, unit_id, granted_by, granted_at) SELECT id, ${quote(capability)}, '', NULL, ${now} FROM users WHERE email = ${email} AND ${fresh} ON CONFLICT (user_id, capability, unit_id) DO NOTHING;`
   return [
     `INSERT INTO users (id, email, name, password_hash) SELECT ${quote(input.accountId)}, ${email}, ${quote(input.name.trim())}, ${unusable} WHERE ${fresh} ON CONFLICT (email) DO NOTHING;`,
-    `INSERT INTO account_profiles (user_id, whatsapp_consent, notify_on_approval, active, created_at) ${account.replace('SELECT id', `SELECT id, 0, 0, 1, ${now}`)} AND ${fresh} ON CONFLICT (user_id) DO NOTHING;`,
+    `INSERT INTO account_profiles (user_id, notify_on_approval, active, created_at) ${account.replace('SELECT id', `SELECT id, 0, 1, ${now}`)} AND ${fresh} ON CONFLICT (user_id) DO NOTHING;`,
     grant('people'),
     grant('theme'),
     grant('template_editor'),

@@ -141,9 +141,6 @@ export const reportRepositoryContract = (
           name: who,
           passwordHash: 'not-a-real-hash',
           profile: {
-            phone: null,
-            whatsappConsent: false,
-            whatsappConsentAt: null,
             notifyOnApproval: false,
             active: true,
           },
@@ -324,9 +321,6 @@ export const reportRepositoryContract = (
           name: 'Erin',
           passwordHash: 'not-a-real-hash',
           profile: {
-            phone: '+000000001',
-            whatsappConsent: true,
-            whatsappConsentAt: 3,
             notifyOnApproval: true,
             active: true,
           },
@@ -357,16 +351,13 @@ export const reportRepositoryContract = (
         expect.objectContaining({ userId: 'u-erin', usedAt: null }),
       )
       expect(await run(r.getProfile('u-erin'))).toEqual(
-        expect.objectContaining({ phone: '+000000001', passwordSetAt: null }),
+        expect.objectContaining({ notifyOnApproval: true, passwordSetAt: null }),
       )
     })
 
     test('a taken email, or a missing unit, creates nothing', async () => {
       const { r } = await setup()
       const profile = {
-        phone: null,
-        whatsappConsent: false,
-        whatsappConsentAt: null,
         notifyOnApproval: false,
         active: true,
       }
@@ -431,11 +422,7 @@ export const reportRepositoryContract = (
 
     test('linking a reviewer reports a repeat and a missing unit', async () => {
       const { r } = await setup()
-      const typed = {
-        displayName: 'Typed Name',
-        phone: '+34600',
-        consentRequested: true,
-      }
+      const typed = { displayName: 'Typed Name' }
       expect(
         await run(
           r.linkReviewer(UNIT, CAROL, ALICE, 5, audit('link'), typed),
@@ -446,8 +433,6 @@ export const reportRepositoryContract = (
         await run(
           r.linkReviewer(UNIT, CAROL, ALICE, 6, audit('link'), {
             displayName: 'Other',
-            phone: '+999',
-            consentRequested: false,
           }),
         ),
       ).toBe('exists')
@@ -460,8 +445,6 @@ export const reportRepositoryContract = (
         expect.objectContaining({
           userId: CAROL,
           name: 'Typed Name',
-          phone: '+34600',
-          consentRequested: true,
           addedAt: 5,
         }),
       ])
@@ -626,9 +609,6 @@ export const reportRepositoryContract = (
         r.putProfile(
           BOB,
           {
-            phone: '+000000002',
-            whatsappConsent: true,
-            whatsappConsentAt: 9,
             notifyOnApproval: true,
             active: true,
           },
@@ -636,7 +616,7 @@ export const reportRepositoryContract = (
         ),
       )
       expect(await run(r.getProfile(BOB))).toEqual(
-        expect.objectContaining({ phone: '+000000002', whatsappConsent: true }),
+        expect.objectContaining({ notifyOnApproval: true, active: true }),
       )
     })
 
@@ -2295,16 +2275,11 @@ export const reportRepositoryContract = (
           claimedBy: 'w4',
           done: [dan.id],
           skipped: [],
-          delivered: [
-            { id: dan.id, providerMessageId: 'wamid.1', deliveryStatus: 'sent' },
-          ],
           now: 99_100,
         }),
       )
       const inbox = await run(r.listInbox(DAN, 10))
-      expect(
-        inbox.map(j => [j.key, j.providerMessageId, j.deliveryStatus]),
-      ).toEqual([['rr:dan', 'wamid.1', 'sent']])
+      expect(inbox.map(j => [j.key, j.state])).toEqual([['rr:dan', 'done']])
       // NOTE: a reminder that was sent is a fact of the grid, with its kind.
       expect(
         (await run(r.listEvents(REPORT, 100)))
@@ -2434,36 +2409,6 @@ export const reportRepositoryContract = (
       ).toEqual([
         ['notified', 3],
         ['notified', 4],
-      ])
-    })
-
-    test('a WhatsApp tap is recorded once per reviewer and revision', async () => {
-      const s = await published()
-      const { r } = s
-      const tap = (accountId: string, revisionNumber: number, at: number) =>
-        run(
-          r.recordEvent({
-            reportId: REPORT,
-            kind: 'whatsapp_opened',
-            accountId,
-            revisionNumber,
-            at,
-          }),
-        )
-      await tap(CAROL, 1, 10)
-      await tap(CAROL, 1, 20)
-      await tap(DAN, 1, 30)
-      await tap(CAROL, 2, 40)
-      expect(
-        (await run(r.listEvents(REPORT, 100))).map(e => [
-          e.accountId,
-          e.revisionNumber,
-          e.at,
-        ]),
-      ).toEqual([
-        [CAROL, 1, 10],
-        [DAN, 1, 30],
-        [CAROL, 2, 40],
       ])
     })
 
@@ -3312,8 +3257,6 @@ export const reportRepositoryContract = (
       await run(
         r.linkReviewer(UNIT, CAROL, ALICE, 5, audit('link'), {
           displayName: 'Carol (unit)',
-          phone: null,
-          consentRequested: false,
         }),
       )
       expect(
@@ -3322,8 +3265,6 @@ export const reportRepositoryContract = (
             unitId: UNIT,
             userId: CAROL,
             displayName: 'Carol Renamed',
-            phone: '+34111',
-            consentRequested: true,
             audit: audit('reviewer.updated', ALICE, 6),
           }),
         ),
@@ -3342,14 +3283,10 @@ export const reportRepositoryContract = (
         expect.objectContaining({
           userId: CAROL,
           name: 'Carol Renamed',
-          phone: '+34111',
-          consentRequested: true,
         }),
       ])
-      // NOTE: the account's own name and number are untouched.
+      // NOTE: the account's own name is untouched.
       expect((await run(r.getAccount(CAROL)))?.name).toBe('Carol Reviewer')
-      expect((await run(r.getProfile(CAROL)))?.phone).toBeNull()
-      expect((await run(r.getProfile(CAROL)))?.whatsappConsent).toBe(false)
       expect(
         (await run(r.listAudit({ actionPrefix: 'reviewer.', limit: 10 }))).length,
       ).toBe(1)

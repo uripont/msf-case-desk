@@ -832,9 +832,6 @@ describe.each(SCENARIOS)('$name', scenario => {
         ListUnits: () => w.call('adam', c => c.ListUnits()),
         ListAccounts: () => w.call('adam', c => c.ListAccounts()),
         GetGrid: () => w.call('alice', c => c.GetGrid({ reportId })),
-        ListWhatsAppLinks: () => w.call('alice', c => c.ListWhatsAppLinks({ reportId, revision: 1 })),
-        RecordWhatsAppOpened: () =>
-          w.call('alice', c => c.RecordWhatsAppOpened({ reportId, revision: 1, accountId: 'carol' }).pipe(Effect.ignore)),
         ListAuditEventsOfKind: () =>
           w.call('alice', c =>
             c.ListAuditEvents({ subject: { kind: 'report', reportId }, kind: 'revision', limit: 20 }),

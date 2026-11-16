@@ -1,43 +1,16 @@
 import { type NotificationKind, MINUTE } from './notifications'
 
 // NOTE: What a notification says and how delivery is retried, as pure data
-// and functions. The in-app inbox, the web app and the channel for
-// WhatsApp all read this one table, so the words of D12 and D19
-// are written once.
+// and functions. The in-app inbox and the web app read this one table, so
+// the words of D12 and D19 are written once.
 //
 // Messages never name the case or the report and never carry report text
 // (D17): a kind, the deadline in its own time zone where there is one, and a
 // link into the app.
 
-// NOTE: What a channel reports about a message. `sent` and `delivered` are
-// what a provider such as Meta calls back with; `failed` is a final failure.
-export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed'
-
-export type MessageTemplate = Readonly<{
-  // NOTE: The name of the approved template at a provider (Meta). Without a
-  // provider it only labels the message.
-  name: string
-  // NOTE: The parameters of the template, in order.
-  parameters: ReadonlyArray<'deadline'>
-}>
-
 // NOTE: Every kind that has a recipient. `deadline` belongs to nobody: it only
 // makes the pass decide the round.
 export type MessageKind = Exclude<NotificationKind, 'deadline'>
-
-export const MESSAGE_TEMPLATES: Readonly<Record<MessageKind, MessageTemplate>> = {
-  review_request: { name: 'quoroom_review_request', parameters: ['deadline'] },
-  reminder_first: { name: 'quoroom_reminder', parameters: ['deadline'] },
-  reminder_final: { name: 'quoroom_reminder_final', parameters: ['deadline'] },
-  revision_replaced: {
-    name: 'quoroom_revision_replaced',
-    parameters: ['deadline'],
-  },
-  review_received: { name: 'quoroom_review_received', parameters: [] },
-  approval_received: { name: 'quoroom_approval_received', parameters: [] },
-  round_decided: { name: 'quoroom_round_decided', parameters: [] },
-  removed_from_round: { name: 'quoroom_removed_from_round', parameters: [] },
-}
 
 // NOTE: The line of the in-app inbox for each kind. The deadline, when the
 // kind has one, is added by the reader in their own time zone.
@@ -92,9 +65,6 @@ export type OutgoingMessage = Readonly<{
   jobId: number
   kind: MessageKind
   recipientId: string
-  template: MessageTemplate
-  // NOTE: One text per entry of `template.parameters`.
-  parameters: ReadonlyArray<string>
   // NOTE: A path inside the app; the channel puts the app's address before it.
   link: string
   // NOTE: 1 on the first try.

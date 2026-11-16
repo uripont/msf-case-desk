@@ -75,18 +75,12 @@ export type AccountRecord = Readonly<{
 
 export type AccountProfile = Readonly<{
   userId: string
-  phone: string | null
-  whatsappConsent: boolean
-  whatsappConsentAt: number | null
   notifyOnApproval: boolean
   active: boolean
   passwordSetAt: number | null
 }>
 
 export type ProfileInput = Readonly<{
-  phone: string | null
-  whatsappConsent: boolean
-  whatsappConsentAt: number | null
   notifyOnApproval: boolean
   active: boolean
 }>
@@ -186,27 +180,20 @@ export type StoreCommitteeRecord = Readonly<{
   memberIds: ReadonlyArray<string>
 }>
 
-// NOTE: an entry of a unit's reviewer registry. The name and the number are the
-// unit's own (what its authors typed), never the account's: the account's name
-// and number are the person's, and an author of a unit neither reads nor
-// changes them (D13).
+// NOTE: an entry of a unit's reviewer registry. The name is the unit's own
+// (what its authors typed), never the account's: the account's name is the
+// person's, and an author of a unit neither reads nor changes it (D13).
 export type UnitReviewerRecord = Readonly<{
   unitId: string
   userId: string
   email: string
   name: string
-  phone: string | null
-  // NOTE: the unit asked for WhatsApp consent. Only the person can give it,
-  // on their own account.
-  consentRequested: boolean
   active: boolean
   addedAt: number
 }>
 
 export type ReviewerEntryInput = Readonly<{
   displayName: string
-  phone: string | null
-  consentRequested: boolean
 }>
 
 export type StoreCaseFileRecord = Readonly<{
@@ -462,7 +449,7 @@ export type JobRecord = Readonly<{
   dueAt: number
   deadline: number | null
   subject: string | null
-  channel: 'inbox' | 'whatsapp'
+  channel: 'inbox'
   state: JobState
   claimedBy: string | null
   leaseUntil: number | null
@@ -472,8 +459,6 @@ export type JobRecord = Readonly<{
   deferrals: number
   // NOTE: the time zone of the round's deadline, read with the inbox only.
   deadlineZone: string | null
-  providerMessageId: string | null
-  deliveryStatus: string | null
   // NOTE: set on a failed job that may be tried again: it is claimable from
   // this time. A failed job with no retry time is final.
   retryAt: number | null
@@ -518,7 +503,6 @@ export type ReviewerRoundRecord = Readonly<{
 export type StoreEventKind =
   | 'draft_read'
   | 'read'
-  | 'whatsapp_opened'
   | 'notified'
   | 'reminded'
 
@@ -760,8 +744,8 @@ export type CreateAccountInput = Readonly<{
   profile: ProfileInput
   grant?: Readonly<{ capability: StoreCapabilityName; unitId?: string }>
   reviewerOfUnit?: string
-  // NOTE: the registry entry for `reviewerOfUnit` (the name and number typed by
-  // the unit); by default the account's name, no number, no consent request.
+  // NOTE: the registry entry for `reviewerOfUnit` (the name typed by the
+  // unit); by default the account's name.
   reviewerEntry?: ReviewerEntryInput
   invitation?: InvitationInput
   createdBy: string | null
@@ -868,8 +852,8 @@ export interface ReportRepositoryApi {
     profile: ProfileInput,
     now: number,
   ) => Eff<void>
-  // NOTE: links an account into a unit's registry with the unit's own name and
-  // number for it. An entry that exists is left as it is (`exists`); the
+  // NOTE: links an account into a unit's registry with the unit's own name
+  // for it. An entry that exists is left as it is (`exists`); the
   // account is never read or changed.
   readonly linkReviewer: (
     unitId: string,
@@ -891,8 +875,6 @@ export interface ReportRepositoryApi {
       unitId: string
       userId: string
       displayName?: string
-      phone?: string | null
-      consentRequested?: boolean
       audit: AuditInput
     }>,
   ) => Eff<'updated' | 'not_found'>
@@ -1412,15 +1394,6 @@ export interface ReportRepositoryApi {
       claimedBy: string
       done: ReadonlyArray<number>
       skipped: ReadonlyArray<number>
-      // NOTE: the provider's message ID and delivery status, for jobs sent
-      // through a channel outside the app.
-      delivered?: ReadonlyArray<
-        Readonly<{
-          id: number
-          providerMessageId: string | null
-          deliveryStatus: string | null
-        }>
-      >
       // NOTE: a failure of the channel: counts an attempt. `retryAt: null` is
       // a final failure.
       failed?: ReadonlyArray<

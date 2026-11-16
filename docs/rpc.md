@@ -13,7 +13,7 @@ The contract lives in `packages/domain/src/api/`, and the `Authentication` middl
 - **Comments** anchor to a section or to a selection (`from`, `to` and the `quoted` text, in the view its author read). Visibility is `authors` (default) or `committee`, chosen on a pending comment and fixed when the review is sent. A comment of a `full` reviewer shared with the committee reaches a `redacted` reader as a `SectionNoteCommentView`: anchor `{ kind: 'section_note', sectionId, quoted? }` with the quoted text derived from the original text the selection was made in (located by `from`, `to` and `quoted`), widened to whole names and words, and only then redacted (`redactedQuote`), so a selection cut inside a name never shows a fragment of it; a quote that cannot be located is left out. Never positions in a text the reader does not have (D14). The `caseReference` of the inbox, the pending reviews and the outline is the redacted twin stored with the draft at share time for a `redacted` role (the original for `full`), like `caseTitle`; `ListReviewerComments` answers a union of that and `AnchoredCommentView`. Comments shared with the committee name their author (display name; the server passes it through the revision's redaction for a redacted reader); no other reviewer response names anyone.
 - **Per-address sign-in limits by runtime (D13, D20).** `cf-connecting-ip` is trusted only on Cloudflare. On workerd the deployment names a trusted proxy header (`TRUSTED_PROXY_HEADER`); without one every caller shares a single `self-hosted` bucket, so the per-address limit holds only together with the per-email limit. Old `sign_in_attempts` are pruned (at most 50 per sign-in). A successful sign-in clears the failures of that email.
 - **Cleanup for the notification pass.** `cleanupStale` (core.ts) deletes images no draft references and staged shares abandoned for more than 24 hours, at most 50 of each per call. Retried identical chunk uploads are accepted. A malformed percent-encoding in an image path answers 400.
-- **Invitations and additions disclose nothing (D13).** `InviteToUnit` and `AddReviewer` answer one shape for a new account and for an email that already has one: the ID and what the caller supplied, and an activation `link` only for a new account. No name, phone, email or state of an existing account is returned.
+- **Invitations and additions disclose nothing (D13).** `InviteToUnit` and `AddReviewer` answer one shape for a new account and for an email that already has one: the ID and what the caller supplied, and an activation `link` only for a new account. No name, email or state of an existing account is returned.
 - **Problems carry codes and positions.** The people list's problems (`duplicate-id`, `invalid-label`, `duplicate-label`, `label-matches-alias`) have fixed messages and a path of position and field, never a label, name or alias.
 - **Publishing and closing.** `PublishRevision` and `FinishShare` with `publish` refuse a draft that is not the latest shared one (`Conflict` `not_latest`, from the flow error `not_latest`). While the report is `concluding`, sharing calls `checkClosingDraft(template, state, base, draft)` with the latest revision as base and refuses a draft whose sections other than the conclusion differ from it (compared canonically); the handler answers `Validation` (source `save`, code `other_sections_changed`, the section IDs as paths). A review (`SendReview`) is refused (`NotAllowedInState`, code `round_not_open`) unless its `revision` is the open round's.
 - **Name suggestions run in the browser.** `suggestNames` is a pure function of the working copy's content and people list, which only an author has, so there is no procedure for it. This avoids a request that would carry the whole document and costs the Worker no CPU. The server never needs suggestions.
@@ -38,7 +38,7 @@ Caller: `public`, `signed_in` (any account, about itself), `people`, `theme`, `t
 | `ConsumeLink` | public | - | One use: sets the password, ends every session of the account, marks the link used (one batch), then signs in with a new cookie. |
 | `GetMe` | signed_in | - |  |
 | `SignOut` | signed_in | - |  |
-| `SetNotificationPreferences` | signed_in | - | D19. Also the only place a phone number and WhatsApp consent of an account are set: by the person, on their own account. |
+| `SetNotificationPreferences` | signed_in | - | D19. Only whether an author is told about each approval. |
 
 ### accounts (4)
 
@@ -63,9 +63,9 @@ Caller: `public`, `signed_in` (any account, about itself), `people`, `theme`, `t
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
-| `ListReviewers` | unit_author | `manage_committees` | The unit's own registry entries: name and phone as the unit typed them, `consentRequested`, `active`. Never `passwordSetAt`, consent state or any other account data. |
+| `ListReviewers` | unit_author | `manage_committees` | The unit's own registry entries: the name as the unit typed it and `active`. Never `passwordSetAt` or any other account data. |
 | `AddReviewer` | unit_author | `manage_committees` | Echoes what the caller supplied; nothing stored for an existing account (D13). |
-| `UpdateReviewer` | unit_author | `manage_committees` | Edits only the unit's entry (name, phone, `whatsappConsent` meaning "consent requested"); never the account's own name, phone or consent. |
+| `UpdateReviewer` | unit_author | `manage_committees` | Edits only the unit's entry (its name); never the account's own name. |
 | `ListCommittees` | unit_author | `manage_committees` |  |
 | `CreateCommittee` | unit_author | `manage_committees` |  |
 | `UpdateCommittee` | unit_author | `manage_committees` | Member changes as `addMemberIds` and `removeMemberIds` on the stored list. |
@@ -185,16 +185,13 @@ Caller: `public`, `signed_in` (any account, about itself), `people`, `theme`, `t
 | `GetGrid` | report_author | `read_grid` |  |
 | `ListAuditEvents` | report_author | `read_audit` | Subject `template`: template editor; `theme`: the `theme` capability. `kind` filters a report's log on the server before the page is cut. |
 
-### notifications (5)
+### notifications (3)
 
 | Procedure | Caller | `authorize` action | Note |
 | --- | --- | --- | --- |
 | `ListNotifications` | signed_in | - | Newest first, generic lines only: no case reference, title or content for any role. `before` and `next` are notification cursors (a number): pass `next` as `before` for the older page. |
 | `GetUnreadCount` | signed_in | - | The cheap poll. The web app asks at sign-in and every 30 seconds, backing off to 5 minutes when nothing changes, pausing while the tab is hidden and refreshing on focus. |
 | `MarkNotificationsRead` | signed_in | - | Up to 100 ids; returns the new unread count. Ids that are not the caller's are ignored. |
-| `GetWhatsAppLink` | report_author | `publish_revision` | Needs the reviewer's number and consent. |
-| `ListWhatsAppLinks` | report_author | `publish_revision` | Who can get a link; no numbers. |
-| `RecordWhatsAppOpened` | report_author | `publish_revision` |  |
 
 ### downloads (2)
 

@@ -1,6 +1,4 @@
-import { Option } from 'effect'
 import {
-  Command,
   click,
   expect,
   given,
@@ -13,14 +11,7 @@ import { describe, test } from 'vitest'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'
-import {
-  CHOICES,
-  LINK,
-  ROUND,
-  SCOPE,
-  loaded,
-  revision,
-} from './publish.fixtures'
+import { CHOICES, ROUND, SCOPE, loaded, revision } from './publish.fixtures'
 import { authorModel } from './quoroom.fixtures'
 import * as Publish from './quoroom/publish'
 import { REPORT_ID } from './report.fixtures'
@@ -39,11 +30,6 @@ const publishScreen = (options: Parameters<typeof loaded>[0] = {}) =>
 
 // NOTE: The publishing dialog and the round display, with invented
 // people. The screen is `/r/:id/publish`.
-
-const REVIEWERS = [
-  { accountId: 'reviewer-1', name: 'Reviewer One', roleName: 'Committee' },
-  { accountId: 'reviewer-2', name: 'Reviewer Two', roleName: 'Committee' },
-]
 
 describe('the publishing dialog', () => {
   test('shows the next revision, the deadline fields and, for each role, its rule and its view', () => {
@@ -145,55 +131,6 @@ describe('the round display', () => {
       given(publishScreen({ revisions: [revision(1, 'decided')] })),
       expect(text('No round is open.')).toExist(),
       expect(text('Decided, the approval rule was met')).toExist(),
-    )
-  })
-})
-
-describe('the WhatsApp requests', () => {
-  test('a ready reviewer is prepared on a tap and then has one link, holding the deadline and no report content', () => {
-    scene(
-      { update, view },
-      given(
-        publishScreen({
-          revisions: [revision(2, 'open')],
-          round: ROUND,
-          whatsapp: [
-            {
-              ...REVIEWERS[0]!,
-              isReady: true,
-              isPreparing: false,
-              maybeLink: Option.none(),
-              isOpened: false,
-            },
-            {
-              ...REVIEWERS[1]!,
-              isReady: false,
-              isPreparing: false,
-              maybeLink: Option.none(),
-              isOpened: false,
-            },
-          ],
-        }),
-      ),
-      expect(
-        role('heading', { name: 'Send the first request on WhatsApp' }),
-      ).toExist(),
-      // NOTE: no number is on the page before the tap.
-      expect(selector('a[href^="https://wa.me/"]')).toBeAbsent(),
-      expect(
-        text('No WhatsApp number or consent. They are told in Quoroom only.'),
-      ).toExist(),
-      click(
-        role('button', { name: 'Prepare the WhatsApp message for Reviewer One' }),
-      ),
-      Command.resolve(
-        Publish.PrepareWhatsAppLink,
-        Publish.Message.SucceededPrepareWhatsApp({ scope: SCOPE, link: LINK }),
-      ),
-      expect(
-        role('link', { name: 'Send on WhatsApp to Reviewer One' }),
-      ).toExist(),
-      expect(selector('a[href^="https://wa.me/34600000001?text="]')).toExist(),
     )
   })
 })
