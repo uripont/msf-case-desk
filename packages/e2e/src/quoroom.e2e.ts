@@ -338,11 +338,11 @@ const main = async (): Promise<void> => {
       await activate(rae, reviewerLink, 'rae')
     })
 
-    await step('the account says e-mail notifications are coming soon, with no field for them', async () => {
+    await step('the account says notifications stay in the app, with no field for an address', async () => {
       await rae.getByRole('link', { name: /, my account$/ }).click()
       await rae.getByRole('heading', { name: 'Your account' }).waitFor()
       await rae
-        .getByText('Notifications by e-mail are coming soon. For now they appear on Home, in Quoroom.')
+        .getByText('Notifications appear on Home, in Quoroom. Quoroom sends no e-mail or other messages.')
         .waitFor()
       assert.equal(await rae.getByRole('textbox').count(), 0, 'a field on the account page')
       await shot(rae, 'rae-1-account')
@@ -2225,7 +2225,7 @@ const main = async (): Promise<void> => {
       await pia.goto(`${pilotUrl}/notifications`)
       await pia.getByRole('heading', { name: 'Notifications' }).waitFor()
       await pia
-        .getByText('Notifications by e-mail are coming soon. For now they appear here, in Quoroom.')
+        .getByText('Notifications appear here, in Quoroom. Quoroom sends no e-mail or other messages.')
         .waitFor()
       await pia.getByText('The review round is decided.').first().waitFor()
       await pia.getByRole('link', { name: /^Home \(\d+\)$/ }).waitFor()

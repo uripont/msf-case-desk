@@ -395,8 +395,8 @@ const itemRow = (
     ],
   )
 
-export const EMAIL_COMING_SOON =
-  'Notifications by e-mail are coming soon. For now they appear here, in Quoroom.'
+export const IN_APP_ONLY =
+  'Notifications appear here, in Quoroom. Quoroom sends no e-mail or other messages.'
 
 const shell = (
   h: HtmlBuilder<Message>,
@@ -411,7 +411,7 @@ const shell = (
       h.h2([h.Class('text-2xl font-black tracking-tight')], ['Notifications']),
       h.p(
         [h.Class('-mt-2 text-pretty text-base text-msf-grey')],
-        [EMAIL_COMING_SOON],
+        [IN_APP_ONLY],
       ),
       ...children,
     ],

@@ -75,14 +75,14 @@ describe('the notifications screen', () => {
     )
   })
 
-  test('Home says e-mail notifications are coming soon, as plain text', () => {
+  test('Home says notifications stay in the app, as plain text', () => {
     scene(
       { update, view },
       given(notificationsScreen([entry('n1', 'review_request')], 1)),
-      expect(text(Notifications.EMAIL_COMING_SOON)).toExist(),
+      expect(text(Notifications.IN_APP_ONLY)).toExist(),
       expect(
         text(
-          'Notifications by e-mail are coming soon. For now they appear here, in Quoroom.',
+          'Notifications appear here, in Quoroom. Quoroom sends no e-mail or other messages.',
         ),
       ).toExist(),
       expect(role('textbox')).toBeAbsent(),

@@ -149,8 +149,8 @@ const submit = (model: Model): Update.Return<Model, Message> => ({
 
 // VIEW
 
-export const EMAIL_COMING_SOON =
-  'Notifications by e-mail are coming soon. For now they appear on Home, in Quoroom.'
+export const IN_APP_ONLY =
+  'Notifications appear on Home, in Quoroom. Quoroom sends no e-mail or other messages.'
 
 export const view = Submodel.defineView<Model, Message>((model, h) =>
   Load.match(model.load, {
@@ -207,7 +207,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
               ],
             ),
           ],
-          Option.some(EMAIL_COMING_SOON),
+          Option.some(IN_APP_ONLY),
         ),
       ]),
   }),

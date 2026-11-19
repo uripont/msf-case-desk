@@ -246,7 +246,7 @@ const main = async (): Promise<void> => {
       }
       const r1 = who(R1)
       await go(r1, '/account', 'Your account')
-      await r1.getByText('Notifications by e-mail are coming soon. For now they appear on Home, in Quoroom.').waitFor()
+      await r1.getByText('Notifications appear on Home, in Quoroom. Quoroom sends no e-mail or other messages.').waitFor()
       await shot(r1, 'step2-r1-account')
     }],
     ['3. A creates a case file and an intake report, adds B; each starts a working copy and sees the other', async () => {

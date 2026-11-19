@@ -344,7 +344,7 @@ describe('unit scene', () => {
 })
 
 describe('account scene', () => {
-  test('says e-mail notifications are coming soon, as plain text with no field for it', () => {
+  test('says notifications stay in the app, as plain text with no field for an address', () => {
     scene(
       { update, view },
       given(
@@ -354,7 +354,7 @@ describe('account scene', () => {
           }),
         ]),
       ),
-      expect(text(Account.EMAIL_COMING_SOON)).toExist(),
+      expect(text(Account.IN_APP_ONLY)).toExist(),
       expect(role('textbox')).toBeAbsent(),
     )
   })
