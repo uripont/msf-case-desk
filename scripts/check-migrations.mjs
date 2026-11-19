@@ -1,5 +1,5 @@
 // Rejects migrations that would break a frozen version reading the shared
-// database: see docs/compatibility.md. Usage: node scripts/check-migrations.mjs [dir]
+// database: see docs/architecture.md. Usage: node scripts/check-migrations.mjs [dir]
 import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'

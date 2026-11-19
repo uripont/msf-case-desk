@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { redactionHashOf, sha256Hex } from './hash'
 
 // NOTE: the confirmation is the hash of the staged hashes, the people hash and
-// the case hash, in the text the server builds (docs/rpc.md).
+// the case hash, in the text the server builds (docs/api.md).
 describe('redactionHashOf', () => {
   test('is the hash of the staged hashes, the people hash and the case hash', async () => {
     expect(await redactionHashOf(['a', 'b'], 'p', 'c')).toBe(await sha256Hex('a,b|p|c'))

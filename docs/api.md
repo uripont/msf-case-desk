@@ -1,4 +1,4 @@
-# RPC contract
+# API
 
 The contract lives in `packages/domain/src/api/`, and the `Authentication` middleware in `packages/domain/src/rpc.ts`. There are two groups, at `/api/q/public` and `/api/q/rpc`: `QuoroomPublicRpcs` (no session: sign-in and links) and `QuoroomRpcs` (signed in, behind the same `Authentication` middleware). `procedures.ts` holds the table below as data; a test checks every procedure has exactly one row.
 

@@ -372,7 +372,7 @@ The built-in templates apply the default given for each. A template editor can c
 
 1. **Which parts of the intake stay in force after an early end.** Default: only the sign-off. The source says to leave "the remaining parts" blank, without saying whether the recommendation is one.
 2. **Which answer of the materiality question ends the intake.** The source's second question is worded so that "yes" can mean misconduct is likely or that it is mere oversight; the rule "if no, stop" fits only the first reading. Default: **no** ends the report for both questions, with the second question reworded in our own words as "would the allegations be misconduct if proven, and is it more than oversight?".
-3. **Options of the complainant choice.** Only one is visible in the source. Default: *known* and *anonymous*, to be confirmed with Sergio.
+3. **Options of the complainant choice.** Only one is visible in the source. Default: *known* and *anonymous*, to be confirmed with the unit.
 4. **The unlettered "Context and risks" part**, which the source's own cross-reference ("title B") does not match. Default: unnumbered, as in the source.
 5. **Links between allegations.** The assessment and recommendation list each allegation again by number. Default: independent repeated entries with matching labels, not linked. A *reference to an entry* item could be added later (additive, D23 schema).
 6. **Committee members in the conclusion.** The source asks for attending members and a meeting date; Quoroom's committees vote asynchronously. Default: the conclusion has a decision date and free text, and the votes come from the approval record.

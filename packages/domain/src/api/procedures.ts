@@ -3,7 +3,7 @@ import { QuoroomPublicRpcs, QuoroomRpcs } from './rpcs'
 
 // NOTE: Who may call each procedure, as data. The server's `authorize` is the
 // rule; this table is documentation that tests keep honest: every procedure of
-// both groups has exactly one row, and `docs/rpc.md` lists every row.
+// both groups has exactly one row, and `docs/api.md` lists every row.
 
 export type Area =
   | 'session'

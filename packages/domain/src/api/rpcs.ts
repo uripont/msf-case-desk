@@ -103,7 +103,7 @@ import {
 
 // NOTE: The contract: two groups, the signed-in procedures at `/api/q/rpc`
 // and the public ones at `/api/q/public`. Procedures are named for what they
-// do; who may call each is in `procedures.ts` and `docs/rpc.md`, and the
+// do; who may call each is in `procedures.ts` and `docs/api.md`, and the
 // server decides with `authorize` on every request. A report that a caller may not see answers
 // `NotFound`, exactly like one that does not exist.
 

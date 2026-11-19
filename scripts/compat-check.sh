@@ -2,7 +2,7 @@
 # Runs the repository tests of every frozen iteration against the latest
 # migrations, so the newest schema is proven to keep older versions working.
 # With arguments, checks those git refs instead (for example `HEAD`, to
-# rehearse a freeze before tagging). See docs/compatibility.md.
+# rehearse a freeze before tagging). See docs/architecture.md.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)

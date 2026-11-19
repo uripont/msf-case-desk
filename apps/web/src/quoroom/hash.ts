@@ -12,7 +12,7 @@ export const sha256Hex = async (text: string): Promise<string> =>
 
 // NOTE: The confirmation of a share: the hashes of the staged redacted
 // sections in section order, a bar, the people hash, a bar and the hash of the
-// redacted case title and reference (docs/rpc.md, `FinishShare.redactionHash`).
+// redacted case title and reference (docs/api.md, `FinishShare.redactionHash`).
 export const redactionHashOf = (
   stagedHashes: ReadonlyArray<string>,
   peopleHash: string,
