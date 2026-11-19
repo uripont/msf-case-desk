@@ -21,7 +21,7 @@ import {
   RoundView,
   Template,
   draftLabel,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'

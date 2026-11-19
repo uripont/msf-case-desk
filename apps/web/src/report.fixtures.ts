@@ -8,8 +8,8 @@ import {
   type ReportState,
   type SectionContents,
   type Template,
-} from '@case-desk/domain'
-import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
+} from '@quoroom/domain'
+import { PANEL_TEMPLATE } from '@quoroom/domain/testing/templates'
 
 import { AUTHOR_ME, SYNTHETIC_UNIT } from './quoroom.fixtures'
 import * as Report from './quoroom/report'

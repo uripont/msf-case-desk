@@ -18,7 +18,7 @@ import {
   countText,
   isValidDate,
   itemLimits,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { fieldClassName, focusRing, labelClassName } from '../style'
 import { richTextForItem } from './editor/richText'

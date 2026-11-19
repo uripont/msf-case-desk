@@ -24,7 +24,7 @@ import {
   ImageChunkRead,
   MeView,
   publicThemeOf,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import * as Account from './quoroom/account'
 import {

@@ -1,7 +1,7 @@
 import { inertHtml } from 'foldkit/html'
 import { afterEach, describe, expect, test } from 'vitest'
 
-import type { RichTextDoc } from '@case-desk/domain'
+import type { RichTextDoc } from '@quoroom/domain'
 
 import { COMMENT_ITEM, COMMENT_SECTION } from './contentView'
 import { selectionAnchor } from './editor/richText'

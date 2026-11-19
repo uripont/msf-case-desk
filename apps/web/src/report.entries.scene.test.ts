@@ -11,7 +11,7 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { INVESTIGATION_TEMPLATE } from '@case-desk/domain'
+import { INVESTIGATION_TEMPLATE } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, OpenDialogFocus, update } from './main'

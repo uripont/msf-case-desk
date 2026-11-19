@@ -1,5 +1,5 @@
 {
-  "name": "@case-desk/e2e",
+  "name": "@quoroom/e2e",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,6 @@
     "@types/node": "^24.19.2",
     "playwright-core": "1.65.0",
     "typescript": "^7.0.2",
-    "@case-desk/pdf": "workspace:*"
+    "@quoroom/pdf": "workspace:*"
   }
 }

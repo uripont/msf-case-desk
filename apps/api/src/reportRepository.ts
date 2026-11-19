@@ -45,7 +45,7 @@ import {
   dedupeKey,
   imageChunkProblem,
   normaliseEmail,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   type GuardedStep,

@@ -1,7 +1,7 @@
 import { Effect, Option, Redacted, Schema } from 'effect'
 import { Html, HtmlBuilder } from 'foldkit/html'
 
-import { type ActivationLink, LINK_PATH } from '@case-desk/domain'
+import { type ActivationLink, LINK_PATH } from '@quoroom/domain'
 
 import { fieldClassName, labelClassName } from '../style'
 import { formatMoment, panel, smallButton } from './ui'

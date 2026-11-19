@@ -1,6 +1,6 @@
 import { type Layer } from 'effect'
 
-import { CONFIG_PATH, type Repository } from '@case-desk/domain'
+import { CONFIG_PATH, type Repository } from '@quoroom/domain'
 
 import { withReferrerPolicy } from './headers'
 import { makeConfigHandler } from './quoroom/config'

@@ -107,7 +107,7 @@ The latest code is Quoroom only and has no runtime mode: `app`, the pilot and `w
 - **Pilot database:** its own D1 with `jurisdiction: "eu"`, the migrations, the built-in templates and `.local/grants-<env>.sql`. Never change the jurisdiction after the first deploy: it replaces the database.
 - **workerd:** `pnpm workerd --mode demo|pilot` chooses the embedded imports (demo adds `users.sql`; neither embeds the triage cases) and the data folder.
 
-The built-in templates (`apps/api/seed/builtin-templates.sql`) are insert-if-absent, generated from the domain by `pnpm --filter @case-desk/api templates:sql` and kept in sync by a test.
+The built-in templates (`apps/api/seed/builtin-templates.sql`) are insert-if-absent, generated from the domain by `pnpm --filter @quoroom/api templates:sql` and kept in sync by a test.
 
 ## The pilot stack and the test environments
 
@@ -178,9 +178,9 @@ Not built. The WhatsApp links of earlier versions were removed on 16 Nov. Notifi
 
 ## Browsers for the end-to-end tests
 
-`packages/e2e` drives a real browser with `playwright-core` 1.65.0 (no bundled browsers) and the system Chromium (`/usr/bin/chromium`, or `E2E_CHROMIUM`). It is a dev dependency of that package only and has no `test` script, so `pnpm check` needs no browser. It starts its own workerd on a free port with a temporary data folder: `pnpm --filter @case-desk/e2e e2e`.
+`packages/e2e` drives a real browser with `playwright-core` 1.65.0 (no bundled browsers) and the system Chromium (`/usr/bin/chromium`, or `E2E_CHROMIUM`). It is a dev dependency of that package only and has no `test` script, so `pnpm check` needs no browser. It starts its own workerd on a free port with a temporary data folder: `pnpm --filter @quoroom/e2e e2e`.
 
-The route sweep (`sweep.ts`) and the keyboard and session steps (`keyboard.ts`) also run in Firefox: `pnpm --filter @case-desk/e2e exec playwright-core install firefox` puts it in Playwright's cache. `E2E_ENGINES=chromium` runs Chromium only; `E2E_SKIP_SWEEP=1` skips the sweep. The route list comes from `AppRoute.members` in `apps/web/src/route.ts`, and a route without a sample in `sweep.ts` fails the type check.
+The route sweep (`sweep.ts`) and the keyboard and session steps (`keyboard.ts`) also run in Firefox: `pnpm --filter @quoroom/e2e exec playwright-core install firefox` puts it in Playwright's cache. `E2E_ENGINES=chromium` runs Chromium only; `E2E_SKIP_SWEEP=1` skips the sweep. The route list comes from `AppRoute.members` in `apps/web/src/route.ts`, and a route without a sample in `sweep.ts` fails the type check.
 
 WebKit cannot run on this machine (Arch Linux without `sudo`; its build needs older `libicu`, `libxml2`, `libjxl` and `libbacktrace`). It needs `sudo npx playwright install-deps` or a Debian/Ubuntu host, so Safari is not covered by a real engine.
 

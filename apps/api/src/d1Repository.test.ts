@@ -1,8 +1,8 @@
 import { Effect } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import { Repository } from '@case-desk/domain'
-import { repositoryContract } from '@case-desk/domain/testing'
+import { Repository } from '@quoroom/domain'
+import { repositoryContract } from '@quoroom/domain/testing'
 
 import { layerSql } from './d1Repository'
 import { makeNodeSqlite } from './testing/nodeSqlite'

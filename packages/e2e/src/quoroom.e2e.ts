@@ -1,6 +1,6 @@
 // Browser check of the Quoroom flows, at 375 px.
 //
-//   pnpm --filter @case-desk/e2e e2e
+//   pnpm --filter @quoroom/e2e e2e
 //
 // It builds the web app and the workerd bundle, makes an administrator with
 // `grant-admin` in a temporary folder (never in .local), starts plain workerd
@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 
-import { extractPages } from '@case-desk/pdf/testing'
+import { extractPages } from '@quoroom/pdf/testing'
 import { type Browser, type Locator, type Page, chromium, firefox } from 'playwright-core'
 
 import {
@@ -185,7 +185,7 @@ const main = async (): Promise<void> => {
     assert.ok(!adminOutput.includes(PASSWORD))
 
     if (process.env.E2E_SKIP_BUILD !== '1') {
-      run('pnpm', ['--filter', '@case-desk/web', 'build'])
+      run('pnpm', ['--filter', '@quoroom/web', 'build'])
     }
     run('node', ['apps/api/scripts/build-workerd.mjs'], {
       CASE_DESK_LOCAL_DIR: local,

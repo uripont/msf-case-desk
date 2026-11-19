@@ -2,7 +2,7 @@
 /// <reference path="./pdfmake-browser.d.ts" />
 import pdfMake from 'pdfmake/build/pdfmake'
 
-import type { DocumentDescription } from '@case-desk/domain'
+import type { DocumentDescription } from '@quoroom/domain'
 
 import {
   type PdfBuild,

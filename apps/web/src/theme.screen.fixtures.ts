@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, type Theme } from '@case-desk/domain'
+import { DEFAULT_THEME, type Theme } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

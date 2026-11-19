@@ -8,8 +8,8 @@ import type {
   Run,
   Segment,
   TableCell,
-} from '@case-desk/domain'
-import { MIN_TEXT_CONTRAST, contrastRatio, toRoman } from '@case-desk/domain'
+} from '@quoroom/domain'
+import { MIN_TEXT_CONTRAST, contrastRatio, toRoman } from '@quoroom/domain'
 
 import { type FontDefinition, definitionOf, fontName } from './fonts'
 import { type Script, splitByScript } from './scripts'

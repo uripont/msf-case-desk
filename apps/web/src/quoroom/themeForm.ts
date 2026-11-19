@@ -9,7 +9,7 @@ import {
   type ThemeProblem,
   contrastRatio,
   validateTheme,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: The theme screen's form, kept as plain text the way it is
 // typed. `candidateOf` turns it into what the domain checks, and the domain

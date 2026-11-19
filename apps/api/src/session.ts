@@ -4,7 +4,7 @@ import {
   Repository,
   type RepositoryError,
   type User,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { sha256Hex } from './quoroom/content'
 

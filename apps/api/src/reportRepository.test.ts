@@ -1,11 +1,11 @@
 import { Effect } from 'effect'
 import { afterAll, describe, expect, test } from 'vitest'
 
-import { QUERY_BUDGET, type ReportRepositoryApi } from '@case-desk/domain'
+import { QUERY_BUDGET, type ReportRepositoryApi } from '@quoroom/domain'
 import {
   type HarnessFactory,
   reportRepositoryContract,
-} from '@case-desk/domain/testing/report-repository'
+} from '@quoroom/domain/testing/report-repository'
 
 import { makeSqlReportRepository } from './reportRepository'
 import { type SqlStore, fromD1 } from './sql'

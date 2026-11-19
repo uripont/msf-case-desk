@@ -2,7 +2,7 @@ import { Option } from 'effect'
 import { Command, click, expect, given, role, scene, text } from 'foldkit/scene'
 import { expect as check, describe, test } from 'vitest'
 
-import type { DownloadSet } from '@case-desk/domain'
+import type { DownloadSet } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

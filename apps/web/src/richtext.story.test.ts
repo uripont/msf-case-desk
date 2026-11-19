@@ -1,7 +1,7 @@
 import { Option } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import { INTAKE_TEMPLATE, type RichTextDoc } from '@case-desk/domain'
+import { INTAKE_TEMPLATE, type RichTextDoc } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

@@ -5,7 +5,7 @@ import {
   type QuoroomPublicRpcs,
   LinkInvalid,
   Repository,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { hashPassword } from '../password'
 import { SESSION_DAYS, hashToken, sessionCookie } from '../session'

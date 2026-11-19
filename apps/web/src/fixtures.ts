@@ -7,7 +7,7 @@ import {
   DEFAULT_THEME,
   MeView,
   UserId,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { Message, init, initialModel, update } from './main'
 

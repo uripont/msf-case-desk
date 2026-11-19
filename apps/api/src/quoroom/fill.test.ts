@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import {
   fullContent,
   instructionTexts,
-} from '@case-desk/domain/testing/fixtures'
+} from '@quoroom/domain/testing/fixtures'
 
 import { SCENARIOS, type World, makeWorld } from './testkit'
 

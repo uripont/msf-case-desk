@@ -13,7 +13,7 @@ import {
   canSeeComment,
   checkSave,
   redactorFor,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { mapSectionDocs, parseSection, sectionFigures } from './content'
 import {

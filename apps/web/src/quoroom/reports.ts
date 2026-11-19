@@ -11,7 +11,7 @@ import {
   ReportStateSchema,
   ReportSummary,
   Unit,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { withQuoroom } from './api'

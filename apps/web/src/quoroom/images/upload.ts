@@ -4,7 +4,7 @@ import {
   IMAGE_ROUTE,
   ImageChunkResult,
   ImageRouteError,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import type { PreparedImage } from './encode'
 import {

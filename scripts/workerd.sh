@@ -55,7 +55,7 @@ else
   data="$root/.local/workerd-data"
 fi
 
-pnpm --dir "$root" --filter @case-desk/web build >/dev/null
+pnpm --dir "$root" --filter @quoroom/web build >/dev/null
 node "$root/apps/api/scripts/build-workerd.mjs" --mode "$mode"
 mkdir -p "$data"
 

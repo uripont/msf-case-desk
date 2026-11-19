@@ -5,9 +5,9 @@ import {
   INTAKE_TEMPLATE,
   formProblems,
   templateOfForm,
-} from '@case-desk/domain'
-import { PANEL_EDITS } from '@case-desk/domain/testing/template-edits'
-import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
+} from '@quoroom/domain'
+import { PANEL_EDITS } from '@quoroom/domain/testing/template-edits'
+import { PANEL_TEMPLATE } from '@quoroom/domain/testing/templates'
 
 import { Message, OpenDialogFocus, update } from './main'
 import { clickedLinkTo } from './fixtures'

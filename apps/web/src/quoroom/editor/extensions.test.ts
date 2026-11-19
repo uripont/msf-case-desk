@@ -2,7 +2,7 @@
 import { Result } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { decodeRichText } from '@case-desk/domain'
+import { decodeRichText } from '@quoroom/domain'
 import { Editor } from '@tiptap/core'
 
 import { quoroomExtensions } from './extensions'

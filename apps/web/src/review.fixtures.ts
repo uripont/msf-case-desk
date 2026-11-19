@@ -6,7 +6,7 @@ import {
   INTAKE_TEMPLATE,
   type RevisionOutline,
   type SectionNoteCommentView,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { NOW, revision } from './publish.fixtures'
 import type * as Review from './quoroom/review'

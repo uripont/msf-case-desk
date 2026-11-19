@@ -11,7 +11,7 @@ import {
   QuoroomRpcs,
   ReportRepository,
   Repository,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { makeApp } from '../app'
 import { makeSqlRepository } from '../d1Repository'

@@ -12,7 +12,7 @@ import {
   type Template,
   chooseParticipants,
   deadlineTooFar,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { fieldClassName, labelClassName } from '../style'
 import { checkboxField, selectField } from './ui'

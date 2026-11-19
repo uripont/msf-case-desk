@@ -21,7 +21,7 @@ import {
   redactedSectionOf,
   redactedCaseOf,
   resolveMerge,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   EMPTY_SECTION,
@@ -171,7 +171,7 @@ const loadMerge = (
   })
 
 const sectionOrFail = (
-  template: import('@case-desk/domain').Template,
+  template: import('@quoroom/domain').Template,
   sectionId: string,
 ) =>
   topLevelIds(template).includes(sectionId)
@@ -1184,8 +1184,8 @@ export const authorHandlers: Pick<
 // items whose value changed, and a change of the rest of a section (entries,
 // subsections, status) as a change of the section.
 const diffSections = (
-  left: ReadonlyArray<import('@case-desk/domain').SectionContentRow>,
-  right: ReadonlyArray<import('@case-desk/domain').SectionContentRow>,
+  left: ReadonlyArray<import('@quoroom/domain').SectionContentRow>,
+  right: ReadonlyArray<import('@quoroom/domain').SectionContentRow>,
 ) => {
   const a = new Map(left.map(row => [row.sectionId, parseSection(row.content)]))
   const b = new Map(

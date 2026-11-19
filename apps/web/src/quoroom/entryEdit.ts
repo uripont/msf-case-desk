@@ -27,7 +27,7 @@ import {
   withItemValueAt,
   withSectionEntries,
   withSectionNotApplicable,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: What the drafting screen edits when it works on a list of entries or
 // marks something not applicable, named once so a Message can carry it. A

@@ -103,7 +103,7 @@ At the end of the pilot, the authors download what they need, then the operator 
 On `workerd`, the whole browser test (every screen, the pilot path, a sweep of every route at phone and desktop width) runs locally. It needs Chromium (`/usr/bin/chromium`, or set `E2E_CHROMIUM`):
 
 ```sh
-pnpm --filter @case-desk/e2e e2e
+pnpm --filter @quoroom/e2e e2e
 ```
 
 On a test environment of the pilot stack (real Cloudflare, short reminder timings):

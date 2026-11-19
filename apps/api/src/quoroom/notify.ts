@@ -17,7 +17,7 @@ import {
   isMessageKind,
   notificationLink,
   retryAt,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   type Loaded,

@@ -6,7 +6,7 @@ import {
   LEASE_MS,
   MINUTE,
   ReportRepository,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { withReferrerPolicy } from './headers'
 import { QuoroomClock, QuoroomConfig, QuoroomIdsLive } from './quoroom/core'

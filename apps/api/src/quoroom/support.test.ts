@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import { Comparison } from '@case-desk/domain'
+import { Comparison } from '@quoroom/domain'
 
 import { AUTOMATIC_LIMIT, capAutomatic } from './support'
 

@@ -1,5 +1,5 @@
 -- Built-in report templates, generated from packages/domain/src/builtin-templates.ts.
--- Regenerate with: pnpm --filter @case-desk/api templates:sql
+-- Regenerate with: pnpm --filter @quoroom/api templates:sql
 -- Insert-if-absent: running it again changes nothing.
 
 INSERT INTO templates (id, builtin, created_by, created_at) VALUES ('ethics-intake', 1, NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000) ON CONFLICT DO NOTHING;

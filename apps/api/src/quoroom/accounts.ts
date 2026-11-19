@@ -19,7 +19,7 @@ import {
   Validation,
   leavesNobodyForPeople,
   normaliseEmail,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { LINK_TTL_MS, UNUSABLE_PASSWORD_HASH } from '../links'
 import { clearedSessionCookie, hashToken, tokenFromCookies } from '../session'

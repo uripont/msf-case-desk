@@ -15,7 +15,7 @@ import {
   draftLabel,
   draftingRoleOf,
   revisionTitle,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   type Loaded,

@@ -34,7 +34,7 @@ import {
   peopleListProblems,
   redactedCaseOf,
   redactedSectionOf,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 import { BrowserCrypto } from '@effect/platform-browser'
 
 import { AppRoute, pathOf } from '../route'

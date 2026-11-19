@@ -8,11 +8,11 @@ import {
   ReportRepository,
   Repository,
   publicThemeOf,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 import {
   makeMemoryReportRepository,
   makeMemoryRepository,
-} from '@case-desk/domain/testing/memory'
+} from '@quoroom/domain/testing/memory'
 
 import { makeApp } from './app'
 import { QuoroomConfig, makeTestClock, makeTestIds } from './quoroom/core'

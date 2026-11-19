@@ -1,7 +1,7 @@
 import { Effect, Redacted } from 'effect'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { QUOROOM_PUBLIC_PATH, QUOROOM_RPC_PATH } from '@case-desk/domain'
+import { QUOROOM_PUBLIC_PATH, QUOROOM_RPC_PATH } from '@quoroom/domain'
 
 import { withPublic, withQuoroom } from './api'
 

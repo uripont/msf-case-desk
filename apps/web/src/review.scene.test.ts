@@ -12,7 +12,7 @@ import {
 } from 'foldkit/scene'
 import { describe, expect as expectThat, test } from 'vitest'
 
-import { type AuthorCommentView, INTAKE_TEMPLATE } from '@case-desk/domain'
+import { type AuthorCommentView, INTAKE_TEMPLATE } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, OpenDialogFocus, update } from './main'

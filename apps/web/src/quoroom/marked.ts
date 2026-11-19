@@ -3,7 +3,7 @@ import { Html, HtmlBuilder } from 'foldkit/html'
 
 type Child = Html | string
 
-import { markedParts } from '@case-desk/domain'
+import { markedParts } from '@quoroom/domain'
 
 import { type HighlightRange, splitByHighlights } from './highlight'
 

@@ -81,7 +81,7 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 | `pnpm pilot:plan`, `pilot:deploy`, `pilot:destroy` | The pilot stack, stage `pilot` only |
 | `pnpm test-env:up`, `test-env:down` | A throwaway test environment of the pilot stack |
 | `pnpm smoke <address>` | Read-only check of a deployment |
-| `pnpm --filter @case-desk/e2e e2e` | Browser tests on `workerd`: the pilot path and every route at phone and desktop width |
+| `pnpm --filter @quoroom/e2e e2e` | Browser tests on `workerd`: the pilot path and every route at phone and desktop width |
 | `pnpm check` | Typecheck, lint, the migration check, tests and build, as CI does |
 | `pnpm compat:check` | Runs each frozen version's storage tests on the latest schema |
 | `pnpm snapshots:prepare` | Extracts the frozen iterations from their tags, for the demo stack |

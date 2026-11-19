@@ -6,7 +6,7 @@ import {
   contentOfKey,
   entriesOfKey,
   notApplicableReasonOf,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

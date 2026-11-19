@@ -5,7 +5,7 @@ import { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
-import { InboxItem, InboxPage } from '@case-desk/domain'
+import { InboxItem, InboxPage } from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'

@@ -12,9 +12,9 @@ import {
   Repository,
   type Template,
   UserId,
-} from '@case-desk/domain'
-import { makeMemoryReportRepository, makeMemoryRepository } from '@case-desk/domain/testing/memory'
-import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
+} from '@quoroom/domain'
+import { makeMemoryReportRepository, makeMemoryRepository } from '@quoroom/domain/testing/memory'
+import { PANEL_TEMPLATE } from '@quoroom/domain/testing/templates'
 
 import { makeApp } from '../app'
 import { makeSqlReportRepository } from '../reportRepository'

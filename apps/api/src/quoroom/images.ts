@@ -11,7 +11,7 @@ import {
   Repository,
   ReportRepository,
   authorize,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { bytesToBase64 } from './content'
 import { checkImageBytes } from './imageCheck'

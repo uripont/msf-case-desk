@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@case-desk/domain'
+import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@quoroom/domain'
 
 import { PEOPLE, SCENARIOS, SECRET, type World, makeWorld } from './testkit'
 

@@ -10,7 +10,7 @@ import {
   MINUTE,
   ReportRepository,
   RepositoryError,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   type PassResult,

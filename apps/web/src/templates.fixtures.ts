@@ -6,8 +6,8 @@ import {
   type TemplateSummary,
   type TemplateVersionRecord,
   templateOfForm,
-} from '@case-desk/domain'
-import { PANEL_START } from '@case-desk/domain/testing/template-edits'
+} from '@quoroom/domain'
+import { PANEL_START } from '@quoroom/domain/testing/template-edits'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

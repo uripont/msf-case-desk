@@ -13,7 +13,7 @@ import {
   anchorText,
   entryDisplayTitle,
   formatDate,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { type HighlightRange, resolveRange } from './highlight'
 import { highlightedChildren, markedChildren } from './marked'

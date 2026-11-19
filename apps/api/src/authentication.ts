@@ -5,7 +5,7 @@ import {
   CurrentUser,
   Repository,
   Unauthorised,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { sessionUser, tokenFromCookies } from './session'
 

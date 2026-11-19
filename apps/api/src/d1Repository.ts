@@ -6,7 +6,7 @@ import {
   type User,
   UserRecord,
   normaliseEmail,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { type SqlDatabase } from './sql'
 

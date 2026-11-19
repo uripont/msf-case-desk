@@ -9,7 +9,7 @@ import {
   highlightedTexts,
   redactedSectionOf,
   redactorFor,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { focusRing } from '../style'
 import { readOnlySection } from './contentView'

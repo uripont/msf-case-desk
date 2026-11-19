@@ -1,8 +1,8 @@
 import { Effect } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { INTAKE_TEMPLATE, INVESTIGATION_TEMPLATE } from '@case-desk/domain'
-import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
+import { INTAKE_TEMPLATE, INVESTIGATION_TEMPLATE } from '@quoroom/domain'
+import { PANEL_TEMPLATE } from '@quoroom/domain/testing/templates'
 
 import {
   PEOPLE,

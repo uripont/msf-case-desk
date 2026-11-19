@@ -2,7 +2,7 @@ import { Option } from 'effect'
 import { expect, given, role, scene, selector, text } from 'foldkit/scene'
 import { expect as check, describe, test } from 'vitest'
 
-import { type AppConfig, DEFAULT_THEME } from '@case-desk/domain'
+import { type AppConfig, DEFAULT_THEME } from '@quoroom/domain'
 
 import { SYNTHETIC_ME, configuredAt, openedAt } from './fixtures'
 import { LoadLogo, Message, themeOf, update } from './main'

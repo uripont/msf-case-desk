@@ -1,5 +1,5 @@
-import type { DocumentDescription } from '@case-desk/domain'
-import { renderPdfInBrowser } from '@case-desk/pdf/browser'
+import type { DocumentDescription } from '@quoroom/domain'
+import { renderPdfInBrowser } from '@quoroom/pdf/browser'
 
 // NOTE: The PDF chunk. Only a Command imports this module, with
 // `import()`, so pdfmake and its fonts are fetched the first time someone

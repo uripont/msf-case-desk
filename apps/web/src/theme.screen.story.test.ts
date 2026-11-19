@@ -1,7 +1,7 @@
 import { Option } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import { DEFAULT_THEME, publicThemeOf } from '@case-desk/domain'
+import { DEFAULT_THEME, publicThemeOf } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { ConfigLoad, themeOf, update } from './main'

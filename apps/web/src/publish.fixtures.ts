@@ -5,7 +5,7 @@ import {
   type PublishChoices,
   type RevisionHeader,
   type RoundView,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import * as Publish from './quoroom/publish'
 import { REPORT_ID, detailOf } from './report.fixtures'

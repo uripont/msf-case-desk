@@ -2,7 +2,7 @@ import { clsx } from 'clsx'
 import { Array, Option } from 'effect'
 import { Document, Html, HtmlBuilder } from 'foldkit/html'
 
-import { type MeView } from '@case-desk/domain'
+import { type MeView } from '@quoroom/domain'
 
 import { PRODUCT_NAME } from './brand'
 import { loginPage } from './loginView'

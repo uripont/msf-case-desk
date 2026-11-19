@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
-import type { DocumentDescription } from '@case-desk/domain'
+import type { DocumentDescription } from '@quoroom/domain'
 
 import {
   type PdfBuild,

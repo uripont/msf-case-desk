@@ -1,7 +1,7 @@
 import { Option } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import { INVESTIGATION_TEMPLATE, entriesOfKey } from '@case-desk/domain'
+import { INVESTIGATION_TEMPLATE, entriesOfKey } from '@quoroom/domain'
 
 import { clickedLinkTo, clickedPage } from './fixtures'
 import { Message, update } from './main'

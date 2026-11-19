@@ -10,8 +10,8 @@ import {
   type Theme,
   documentDescription,
   redactContent,
-} from '@case-desk/domain'
-import { fullContent } from '@case-desk/domain/testing/fixtures'
+} from '@quoroom/domain'
+import { fullContent } from '@quoroom/domain/testing/fixtures'
 
 // NOTE: Test support: documents that are long enough to fill pages,
 // with invented people, tables, lists, links and images. Everything is

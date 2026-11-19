@@ -2,7 +2,7 @@ import { Option } from 'effect'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
-import { INTAKE_TEMPLATE, type SectionContent } from '@case-desk/domain'
+import { INTAKE_TEMPLATE, type SectionContent } from '@quoroom/domain'
 
 import { Failure } from './failure'
 import * as Names from './names'

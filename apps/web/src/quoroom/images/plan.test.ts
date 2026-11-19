@@ -6,7 +6,7 @@ import {
   IMAGE_MAX_BYTES,
   IMAGE_MAX_CHUNKS,
   IMAGE_MAX_SIDE,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   JPEG_QUALITIES,

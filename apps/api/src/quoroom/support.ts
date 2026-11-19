@@ -30,7 +30,7 @@ import {
   chooseParticipants,
   draftLabel,
   revisionTitle,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { parseSection, reportShell, sha256Hex } from './content'
 import {
@@ -106,7 +106,7 @@ export const draftHeader = (
   db: Store,
   reportId: string,
   number: number,
-): Effect.Effect<DraftHeader | undefined, import('@case-desk/domain').StorageUnavailable> =>
+): Effect.Effect<DraftHeader | undefined, import('@quoroom/domain').StorageUnavailable> =>
   Effect.gen(function* () {
     // NOTE: the draft and its sections in one round trip.
     const found = yield* db.getDraftWithSections(reportId, number)
@@ -273,7 +273,7 @@ export const planPublish = (
   // `concluding`: the rows of the draft, or of the working copy being shared.
   rowsOf: Effect.Effect<
     ReadonlyArray<SectionContentRow>,
-    import('@case-desk/domain').StorageUnavailable
+    import('@quoroom/domain').StorageUnavailable
   >,
 ) =>
   Effect.gen(function* () {

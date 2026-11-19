@@ -1,4 +1,4 @@
-import { type NotificationEntry } from '@case-desk/domain'
+import { type NotificationEntry } from '@quoroom/domain'
 import { expect, given, role, scene, selector, text } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 

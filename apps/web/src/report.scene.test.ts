@@ -19,8 +19,8 @@ import {
   type Section,
   type Template,
   sectionOfKey,
-} from '@case-desk/domain'
-import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
+} from '@quoroom/domain'
+import { PANEL_TEMPLATE } from '@quoroom/domain/testing/templates'
 
 import { atPage, clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

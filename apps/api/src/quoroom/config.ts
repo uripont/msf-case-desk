@@ -6,7 +6,7 @@ import {
   DEFAULT_THEME,
   Theme,
   publicThemeOf,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { type QuoroomDeps } from './server'
 import { store } from './core'

@@ -10,7 +10,7 @@ import {
   DownloadSet,
   DownloadVersion,
   approvalRecordFileName,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'
@@ -165,7 +165,7 @@ export const MakeFile = Command.define('MakeFile', {
           ],
         })
         const { zipParts, checkZipSize } = yield* Effect.tryPromise(
-          () => import('@case-desk/pdf'),
+          () => import('@quoroom/pdf'),
         )
         // NOTE: One file at a time, so only one document is being built at
         // once; what was read is kept across the versions, and the size is

@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
 
 import { SCENARIOS, PEOPLE, SECRET, TEXT, type World, makeWorld, richContent, withFigure } from './testkit'
-import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@case-desk/domain'
+import { DEFAULT_THEME, INTAKE_TEMPLATE } from '@quoroom/domain'
 import { sha256Hex } from './content'
 import { cleanupStale } from './core'
 import { makePng } from './imageFixtures'

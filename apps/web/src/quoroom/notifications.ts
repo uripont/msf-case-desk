@@ -11,7 +11,7 @@ import {
   NotificationPage,
   isMessageKind,
   notificationLink,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { focusRing } from '../style'
 import { withQuoroom } from './api'

@@ -16,7 +16,7 @@ import {
   ThemeRecord,
   documentDescription,
   sampleDocumentInput,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { fieldClassName, focusRing, labelClassName } from '../style'
 import { fontStackOf } from '../theme'

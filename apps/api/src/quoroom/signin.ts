@@ -8,7 +8,7 @@ import {
   THROTTLE_WINDOW_MS,
   normaliseEmail,
   retryAfterSeconds,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { DUMMY_HASH, verifyPassword } from '../password'
 import { UNUSABLE_PASSWORD_HASH } from '../links'

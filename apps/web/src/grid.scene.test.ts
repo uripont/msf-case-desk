@@ -20,7 +20,7 @@ import {
   type ReportState,
   type RevisionHeader,
   type RoundView,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, OpenDialogFocus, update } from './main'

@@ -8,7 +8,7 @@ import {
   type Theme,
   contrastRatio,
   themeProblems,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { buildPdf, derivedColours } from './definition'
 import { renderPdfInNode } from './node'

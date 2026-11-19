@@ -1,7 +1,7 @@
 import { Array, Option } from 'effect'
 import { Html, HtmlBuilder } from 'foldkit/html'
 
-import { type RevisionHeader } from '@case-desk/domain'
+import { type RevisionHeader } from '@quoroom/domain'
 
 import { countdownText, deadlineText } from './zoned'
 

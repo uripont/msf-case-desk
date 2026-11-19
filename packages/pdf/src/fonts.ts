@@ -1,4 +1,4 @@
-import type { FontFamily } from '@case-desk/domain'
+import type { FontFamily } from '@quoroom/domain'
 
 import type { Script } from './scripts'
 

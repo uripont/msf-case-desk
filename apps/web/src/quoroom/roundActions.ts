@@ -6,7 +6,7 @@ import {
   type Template,
   tallyRound,
   voterProblems,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: What removing a reviewer from an open round does to its approval rule
 // (D6), worked out with the same domain functions the server uses, so the

@@ -2,7 +2,7 @@ import { Option } from 'effect'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
-import type { Comparison } from '@case-desk/domain'
+import type { Comparison } from '@quoroom/domain'
 
 import { Failure } from './failure'
 import * as Share from './share'

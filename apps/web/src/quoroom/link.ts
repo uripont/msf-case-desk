@@ -4,7 +4,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
-import { LinkInfo, MeView } from '@case-desk/domain'
+import { LinkInfo, MeView } from '@quoroom/domain'
 
 import { withPublic } from './api'
 import { Failure, failureOf } from './failure'

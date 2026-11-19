@@ -5,7 +5,7 @@ import { Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
-import { TemplateSummary, TemplateVersionRecord } from '@case-desk/domain'
+import { TemplateSummary, TemplateVersionRecord } from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { focusRing } from '../style'

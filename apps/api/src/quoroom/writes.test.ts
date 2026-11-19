@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { INTAKE_TEMPLATE } from '@case-desk/domain'
+import { INTAKE_TEMPLATE } from '@quoroom/domain'
 
 import { makePng } from './imageFixtures'
 import {

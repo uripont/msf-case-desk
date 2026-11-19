@@ -2,14 +2,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
-import { BUILT_IN_TEMPLATES } from '@case-desk/domain'
+import { BUILT_IN_TEMPLATES } from '@quoroom/domain'
 
 import { builtinTemplatesSql } from './builtinTemplatesSql'
 import { makeNodeSqlite } from './testing/nodeSqlite'
 
 const FILE = join(import.meta.dirname, '../seed/builtin-templates.sql')
 
-// NOTE: `pnpm --filter @case-desk/api templates:sql` rewrites the file.
+// NOTE: `pnpm --filter @quoroom/api templates:sql` rewrites the file.
 if (process.env['UPDATE_BUILTIN_TEMPLATES'] === '1') {
   writeFileSync(FILE, builtinTemplatesSql())
 }

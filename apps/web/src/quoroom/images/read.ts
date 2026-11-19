@@ -1,6 +1,6 @@
 import { Option, Schema } from 'effect'
 
-import { IMAGE_ROUTE, ImageChunkRead } from '@case-desk/domain'
+import { IMAGE_ROUTE, ImageChunkRead } from '@quoroom/domain'
 
 import { type ImageContext, imageReadQuery } from './spec'
 

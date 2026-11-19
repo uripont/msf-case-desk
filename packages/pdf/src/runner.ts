@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 
-import { type DocumentInput, documentDescription } from '@case-desk/domain'
+import { type DocumentInput, documentDescription } from '@quoroom/domain'
 
 import { renderPdfInNode } from './node'
 

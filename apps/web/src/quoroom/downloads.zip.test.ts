@@ -1,8 +1,8 @@
 import { Effect } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import type { DownloadSet } from '@case-desk/domain'
-import { checkZipSize, zipParts } from '@case-desk/pdf'
+import type { DownloadSet } from '@quoroom/domain'
+import { checkZipSize, zipParts } from '@quoroom/pdf'
 
 import { makeFailureOf, zipDateOf } from './downloads'
 import { type ImageCache, imagesOf } from './pdf/source'

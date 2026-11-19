@@ -9,7 +9,7 @@ import {
   type ReportState,
   type RevisionOutline,
   type SectionContent,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { detailOf } from '../../report.fixtures'
 import { recordOf } from '../../templates.fixtures'

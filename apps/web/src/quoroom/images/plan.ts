@@ -5,7 +5,7 @@ import {
   IMAGE_MAX_BYTES,
   IMAGE_MAX_SIDE,
   IMAGE_REPORT_LIMIT_BYTES,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: The pure part of image handling in the browser: how large
 // an image may be, what format it is saved in, whether a result is accepted,

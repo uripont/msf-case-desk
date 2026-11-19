@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 
-import { DEFAULT_NOTIFICATION_CONFIG, HOUR, MINUTE } from '@case-desk/domain'
+import { DEFAULT_NOTIFICATION_CONFIG, HOUR, MINUTE } from '@quoroom/domain'
 
 import {
   type TickEnv,

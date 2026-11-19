@@ -1,5 +1,5 @@
 {
-  "name": "@case-desk/api",
+  "name": "@quoroom/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "templates:sql": "UPDATE_BUILTIN_TEMPLATES=1 vitest run src/builtinTemplatesSql.test.ts"
   },
   "dependencies": {
-    "@case-desk/domain": "workspace:*",
+    "@quoroom/domain": "workspace:*",
     "effect": "4.0.0"
   },
   "devDependencies": {

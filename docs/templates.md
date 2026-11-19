@@ -85,7 +85,7 @@ A built-in template is a `Template` value (`packages/domain/src/template.ts`, `s
 To ship a new or changed built-in template:
 
 1. Add it to `BUILT_IN_TEMPLATES` in `builtin-templates.ts`. A change to a published one is a new `version`: environments import built-ins only if absent, by ID and version, so an edited version 1 would never reach them.
-2. Regenerate the import file and check: `pnpm --filter @case-desk/api templates:sql`, then `pnpm check`. The tests validate every built-in template and fail if `apps/api/seed/builtin-templates.sql` is out of date.
+2. Regenerate the import file and check: `pnpm --filter @quoroom/api templates:sql`, then `pnpm check`. The tests validate every built-in template and fail if `apps/api/seed/builtin-templates.sql` is out of date.
 3. Deploy. The stacks and `pnpm workerd` import that file.
 
 ## The ethics unit's two templates

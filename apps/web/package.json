@@ -1,5 +1,5 @@
 {
-  "name": "@case-desk/web",
+  "name": "@quoroom/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,8 +13,8 @@
     "lint": "oxlint src && effect-tsgo patch --no-typescript --oxlint && oxlint --config .oxlintrc.effect.json --deny-warnings src"
   },
   "dependencies": {
-    "@case-desk/domain": "workspace:*",
-    "@case-desk/pdf": "workspace:*",
+    "@quoroom/domain": "workspace:*",
+    "@quoroom/pdf": "workspace:*",
     "@effect/platform-browser": "4.0.0",
     "@foldkit/ui": "0.169.0",
     "@fontsource-variable/hanken-grotesk": "5.3.0",

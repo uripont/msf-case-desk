@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
-import { BUILT_IN_TEMPLATES } from '@case-desk/domain'
+import { BUILT_IN_TEMPLATES } from '@quoroom/domain'
 
 import { makeNodeSqlite } from './testing/nodeSqlite'
 import { workerdImportFiles } from './workerdImports'

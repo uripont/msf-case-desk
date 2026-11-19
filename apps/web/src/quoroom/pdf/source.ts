@@ -16,7 +16,7 @@ import {
   approvalRecordFileName,
   documentDescription,
   pdfFileName,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import type { QuoroomClient } from '../api'
 import { topLevelSections } from '../draftText'

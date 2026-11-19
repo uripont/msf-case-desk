@@ -11,8 +11,8 @@ import {
   type Section,
   type Template,
   anchorText,
-} from '@case-desk/domain'
-import { fullContent } from '@case-desk/domain/testing/fixtures'
+} from '@quoroom/domain'
+import { fullContent } from '@quoroom/domain/testing/fixtures'
 
 import { topLevelIds } from './content'
 import { peopleOfDraft, peopleOfRevision } from './reviewer'

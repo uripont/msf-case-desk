@@ -8,7 +8,7 @@ import {
   type SectionEntry,
   type Template,
   richTextFigures,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: Helpers that look inside stored section content: the images a section
 // references, rewriting every rich text document, and the hash of a text.

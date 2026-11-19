@@ -11,7 +11,7 @@ import {
   RoundView,
   Template,
   deadlineTooFar,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
 import { fieldClassName, focusRing, labelClassName } from '../style'

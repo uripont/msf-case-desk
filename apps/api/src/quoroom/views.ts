@@ -10,7 +10,7 @@ import {
   SectionRef as SectionRefSchema,
   revisionTitle,
   tallyRound,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { type Loaded, flowOf } from './core'
 import { parseSection, sha256Hex, utf8Length } from './content'

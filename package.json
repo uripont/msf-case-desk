@@ -1,5 +1,5 @@
 {
-  "name": "msf-case-desk",
+  "name": "quoroom",
   "version": "0.1.0",
   "license": "MIT",
   "private": true,
@@ -9,7 +9,7 @@
     "node": ">=24.11.1"
   },
   "scripts": {
-    "dev": "pnpm --filter @case-desk/web dev",
+    "dev": "pnpm --filter @quoroom/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck && tsc --noEmit -p tsconfig.json",
     "test": "pnpm -r test",
@@ -22,8 +22,8 @@
     "infra:destroy": "alchemy destroy",
     "snapshots:prepare": "sh scripts/prepare-snapshots.sh",
     "migrations:check": "node scripts/check-migrations.mjs",
-    "users:add": "pnpm --filter @case-desk/api users:add",
-    "grant-admin": "pnpm --filter @case-desk/api grant-admin",
+    "users:add": "pnpm --filter @quoroom/api users:add",
+    "grant-admin": "pnpm --filter @quoroom/api grant-admin",
     "compat:check": "sh scripts/compat-check.sh",
     "workerd": "sh scripts/workerd.sh",
     "smoke": "node scripts/smoke.mjs",

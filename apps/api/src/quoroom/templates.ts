@@ -22,7 +22,7 @@ import {
   templateProblems,
   themeProblems,
   validateTemplate,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import {
   QuoroomClock,

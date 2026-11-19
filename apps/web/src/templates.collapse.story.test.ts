@@ -8,7 +8,7 @@ import {
 } from 'foldkit/scene'
 import { describe, expect, test } from 'vitest'
 
-import { INTAKE_TEMPLATE } from '@case-desk/domain'
+import { INTAKE_TEMPLATE } from '@quoroom/domain'
 
 import { update } from './main'
 import * as TemplateEditor from './quoroom/templateEditor'

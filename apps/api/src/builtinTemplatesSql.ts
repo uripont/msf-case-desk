@@ -1,4 +1,4 @@
-import { BUILT_IN_TEMPLATES } from '@case-desk/domain'
+import { BUILT_IN_TEMPLATES } from '@quoroom/domain'
 
 // NOTE: The built-in templates as an import file for an environment that has
 // none (the pilot stack, the pilot build for workerd). Insert-if-absent by
@@ -13,7 +13,7 @@ const NOW_MS = `CAST(strftime('%s', 'now') AS INTEGER) * 1000`
 export const builtinTemplatesSql = (): string =>
   [
     '-- Built-in report templates, generated from packages/domain/src/builtin-templates.ts.',
-    '-- Regenerate with: pnpm --filter @case-desk/api templates:sql',
+    '-- Regenerate with: pnpm --filter @quoroom/api templates:sql',
     '-- Insert-if-absent: running it again changes nothing.',
     '',
     ...BUILT_IN_TEMPLATES.flatMap(template => [

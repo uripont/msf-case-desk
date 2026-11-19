@@ -9,7 +9,7 @@ import {
   endState,
   numberSections,
   sectionStates,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { clickedLinkTo, clickedPage } from './fixtures'
 import { Message, update } from './main'

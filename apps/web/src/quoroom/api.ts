@@ -7,7 +7,7 @@ import {
   QUOROOM_RPC_PATH,
   QuoroomPublicRpcs,
   QuoroomRpcs,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: The API clients. The session cookie is set by the Worker and
 // the browser sends it; no token is ever read or written here. A link token

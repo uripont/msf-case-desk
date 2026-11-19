@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 
-import { INTAKE_TEMPLATE, documentDescription } from '@case-desk/domain'
+import { INTAKE_TEMPLATE, documentDescription } from '@quoroom/domain'
 
 import { renderPdfInNode } from './node'
 import { CASE, PEOPLE, THEME, bulkContent } from './testing/documents'

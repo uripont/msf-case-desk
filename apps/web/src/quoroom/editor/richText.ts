@@ -6,7 +6,7 @@ import {
   canonicalRichText,
   decodeRichText,
   offsetsOfProseMirrorRange,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: What crosses between the editor and the Model is a string of canonical
 // JSON of the strict schema. Nothing else is ever stored (D3): the editor's own

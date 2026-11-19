@@ -39,7 +39,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@case-desk/domain':
+      '@quoroom/domain':
         specifier: workspace:*
         version: link:../../packages/domain
       effect:
@@ -73,10 +73,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@case-desk/domain':
+      '@quoroom/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@case-desk/pdf':
+      '@quoroom/pdf':
         specifier: workspace:*
         version: link:../../packages/pdf
       '@effect/platform-browser':
@@ -216,7 +216,7 @@ importers:
 
   packages/e2e:
     devDependencies:
-      '@case-desk/pdf':
+      '@quoroom/pdf':
         specifier: workspace:*
         version: link:../pdf
       '@types/node':
@@ -231,7 +231,7 @@ importers:
 
   packages/pdf:
     dependencies:
-      '@case-desk/domain':
+      '@quoroom/domain':
         specifier: workspace:*
         version: link:../domain
       '@fontsource/hanken-grotesk':

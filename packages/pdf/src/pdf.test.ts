@@ -15,8 +15,8 @@ import {
   headingsOf,
   initialFlow,
   toRoman,
-} from '@case-desk/domain'
-import { PANEL_TEMPLATE } from '@case-desk/domain/testing/templates'
+} from '@quoroom/domain'
+import { PANEL_TEMPLATE } from '@quoroom/domain/testing/templates'
 
 import { renderPdfInNode } from './node'
 import { UNSUPPORTED_PLACEHOLDER } from './scripts'

@@ -11,7 +11,7 @@ import {
 } from 'foldkit/scene'
 import { describe, test } from 'vitest'
 
-import { INTAKE_TEMPLATE } from '@case-desk/domain'
+import { INTAKE_TEMPLATE } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, update } from './main'

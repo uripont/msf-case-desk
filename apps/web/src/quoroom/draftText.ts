@@ -6,7 +6,7 @@ import type {
   Person,
   Section,
   Template,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: Plain-language names for what the sharing, comparison and history
 // screens talk about: the time of a save, and the place of a unit of a draft

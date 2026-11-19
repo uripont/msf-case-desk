@@ -1,4 +1,4 @@
-import { MAX_COLWIDTH } from '@case-desk/domain'
+import { MAX_COLWIDTH } from '@quoroom/domain'
 
 // NOTE: Column widths by buttons. ProseMirror's resize handle
 // needs a mouse or a pen, so on a phone the toolbar widens or narrows the

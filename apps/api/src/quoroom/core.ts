@@ -39,7 +39,7 @@ import {
   notificationJobs,
   refusalToError,
   settle,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 // NOTE: The pieces every Quoroom handler shares: the injected
 // clock and ID services, the repository with its errors mapped to the typed

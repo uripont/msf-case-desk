@@ -9,7 +9,7 @@ import {
   QuoroomRpcs,
   type Repository,
   type ReportRepository,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { AuthenticationLive } from '../authentication'
 import { authorHandlers } from './author'

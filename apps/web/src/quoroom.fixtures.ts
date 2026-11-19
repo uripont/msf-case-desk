@@ -1,6 +1,6 @@
 import { Option, Redacted } from 'effect'
 
-import { MeView } from '@case-desk/domain'
+import { MeView } from '@quoroom/domain'
 
 import { SYNTHETIC_ME, configuredAt, configuredModel } from './fixtures'
 import { Message, update } from './main'

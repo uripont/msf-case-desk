@@ -14,7 +14,7 @@ import {
   type TableRowNode,
   isRichTextEmpty,
   textBlockStarts,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import './images/figureImage'
 import { imageElement } from './images/spec'

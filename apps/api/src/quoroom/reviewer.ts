@@ -21,7 +21,7 @@ import {
   reviewerRoleFor,
   revisionTitle,
   templateNodes,
-} from '@case-desk/domain'
+} from '@quoroom/domain'
 
 import { EMPTY_SECTION, parseSection, topLevelIds } from './content'
 import {
