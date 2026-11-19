@@ -11,7 +11,7 @@ import {
 } from './round-events'
 import { type Template } from './template'
 
-// NOTE: The status grid (pipeline step 10), a pure projection of the report's
+// NOTE: The status grid, a pure projection of the report's
 // flow and its event log. Computed on request, never stored.
 //
 // Rows are shared drafts and revisions. Columns are people: the authors for a

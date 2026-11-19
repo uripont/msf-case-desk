@@ -244,7 +244,7 @@ describe('selection reporting', () => {
   })
 })
 
-describe('an editor that goes away (stage 4 review)', () => {
+describe('an editor that goes away', () => {
   const flush = (scope: typeof SCOPE) =>
     reportMessage(
       Report.Message.FlushedRichText({

@@ -3,8 +3,8 @@ import { Option, Schema } from 'effect'
 import { COMMENT_ENTRIES, COMMENT_ITEM, COMMENT_SECTION } from './contentView'
 import { RICH_TEXT_BLOCK } from './richTextView'
 
-// NOTE: Reads the text the reader has selected in a read-only draft (stage
-// 4g) as an anchor of the comment API: the top-level section, the entries
+// NOTE: Reads the text the reader has selected in a read-only draft as an
+// anchor of the comment API: the top-level section, the entries
 // passed through, the item, the character offsets in the item's text and the
 // quoted text. The read-only view marks each text it shows with data
 // attributes (`contentView.ts`); a selection that starts and ends in the same

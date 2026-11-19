@@ -8,8 +8,8 @@ import {
   richTextBlocks,
 } from './richtext'
 
-// NOTE: One coordinate scheme for comment anchors in rich text (iteration 3,
-// D14). The editor's selection and the read-only view's
+// NOTE: One coordinate scheme for comment anchors in rich text (D14). The
+// editor's selection and the read-only view's
 // selection both report anchors in it, so the same words give the same
 // `{ from, to, quoted }`.
 //

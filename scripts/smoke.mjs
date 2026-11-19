@@ -1,5 +1,6 @@
-// Smoke check for any deployment: local workerd, `pnpm infra:dev` or a
-// deployed Worker, Quoroom (`app`, the pilot) or the frozen `iter2`. Read-only.
+// Smoke check for any deployment: a local host (`pnpm workerd`, `pnpm openorange
+// dev`) or a deployed Worker, Quoroom (`app`, the pilot) or the frozen `iter2`.
+// Read-only.
 //
 //   node scripts/smoke.mjs <base-url>
 //   SMOKE_EMAIL=... SMOKE_PASSWORD=... node scripts/smoke.mjs <base-url>

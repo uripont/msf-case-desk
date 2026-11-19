@@ -355,8 +355,8 @@ const LEAVE_REASONS: Readonly<
   saving: 'The last changes are being saved.',
 }
 
-// NOTE: Asks before the report is left with edits that are not saved (stage
-// 4 review): stay, wait for the save and then go, or go without it.
+// NOTE: Asks before the report is left with edits that are not saved: stay,
+// wait for the save and then go, or go without it.
 const TEMPLATE_LEAVE_REASONS = {
   stale:
     'The draft was changed by someone else, so what you typed here is not saved.',

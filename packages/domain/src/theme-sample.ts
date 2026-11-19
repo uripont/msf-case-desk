@@ -4,8 +4,8 @@ import { type DocumentInput } from './document'
 import { type Template } from './template'
 import { type Theme } from './theme'
 
-// NOTE: The invented document the theme screen previews a PDF with (stage
-// 9d): one section of two paragraphs, a table-free body that fits one page
+// NOTE: The invented document the theme screen previews a PDF with: one
+// section of two paragraphs, a table-free body that fits one page
 // after the cover. It carries no report content and no real name; the
 // organisation's name, logo, colours, fonts and header and footer come from
 // the theme being edited, so the preview shows what the next PDF will.

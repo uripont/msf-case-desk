@@ -12,7 +12,7 @@ import type { NotificationJob } from './notifications'
 import type { ReportState } from './report-flow'
 import type { RepositoryError } from './repository'
 
-// NOTE: The storage contract of iteration 3. One Effect service,
+// NOTE: The storage contract of the reports. One Effect service,
 // two implementations (SQL in apps/api, in memory in `testing/report-repository-memory.ts`)
 // and one contract suite (`testing/reportRepositoryContract.ts`) that both
 // pass. It is storage only: no authorization and no rules. Handlers read, ask

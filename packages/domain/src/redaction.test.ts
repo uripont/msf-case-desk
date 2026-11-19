@@ -841,7 +841,7 @@ const figuresOf = (
   }
 }
 
-describe('stage 1 done-when: no alias and no unmarked image', () => {
+describe('publishable: no alias and no unmarked image', () => {
   const flagsArb = fc.record({
     'img-1': fc.boolean(),
     'img-2': fc.boolean(),

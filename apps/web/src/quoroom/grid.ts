@@ -26,7 +26,7 @@ import { alertText, loadingText, panel, selectField, statusText } from './ui'
 import { LoadState } from './unit'
 import { dateTextIn, deadlineText, zoneChoices, zonedTimeToEpoch } from './zoned'
 
-// NOTE: The status grid for authors (pipeline step 10) and the actions on an
+// NOTE: The status grid for authors and the actions on an
 // open round: extend its deadline, remove a reviewer after reading what that
 // does to the approval rule. Every fact shows its time in the viewer's own
 // time zone; a fact that is not known is not shown as a time. The tables

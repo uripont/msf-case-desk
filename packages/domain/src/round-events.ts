@@ -1,8 +1,8 @@
 import type { ReviewDecision } from './approval'
 import type { DecidedBy, Round } from './report-flow'
 
-// NOTE: The facts of a report that carry a time (D12, step 10 of the
-// pipeline). The report flow (report-flow.ts) holds the state and no clock, so
+// NOTE: The facts of a report that carry a time (D12). The report flow
+// (report-flow.ts) holds the state and no clock, so
 // the times live in an event log that the server stores: when a draft was shared,
 // when a revision was published, when someone was told, opened, reminded,
 // reviewed, and when a round was decided. The grid and the notification rules
