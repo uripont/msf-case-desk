@@ -132,9 +132,46 @@ const entryPrefixes = (key: string): ReadonlyArray<string> => {
 
 const isEntryKey = (key: string): boolean => /(^|\/)e:[^/]+$/.test(key)
 
-const subtree = (units: Units, entry: string): string =>
+// NOTE: The order of each list of entries, by the key of the list. Not a unit:
+// it only tells whether an entry's subtree changed, since moving the entries
+// inside an entry is a change to it.
+const ordersOf = (content: ReportContent): Units => {
+  const orders: Units = new Map()
+  const fromValues = (
+    prefix: string,
+    values: Readonly<Record<string, ItemValue>>,
+  ): void => {
+    for (const [id, value] of Object.entries(values)) {
+      if (value.type === 'repeated') {
+        orders.set(`${prefix}i:${id}`, value.entries.map(e => e.id).join(','))
+      }
+    }
+  }
+  const fromSections = (
+    prefix: string,
+    sections: Readonly<Record<string, SectionContent>>,
+  ): void => {
+    for (const [id, section] of Object.entries(sections)) {
+      const key = `${prefix}s:${id}`
+      fromValues(`${key}/`, section.values)
+      fromSections(`${key}/`, section.sections)
+      const entries = section.entries ?? []
+      if (entries.length > 0) {
+        orders.set(key, entries.map(e => e.id).join(','))
+      }
+      for (const entry of entries) {
+        fromValues(`${key}/e:${entry.id}/`, entry.values)
+        fromSections(`${key}/e:${entry.id}/`, entry.sections)
+      }
+    }
+  }
+  fromSections('', content.sections)
+  return orders
+}
+
+const subtree = (units: Units, entry: string, orders?: Units): string =>
   JSON.stringify(
-    [...units.entries()]
+    [...units.entries(), ...(orders?.entries() ?? [])]
       .filter(([key]) => key.startsWith(`${entry}/`))
       .sort(([a], [b]) => (a < b ? -1 : 1)),
   )
@@ -152,6 +189,11 @@ const check = (
     unitsOf(triple.base.content),
     unitsOf(triple.ours.content),
     unitsOf(triple.theirs.content),
+  ]
+  const [bOrders, oOrders, tOrders] = [
+    ordersOf(triple.base.content),
+    ordersOf(triple.ours.content),
+    ordersOf(triple.theirs.content),
   ]
   const problems: Array<string> = []
   // An entry of an item that is a list on one side and something else on the
@@ -254,7 +296,9 @@ const check = (
       expectEqual(key, undefined, 'deleted on both sides')
       continue
     }
-    const changed = subtree(po ? o : t, key) !== subtree(b, key)
+    const changed =
+      subtree(po ? o : t, key, po ? oOrders : tOrders) !==
+      subtree(b, key, bOrders)
     if (changed) {
       expectConflict(key, 'deleted on one side, changed on the other')
       expectEqual(key, o.get(key), 'default is ours')
