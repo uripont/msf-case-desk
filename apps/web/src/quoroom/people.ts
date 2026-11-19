@@ -237,9 +237,11 @@ export const AddPerson = Command.define('AddPerson', {
   execute: ({ email, name, first, rest }) =>
     withQuoroom(client =>
       Effect.gen(function* () {
+        // NOTE: the name is optional (ignored for an existing account), and
+        // an empty one is not a name.
         const created = yield* client.GrantCapability({
           email,
-          name,
+          ...(name === '' ? {} : { name }),
           capability: first.capability,
           ...unitField(first.unit),
         })
