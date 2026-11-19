@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
@@ -15,11 +15,16 @@ import {
   refusedFlag,
   removeGrantsFile,
 } from '../../../infra/guards.mjs'
+import { ASSETS_DIR, CONFIG_DIR, flagValue, wranglerConfig } from '../../../infra/openorange.ts'
 import {
   BUILTIN_TEMPLATES,
+  MIGRATIONS,
   NOTIFICATION_CRON,
   TIMINGS,
+  WEB_ASSETS,
+  WORKER_ENTRY,
   importFiles,
+  timingVariables,
 } from '../../../infra/quoroom.ts'
 
 import { makeNodeSqlite } from './testing/nodeSqlite'
@@ -172,7 +177,7 @@ describe('imports', () => {
 
   test('without a first-administrator file, only the templates', () => {
     withLocal([], local => {
-      expect(importFiles('workerd', { local })).toEqual([BUILTIN_TEMPLATES])
+      expect(importFiles('openorange', { local })).toEqual([BUILTIN_TEMPLATES])
     })
   })
 
@@ -187,7 +192,7 @@ describe('imports', () => {
   })
 
   test('no host imports the triage cases; only the demo stack names them, last', () => {
-    for (const file of ['infra/cloudflare.run.ts', 'apps/api/scripts/build-workerd.mjs']) {
+    for (const file of ['infra/cloudflare.run.ts', 'infra/openorange.ts', 'apps/api/scripts/build-workerd.mjs']) {
       expect(source(file)).not.toContain('DEMO_CASES')
     }
     expect(source('infra/demo.run.ts')).toContain(
@@ -218,6 +223,7 @@ describe('Cron Triggers and logs', () => {
   test('the pass runs every minute, from one constant', () => {
     expect(NOTIFICATION_CRON).toBe('* * * * *')
     expect(demo + cloudflare).not.toContain('*/5')
+    expect(wranglerConfig().triggers.crons).toEqual([NOTIFICATION_CRON])
   })
 
   test('the demo stack has one, on `app`, and none on the frozen Workers', () => {
@@ -241,6 +247,7 @@ describe('Cron Triggers and logs', () => {
 
   test('no Worker has a tick secret', () => {
     expect(demo + cloudflare).not.toMatch(/TICK_SECRET\s*:/)
+    expect(JSON.stringify(wranglerConfig())).not.toContain('TICK_SECRET')
   })
 
   // NOTE: D7: a deployment's logs keep what the code writes (errors included)
@@ -260,5 +267,41 @@ describe('Cron Triggers and logs', () => {
     expect(cloudflare).toContain(
       'const timings = isTest && process.env.QUOROOM_FAST_TIMINGS === "1" ? TIMINGS.fast : TIMINGS.production;',
     )
+  })
+})
+
+// NOTE: OpenOrange gets the same Worker as Cloudflare, from infra/quoroom.ts.
+describe('the OpenOrange configuration', () => {
+  const config = wranglerConfig()
+  const at = (path: string) => resolve(CONFIG_DIR, path)
+
+  test('the same entry, assets, migrations and bindings', () => {
+    expect(at(config.main)).toBe(WORKER_ENTRY)
+    expect(at(config.assets.directory)).toBe(ASSETS_DIR)
+    expect(config.assets.binding).toBe('ASSETS')
+    expect(config.d1_databases).toHaveLength(1)
+    expect(config.d1_databases[0]?.binding).toBe('DB')
+    expect(at(config.d1_databases[0]?.migrations_dir ?? '')).toBe(MIGRATIONS)
+  })
+
+  test('the web build is copied inside the folder of the configuration, the only one `orange deploy` packages', () => {
+    expect(relative(CONFIG_DIR, ASSETS_DIR)).toBe('assets')
+    expect(relative(root, WEB_ASSETS)).toBe('apps/web/dist')
+  })
+
+  test('the Worker answers every request, so it sets the headers that `_headers` sets on Cloudflare', () => {
+    expect(config.assets.run_worker_first).toBe(true)
+    expect(config.assets.not_found_handling).toBe('single-page-application')
+  })
+
+  test('production timings unless --fast', () => {
+    expect(config.vars).toEqual(timingVariables(TIMINGS.production))
+    expect(wranglerConfig({ fast: true }).vars).toEqual(timingVariables(TIMINGS.fast))
+  })
+
+  test('`database` finds its cluster in either flag form', () => {
+    expect(flagValue(['--cluster', 'prod', '--region', 'eu'], '--cluster')).toBe('prod')
+    expect(flagValue(['--org=msf', '--cluster=prod'], '--org')).toBe('msf')
+    expect(flagValue(['--dry-run', '--outdir', 'out'], '--cluster')).toBeUndefined()
   })
 })

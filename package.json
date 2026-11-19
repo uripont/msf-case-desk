@@ -24,6 +24,7 @@
     "smoke": "node scripts/smoke.mjs",
     "rehearsal": "node packages/e2e/src/rehearsal.ts",
     "workerd": "sh infra/workerd.sh",
+    "openorange": "node infra/openorange.ts",
     "cloudflare:plan": "node infra/cloudflare.mjs plan",
     "cloudflare:deploy": "node infra/cloudflare.mjs deploy",
     "cloudflare:destroy": "node infra/cloudflare.mjs destroy",

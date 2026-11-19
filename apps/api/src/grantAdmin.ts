@@ -29,9 +29,9 @@ const quote = (text: string): string => `'${text.replaceAll("'", "''")}'`
 export const environmentFile = (environment: string): string =>
   `grants-${environment}.sql`
 
-// NOTE: the environments of docs/hosting.md: `workerd`, a Cloudflare stage
-// (`quoroom`, `pilot`, ...), a test environment `test-<name>`, and `demo` for
-// the course's demo stack.
+// NOTE: the environments of docs/hosting.md: `workerd`, `openorange`, a
+// Cloudflare stage (`quoroom`, `pilot`, ...), a test environment `test-<name>`,
+// and `demo` for the course's demo stack.
 export const isEnvironment = (value: string): boolean =>
   /^([a-z][a-z0-9]*|test-[a-z0-9]+)$/.test(value)
 

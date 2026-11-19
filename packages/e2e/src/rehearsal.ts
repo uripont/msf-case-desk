@@ -5,12 +5,12 @@
 //
 //   pnpm rehearsal <base> --admin-link-file <file> [--tick-secret-file <file>]
 //
-// <base> is a local host (`pnpm workerd --mode pilot`) or a Cloudflare test
-// environment
+// <base> is a local host (`pnpm workerd --mode pilot`, `pnpm openorange dev`)
+// or a Cloudflare test environment
 // (https://quoroom-test-<name>.<subdomain>.workers.dev), never anything else.
 // With --tick-secret-file the script calls /api/tick to move
 // notifications along (workerd); without it, it waits for the Cron Trigger.
-// Reminders need short timings: `--fast` on a test environment, or
+// Reminders need short timings: `--fast` on a test environment or OpenOrange, or
 // NOTIFY_FIRST_REMINDER_MINUTES=10 NOTIFY_FINAL_REMINDER_MINUTES=3 on workerd.
 // It takes about 25 minutes, mostly waiting for reminders and a deadline.
 // Screenshots go to E2E_SHOTS (default /tmp/quoroom-rehearsal). Everything is

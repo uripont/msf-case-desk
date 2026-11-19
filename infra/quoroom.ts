@@ -3,9 +3,10 @@ import { join } from "node:path";
 
 // What every Quoroom deployment is, wherever it runs: one Worker that serves
 // the web app and the API, one relational database, and a notification pass
-// every minute. The Cloudflare stacks (cloudflare.run.ts, demo.run.ts) and the
-// workerd build (apps/api/scripts/build-workerd.mjs) both read it from here, so
-// the ways to host Quoroom cannot drift apart.
+// every minute. The Cloudflare stacks (cloudflare.run.ts, demo.run.ts), the
+// OpenOrange command (openorange.ts) and the workerd build
+// (apps/api/scripts/build-workerd.mjs) all read it from here, so the three
+// ways to host Quoroom cannot drift apart.
 //
 // Plain data and paths only: no import of the app's code, which uses another
 // Effect version (docs/decisions.md, "Two Effect versions on purpose").
@@ -15,7 +16,7 @@ export const root = join(import.meta.dirname, "..");
 /** The Foldkit web app; its build (`dist/`) is the Worker's static assets. */
 export const WEB_APP = join(root, "apps/web");
 export const WEB_ASSETS = join(WEB_APP, "dist");
-/** The Worker's entry on Cloudflare. workerd has its own (apps/api/src/workerd.ts). */
+/** The Worker's entry on Cloudflare and OpenOrange. workerd has its own (apps/api/src/workerd.ts). */
 export const WORKER_ENTRY = join(root, "apps/api/src/worker.ts");
 /** Expand-only SQL migrations, applied in order before new code goes live. */
 export const MIGRATIONS = join(root, "apps/api/migrations");

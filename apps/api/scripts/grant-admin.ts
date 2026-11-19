@@ -6,8 +6,8 @@
 //   pnpm grant-admin --env pilot --email sam@example.org --name "Sam Synthetic"
 //   pnpm grant-admin --env workerd --email sam@example.org --reset
 //
-// --env is workerd, a Cloudflare stage (quoroom, pilot, ...), test-<name>
-// or demo (docs/hosting.md). --origin is the address the app
+// --env is workerd, openorange, a Cloudflare stage (quoroom, pilot, ...),
+// test-<name> or demo (docs/hosting.md). --origin is the address the app
 // is served from, to print a complete link. The account gets the People, Theme
 // and Templates capabilities; author is granted in the app, per unit.
 // Run it again for the same email to get a fresh activation link. --reset
@@ -57,7 +57,7 @@ if (
   (!reset && name === '')
 ) {
   fail(
-    'Usage: pnpm grant-admin --env <workerd|STAGE|test-NAME|demo> --email <email> --name "<name>" [--origin <address>]\n       pnpm grant-admin --env <...> --email <email> --reset',
+    'Usage: pnpm grant-admin --env <workerd|openorange|STAGE|test-NAME|demo> --email <email> --name "<name>" [--origin <address>]\n       pnpm grant-admin --env <...> --email <email> --reset',
   )
 }
 
@@ -94,9 +94,9 @@ const file = join(directory, environmentFile(environment))
 mkdirSync(dirname(file), { recursive: true })
 appendFileSync(file, sql)
 
-const origin =
-  values.origin ??
-  (environment === 'workerd' ? 'http://127.0.0.1:8787' : '<address of the app>')
+// NOTE: both local hosts listen on 8787 by default.
+const isLocal = environment === 'workerd' || environment === 'openorange'
+const origin = values.origin ?? (isLocal ? 'http://127.0.0.1:8787' : '<address of the app>')
 
 console.log(`Saved ${email} in ${file}.`)
 console.log(
@@ -106,7 +106,9 @@ console.log(`${origin.replace(/\/$/, '')}${LINK_PATH}#${token}`)
 console.log(
   environment === 'workerd'
     ? 'Restart `pnpm workerd` to load it.'
-    : 'Deploy the environment (it imports the file) before opening the link.',
+    : environment === 'openorange'
+      ? 'Run `pnpm openorange dev`, `deploy` or `database` again to import it.'
+      : 'Deploy the environment (it imports the file) before opening the link.',
 )
 if (!reset) {
   console.log(

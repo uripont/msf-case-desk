@@ -120,7 +120,7 @@ describe('pnpm grant-admin (D21)', () => {
     expect(LINK_TTL_MS).toBe(72 * 3_600_000)
     expect(environmentFile('test-3')).toBe('grants-test-3.sql')
     expect(
-      ['demo', 'pilot', 'quoroom', 'workerd', 'test-12'].every(isEnvironment),
+      ['demo', 'pilot', 'quoroom', 'workerd', 'openorange', 'test-12'].every(isEnvironment),
     ).toBe(true)
     expect(
       ['', 'Pilot', '1st', 'test-', 'test_1', '../x', 'test-1; DROP'].some(isEnvironment),
