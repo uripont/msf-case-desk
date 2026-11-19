@@ -4,7 +4,7 @@ How to start and run a Quoroom pilot with real reports, on the pilot stack ([`se
 
 ## The data rule
 
-A pilot holds real reports. **Nobody reads or copies pilot data**: not the operator, not a developer, not an agent. In practice:
+A pilot holds real reports. **Nobody reads or copies pilot data**: not the operator and not a developer. In practice:
 
 - No SQL against the pilot database (`wrangler d1 execute` or the dashboard's console), no export of it, no copy on a laptop, no screenshots of its screens.
 - Problems are reproduced with invented data on a test environment or on `workerd` (see *When something fails*). Fixtures, tests, logs and screenshots in the repository stay synthetic.
