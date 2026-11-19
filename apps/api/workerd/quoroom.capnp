@@ -6,14 +6,14 @@ using Workerd = import "/workerd/workerd.capnp";
 
 const config :Workerd.Config = (
   services = [
-    (name = "main", worker = .caseDesk),
+    (name = "main", worker = .quoroom),
     (name = "assets", disk = (path = "unset")),
     (name = "data", disk = (path = "unset", writable = true)),
   ],
   sockets = [(name = "http", address = "127.0.0.1:8787", http = (), service = "main")],
 );
 
-const caseDesk :Workerd.Worker = (
+const quoroom :Workerd.Worker = (
   modules = [(name = "worker", esModule = embed "dist/worker.js")],
   compatibilityDate = "2026-10-01",
   bindings = [
@@ -27,6 +27,8 @@ const caseDesk :Workerd.Worker = (
     (name = "NOTIFY_FIRST_REMINDER_MINUTES", fromEnvironment = "NOTIFY_FIRST_REMINDER_MINUTES"),
     (name = "NOTIFY_FINAL_REMINDER_MINUTES", fromEnvironment = "NOTIFY_FINAL_REMINDER_MINUTES"),
   ],
+  # NOTE: the key keeps the project's first name: changing it would leave an
+  # existing local database behind.
   durableObjectNamespaces = [
     (className = "LocalDatabase", uniqueKey = "case-desk-local-database", enableSql = true),
   ],

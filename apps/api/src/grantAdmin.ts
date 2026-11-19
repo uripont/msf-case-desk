@@ -29,8 +29,11 @@ const quote = (text: string): string => `'${text.replaceAll("'", "''")}'`
 export const environmentFile = (environment: string): string =>
   `grants-${environment}.sql`
 
+// NOTE: the environments of docs/hosting.md: `workerd`, a Cloudflare stage
+// (`quoroom`, `pilot`, ...), a test environment `test-<name>`, and `demo` for
+// the course's demo stack.
 export const isEnvironment = (value: string): boolean =>
-  /^(demo|pilot|workerd|test-[a-z0-9]+)$/.test(value)
+  /^([a-z][a-z0-9]*|test-[a-z0-9]+)$/.test(value)
 
 export const grantAdminSql = (input: GrantAdminInput): string => {
   const email = quote(input.email.trim().toLowerCase())

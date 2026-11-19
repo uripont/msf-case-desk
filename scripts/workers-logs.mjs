@@ -10,8 +10,8 @@
 //       free-text search of the window for each marker string, by the API and
 //       over every event pulled; prints a count per marker, never the events
 //
-// Only Workers named test-*: it refuses anything else (never the pilot, the
-// demo or iteration workers).
+// Only the Workers of test environments (`quoroom-test-<name>`): it refuses
+// anything else (never the pilot, the demo or iteration workers).
 import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -27,8 +27,8 @@ const { positionals, values } = parseArgs({
   },
 })
 const [command, worker] = positionals
-if (!['events', 'search'].includes(command ?? '') || !/^test-[a-z0-9]+-pilot$/.test(worker ?? '')) {
-  console.error('Usage: workers-logs.mjs events|search <test-NAME-pilot> --from <time> [--to <time>] ...')
+if (!['events', 'search'].includes(command ?? '') || !/^quoroom-test-[a-z0-9]+$/.test(worker ?? '')) {
+  console.error('Usage: workers-logs.mjs events|search <quoroom-test-NAME> --from <time> [--to <time>] ...')
   process.exit(2)
 }
 const time = (value, fallback) => {

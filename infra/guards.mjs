@@ -1,4 +1,4 @@
-// The checks of scripts/pilot-stack.mjs, apart from it so they can be tested
+// The checks of infra/cloudflare.mjs, apart from it so they can be tested
 // without running Alchemy.
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'

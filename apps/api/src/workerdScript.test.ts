@@ -3,9 +3,9 @@ import { join } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
-// NOTE: the argument parsing of `pnpm workerd` (scripts/workerd.sh), without
+// NOTE: the argument parsing of `pnpm workerd` (infra/workerd.sh), without
 // building or starting anything (`WORKERD_PARSE_ONLY`).
-const script = join(import.meta.dirname, '../../../scripts/workerd.sh')
+const script = join(import.meta.dirname, '../../../infra/workerd.sh')
 
 const run = (...args: ReadonlyArray<string>) => {
   const result = spawnSync('sh', [script, ...args], {
@@ -15,7 +15,7 @@ const run = (...args: ReadonlyArray<string>) => {
   return { status: result.status, out: result.stdout.trim() }
 }
 
-describe('scripts/workerd.sh arguments', () => {
+describe('infra/workerd.sh arguments', () => {
   test.each([
     [[], 'demo 8787'],
     [['8790'], 'demo 8790'],

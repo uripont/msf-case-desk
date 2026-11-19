@@ -1,40 +1,38 @@
-// Bundles src/workerd.ts for plain workerd. The migrations are embedded, then
-// the imports of the mode (see src/workerdImports.ts), in order. Every import
-// is idempotent.
+// Bundles src/workerd.ts for plain workerd (infra/workerd.sh). The migrations
+// are embedded, then the imports of the environment `workerd`, in order, from
+// infra/quoroom.ts as on every other host. Every import is idempotent: the
+// local database runs them on each start.
 //
 //   node scripts/build-workerd.mjs [--mode demo|pilot]
 //
-// demo (default): accounts from `pnpm users:add` and the grants from
-// `pnpm grant-admin --env workerd`.
-// pilot: the built-in templates and the grants file only (D21).
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+// demo (default): also the demo accounts from `pnpm users:add`.
+// pilot: the built-in templates and the first administrator only (D21).
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { build } from 'esbuild'
 
-import { isWorkerdMode, workerdImportFiles } from '../src/workerdImports.ts'
+import { LOCAL, MIGRATIONS, importFiles } from '../../../infra/quoroom.ts'
 
 const api = join(import.meta.dirname, '..')
-const root = join(api, '../..')
-const migrationsDir = join(api, 'migrations')
 
-const migrations = readdirSync(migrationsDir)
+const migrations = readdirSync(MIGRATIONS)
   .filter(file => file.endsWith('.sql'))
   .sort()
-  .map(name => ({ name, sql: readFileSync(join(migrationsDir, name), 'utf8') }))
+  .map(name => ({ name, sql: readFileSync(join(MIGRATIONS, name), 'utf8') }))
 
-// NOTE: CASE_DESK_LOCAL_DIR points the build at another folder for the account
+// NOTE: QUOROOM_LOCAL_DIR points the build at another folder for the account
 // and grant files, so the browser check (packages/e2e) never touches .local.
-const local = process.env.CASE_DESK_LOCAL_DIR ?? join(root, '.local')
+const local = process.env.QUOROOM_LOCAL_DIR ?? LOCAL
 
 const modeIndex = process.argv.indexOf('--mode')
 const mode = modeIndex === -1 ? 'demo' : (process.argv[modeIndex + 1] ?? '')
-if (!isWorkerdMode(mode)) {
+if (mode !== 'demo' && mode !== 'pilot') {
   console.error('Usage: build-workerd.mjs [--mode demo|pilot]')
   process.exit(2)
 }
 
-const imports = workerdImportFiles(mode, { api, local }, existsSync).map(file =>
+const imports = importFiles('workerd', { demoAccounts: mode === 'demo', local }).map(file =>
   readFileSync(file, 'utf8'),
 )
 
@@ -50,13 +48,13 @@ await build({
   logLevel: 'warning',
   plugins: [
     {
-      name: 'case-desk-sql',
+      name: 'quoroom-sql',
       setup: builder => {
-        builder.onResolve({ filter: /^virtual:case-desk-sql$/ }, args => ({
+        builder.onResolve({ filter: /^virtual:quoroom-sql$/ }, args => ({
           path: args.path,
-          namespace: 'case-desk-sql',
+          namespace: 'quoroom-sql',
         }))
-        builder.onLoad({ filter: /.*/, namespace: 'case-desk-sql' }, () => ({
+        builder.onLoad({ filter: /.*/, namespace: 'quoroom-sql' }, () => ({
           contents: `export const MIGRATIONS = ${JSON.stringify(migrations)}\nexport const IMPORTS = ${JSON.stringify(imports)}\n`,
           loader: 'js',
         }))

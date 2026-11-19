@@ -65,7 +65,7 @@ const w :Workerd.Worker = (
 export const startWorkerd = async (
   migrations: ReadonlyArray<string> = [],
 ): Promise<WorkerdHarness> => {
-  const dir = mkdtempSync(join(tmpdir(), "case-desk-sql-"));
+  const dir = mkdtempSync(join(tmpdir(), "quoroom-sql-"));
   await build({
     entryPoints: [join(import.meta.dirname, "workerdEntry.ts")],
     outfile: join(dir, "worker.js"),
@@ -80,7 +80,7 @@ export const startWorkerd = async (
       {
         name: "empty-sql",
         setup: (builder) => {
-          builder.onResolve({ filter: /^virtual:case-desk-sql$/ }, (args) => ({
+          builder.onResolve({ filter: /^virtual:quoroom-sql$/ }, (args) => ({
             path: args.path,
             namespace: "empty-sql",
           }));

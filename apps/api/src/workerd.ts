@@ -6,7 +6,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { Layer } from 'effect'
 
 // @ts-expect-error: provided by the bundler from the migrations and seed files.
-import { IMPORTS, MIGRATIONS } from 'virtual:case-desk-sql'
+import { IMPORTS, MIGRATIONS } from 'virtual:quoroom-sql'
 
 import { makeApp } from './app'
 import { withReferrerPolicy } from './headers'

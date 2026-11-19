@@ -1,6 +1,6 @@
 #!/bin/sh
 # Extracts each frozen iteration from its git tag into .snapshots/<tag> and
-# installs its dependencies, so alchemy.run.ts can deploy it unchanged.
+# installs its dependencies, so infra/demo.run.ts can deploy it unchanged.
 # Without arguments, prepares every `iter*` tag.
 set -eu
 

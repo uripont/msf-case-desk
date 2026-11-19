@@ -119,12 +119,12 @@ describe('pnpm grant-admin (D21)', () => {
     expect(await sha256Hex('a token')).toBe(await hashToken('a token'))
     expect(LINK_TTL_MS).toBe(72 * 3_600_000)
     expect(environmentFile('test-3')).toBe('grants-test-3.sql')
-    expect(['demo', 'pilot', 'workerd', 'test-12'].every(isEnvironment)).toBe(
-      true,
-    )
-    expect(['prod', 'test-', '../x', 'test-1; DROP'].some(isEnvironment)).toBe(
-      false,
-    )
+    expect(
+      ['demo', 'pilot', 'quoroom', 'workerd', 'test-12'].every(isEnvironment),
+    ).toBe(true)
+    expect(
+      ['', 'Pilot', '1st', 'test-', 'test_1', '../x', 'test-1; DROP'].some(isEnvironment),
+    ).toBe(false)
   })
 
   test('creates a holder of People, Theme and Templates with no password; the link sets one, once', async () => {

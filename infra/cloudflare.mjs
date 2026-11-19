@@ -1,20 +1,21 @@
-// Commands for the pilot stack (alchemy.pilot.run.ts). Each one names its stage
-// explicitly and refuses any other, so a command can never reach the live demo
-// stage (`live_uripont`, from .env) by mistake.
+// Commands for Quoroom on Cloudflare (infra/cloudflare.run.ts). Each one names
+// its stage explicitly and refuses any other, so a command can never reach the
+// course's demo stage (`live_<user>`, from .env) by mistake.
 //
-//   pnpm pilot:plan | pilot:deploy | pilot:destroy     stage "pilot" only
+//   pnpm cloudflare:plan | cloudflare:deploy | cloudflare:destroy [stage]
+//       stage: letters and digits, default `quoroom` (the MSF pilot is `pilot`)
 //   pnpm test-env:up   test_<name> [--fast] [--invocation-logs]   throwaway copy
 //   pnpm test-env:down test_<name>
 //
 // --fast gives the test environment notification timings of minutes (D12).
 // --invocation-logs turns on the Workers invocation logs of the test Worker,
 // which record the CPU time of each request (docs/decisions.md, "Logs and CPU");
-// the pilot never has them.
+// other stages never have them.
 // Extra flags for alchemy are an allowlist (--yes, -y, --dry-run, --detailed);
 // anything else is refused, --stage, --config, --env-file, --profile and -p
 // included. Every command also runs alchemy with `--profile default` and
 // refuses to run when an environment variable (or `.env`) selects another
-// profile, account or credentials; see scripts/pilot-guards.mjs.
+// profile, account or credentials; see infra/guards.mjs.
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 
@@ -25,10 +26,11 @@ import {
   readDotenv,
   refusedFlag,
   removeGrantsFile,
-} from './pilot-guards.mjs'
+} from './guards.mjs'
 
 const root = join(import.meta.dirname, '..')
-const PILOT_STAGE = 'pilot'
+const DEFAULT_STAGE = 'quoroom'
+const STAGE = /^[a-z][a-z0-9]*$/
 const TEST_STAGE = /^test_[a-z0-9]+$/
 
 const fail = message => {
@@ -53,7 +55,7 @@ const alchemy = (verb, stage, extra, env = {}, capture = false) => {
       'exec',
       'alchemy',
       verb,
-      'alchemy.pilot.run.ts',
+      'infra/cloudflare.run.ts',
       '--stage',
       stage,
       '--profile',
@@ -72,14 +74,23 @@ const alchemy = (verb, stage, extra, env = {}, capture = false) => {
   return result
 }
 
-const pilot = verb => {
-  const bad = refusedFlag(rest)
+// NOTE: one optional positional, the stage; the rest must be allowed flags.
+const deployment = verb => {
+  const positionals = rest.filter(arg => !arg.startsWith('-'))
+  const flags = rest.filter(arg => arg.startsWith('-'))
+  const bad = refusedFlag(flags)
   if (bad) {
     fail(
-      `${bad} is not accepted: this command only uses the stage "${PILOT_STAGE}" and the profile "${DEFAULT_PROFILE}". Allowed: ${ALLOWED_ALCHEMY_FLAGS.join(' ')}.`,
+      `${bad} is not accepted: this command chooses the stage and uses the profile "${DEFAULT_PROFILE}". Allowed: ${ALLOWED_ALCHEMY_FLAGS.join(' ')}.`,
     )
   }
-  const result = alchemy(verb, PILOT_STAGE, rest)
+  const stage = positionals[0] ?? DEFAULT_STAGE
+  if (positionals.length > 1 || !STAGE.test(stage)) {
+    fail(
+      `Refusing stage "${positionals.join(' ')}". A stage is letters and digits, such as quoroom or pilot; test environments use test-env:up.`,
+    )
+  }
+  const result = alchemy(verb, stage, flags)
   process.exit(result.status ?? 1)
 }
 
@@ -94,9 +105,7 @@ const testStage = args => {
   return { stage, flags }
 }
 
-if (command === 'pilot-plan') pilot('plan')
-else if (command === 'pilot-deploy') pilot('deploy')
-else if (command === 'pilot-destroy') pilot('destroy')
+if (command === 'plan' || command === 'deploy' || command === 'destroy') deployment(command)
 else if (command === 'up' || command === 'down') {
   const { stage, flags } = testStage(rest)
   const fast = flags.includes('--fast')
@@ -130,6 +139,6 @@ else if (command === 'up' || command === 'down') {
   }
 } else {
   fail(
-    'Usage: pilot-stack.mjs pilot-plan|pilot-deploy|pilot-destroy | up <test_name> [--fast] [--invocation-logs] | down <test_name>',
+    'Usage: cloudflare.mjs plan|deploy|destroy [stage] | up <test_name> [--fast] [--invocation-logs] | down <test_name>',
   )
 }

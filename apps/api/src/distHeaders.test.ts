@@ -8,9 +8,10 @@ import { describe, expect, test } from 'vitest'
 // NOTE: On Cloudflare the static assets and index.html are served by the
 // platform, not by the Worker (`runWorkerFirst` is only `/api/*`), so the
 // Worker's `Referrer-Policy` never reaches them. The `_headers` file in the
-// built app does, for `app` and for the pilot stack (Alchemy reads it from the
-// assets directory). A link token sits in the `/link#token` fragment, and
-// this is what keeps the page from telling another site where it came from.
+// built app does, for every Cloudflare deployment (Alchemy reads it from the
+// assets directory; on workerd the Worker sets the header). A link token sits
+// in the `/link#token` fragment, and this is what keeps the page from telling
+// another site where it came from.
 describe('built app', () => {
   test('dist carries Referrer-Policy: no-referrer for every path', () => {
     const out = mkdtempSync(join(tmpdir(), 'quoroom-dist-'))

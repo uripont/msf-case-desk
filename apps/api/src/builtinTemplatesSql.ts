@@ -1,7 +1,7 @@
 import { BUILT_IN_TEMPLATES } from '@quoroom/domain'
 
-// NOTE: The built-in templates as an import file for an environment that has
-// none (the pilot stack, the pilot build for workerd). Insert-if-absent by
+// NOTE: The built-in templates as the import file every deployment starts
+// with (infra/quoroom.ts). Insert-if-absent by
 // (template ID, version), the same rule as `importBuiltInTemplates`: a redeploy
 // changes nothing, and a version an administrator retired stays retired. The
 // time is the database's own clock, so the file is deterministic.

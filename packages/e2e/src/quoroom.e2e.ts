@@ -100,7 +100,7 @@ const startWorkerd = (
       'exec',
       'workerd',
       'serve',
-      'workerd/case-desk.capnp',
+      'workerd/quoroom.capnp',
       '--directory-path',
       `assets=${join(root, 'apps/web/dist')}`,
       '--directory-path',
@@ -188,7 +188,7 @@ const main = async (): Promise<void> => {
       run('pnpm', ['--filter', '@quoroom/web', 'build'])
     }
     run('node', ['apps/api/scripts/build-workerd.mjs'], {
-      CASE_DESK_LOCAL_DIR: local,
+      QUOROOM_LOCAL_DIR: local,
     })
     mkdirSync(join(local, 'data'), { recursive: true })
     server = startWorkerd(port, join(local, 'data'), {})
@@ -469,7 +469,7 @@ const main = async (): Promise<void> => {
       pilotLink = output.split('\n').find(line => line.includes('/link#')) ?? ''
       assert.ok(pilotLink !== '', 'grant-admin printed no link for the pilot')
       run('node', ['apps/api/scripts/build-workerd.mjs', '--mode', 'pilot'], {
-        CASE_DESK_LOCAL_DIR: pilotLocal,
+        QUOROOM_LOCAL_DIR: pilotLocal,
       })
       const pilotData = join(local, 'pilot-data')
       mkdirSync(pilotData, { recursive: true })

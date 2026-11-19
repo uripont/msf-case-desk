@@ -1,13 +1,14 @@
 #!/bin/sh
-# Builds Quoroom and serves it on plain workerd at http://127.0.0.1:8787,
-# with the database in .local/workerd-data (demo) or .local/workerd-data-pilot
-# (pilot). Usage: pnpm workerd [--mode demo|pilot] [port]
+# Quoroom on plain workerd, on your own server: builds it and serves it at
+# http://127.0.0.1:8787, with the database in .local/workerd-data (demo) or
+# .local/workerd-data-pilot (pilot). See docs/hosting.md.
+# Usage: pnpm workerd [--mode demo|pilot] [port]
 #
 # Both serve the same Quoroom code (D20); the mode chooses the imports and the
 # data folder.
 # demo (default): the built-in templates, the accounts from `pnpm users:add`
 # and the first account written by `pnpm grant-admin --env workerd`.
-# pilot: the built-in templates and that first account only.
+# pilot (for real use): the built-in templates and that first account only.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -60,7 +61,7 @@ node "$root/apps/api/scripts/build-workerd.mjs" --mode "$mode"
 mkdir -p "$data"
 
 echo "Quoroom ($mode) on http://127.0.0.1:$port"
-exec pnpm --dir "$root/apps/api" exec workerd serve workerd/case-desk.capnp \
+exec pnpm --dir "$root/apps/api" exec workerd serve workerd/quoroom.capnp \
   --directory-path "assets=$root/apps/web/dist" \
   --directory-path "data=$data" \
   --socket-addr "http=127.0.0.1:$port" \

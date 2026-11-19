@@ -1,13 +1,14 @@
-// The pilot script (docs/pilot.md, section 3, steps 1 to 11) as a
+// The pilot script (docs/operating.md, section 3, steps 1 to 11) as a
 // real user runs it: only through the web UI, in Chromium, with seven invented
-// people, the reviewers at phone width. Run it against a fresh pilot target
-// whose first administrator was granted with `pnpm grant-admin` (docs/pilot.md):
+// people, the reviewers at phone width. Run it against a fresh target whose
+// first administrator was granted with `pnpm grant-admin` (docs/operating.md):
 //
 //   pnpm rehearsal <base> --admin-link-file <file> [--tick-secret-file <file>]
 //
-// <base> is a local workerd (`pnpm workerd --mode pilot`) or a test Worker of
-// the pilot stack (https://test-<name>-pilot.<subdomain>.workers.dev), never
-// anything else. With --tick-secret-file the script calls /api/tick to move
+// <base> is a local host (`pnpm workerd --mode pilot`) or a Cloudflare test
+// environment
+// (https://quoroom-test-<name>.<subdomain>.workers.dev), never anything else.
+// With --tick-secret-file the script calls /api/tick to move
 // notifications along (workerd); without it, it waits for the Cron Trigger.
 // Reminders need short timings: `--fast` on a test environment, or
 // NOTIFY_FIRST_REMINDER_MINUTES=10 NOTIFY_FINAL_REMINDER_MINUTES=3 on workerd.
@@ -51,9 +52,9 @@ const { positionals, values } = parseArgs({
 const base = (positionals[0] ?? '').replace(/\/$/, '')
 if (
   !/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base) &&
-  !/^https:\/\/test-[a-z0-9]+-pilot\.[a-z0-9-]+\.workers\.dev$/.test(base)
+  !/^https:\/\/quoroom-test-[a-z0-9]+\.[a-z0-9-]+\.workers\.dev$/.test(base)
 ) {
-  console.error('Usage: pnpm rehearsal <local workerd or test Worker address> --admin-link-file <file> [--tick-secret-file <file>]')
+  console.error('Usage: pnpm rehearsal <local host or test environment address> --admin-link-file <file> [--tick-secret-file <file>]')
   process.exit(2)
 }
 const adminLink = (readFileSync(values['admin-link-file'] ?? '', 'utf8').split('\n').find(line => line.includes('/link#')) ?? '').trim()

@@ -70,5 +70,5 @@ console.log(`Saved ${email} in ${file}.`)
 if (generated) {
   console.log(`Password (shown once): ${password}`)
 }
-console.log('Deploy (pnpm infra:deploy) or restart the local run to load it.')
+console.log('Deploy the demo (pnpm demo:deploy) or restart `pnpm workerd` to load it.')
 console.log('An account that already exists keeps its password and name.')
