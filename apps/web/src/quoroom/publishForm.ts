@@ -286,7 +286,7 @@ const deadlineFields = <M>(
   h.fieldset(
     [h.Class('flex flex-col gap-4')],
     [
-      h.legend([h.Class('text-xl font-black text-msf-black')], ['Deadline']),
+      h.legend([h.Class('text-xl font-black text-brand-ink')], ['Deadline']),
       h.div(
         [h.Class('grid grid-cols-1 gap-4 sm:grid-cols-2')],
         [
@@ -336,7 +336,7 @@ const deadlineFields = <M>(
         value => toMessage(Message.ChoseTimeZone({ value })),
       ),
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           'Reviewers see the deadline on their own clock, with this time zone named beside it.',
         ],
@@ -355,13 +355,13 @@ const roleSection = <M>(
   const chosen = peopleChosenFor(model, context, role.roleId)
   return h.fieldset(
     [
-      h.Class('flex flex-col gap-3 border-t-2 border-msf-ink pt-4'),
+      h.Class('flex flex-col gap-3 border-t-2 border-brand-ink pt-4'),
       h.DataAttribute('role-id', role.roleId),
     ],
     [
-      h.legend([h.Class('text-xl font-black text-msf-black')], [role.name]),
-      h.p([h.Class('text-base text-msf-ink')], [viewText(role.view)]),
-      h.p([h.Class('text-base text-msf-ink')], [ruleText(role.rule)]),
+      h.legend([h.Class('text-xl font-black text-brand-ink')], [role.name]),
+      h.p([h.Class('text-base text-brand-ink')], [viewText(role.view)]),
+      h.p([h.Class('text-base text-brand-ink')], [ruleText(role.rule)]),
       Array.match(context.choices.committees, {
         onEmpty: () => h.empty,
         onNonEmpty: committees =>
@@ -369,7 +369,7 @@ const roleSection = <M>(
             [h.Class('flex flex-col gap-2')],
             [
               h.p(
-                [h.Class('text-base font-medium text-msf-grey')],
+                [h.Class('text-base font-medium text-brand-grey')],
                 ['Committees'],
               ),
               ...Array.map(committees, committee =>
@@ -395,14 +395,14 @@ const roleSection = <M>(
       Array.match(context.choices.reviewers, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             ['The unit has no registered reviewers yet.'],
           ),
         onNonEmpty: people =>
           h.div(
             [h.Class('flex flex-col gap-2')],
             [
-              h.p([h.Class('text-base font-medium text-msf-grey')], ['People']),
+              h.p([h.Class('text-base font-medium text-brand-grey')], ['People']),
               ...Array.map(people, person =>
                 checkboxField(
                   h,
@@ -423,7 +423,7 @@ const roleSection = <M>(
       h.p(
         [
           h.Role('status'),
-          h.Class('text-base font-medium text-msf-ink'),
+          h.Class('text-base font-medium text-brand-ink'),
           h.DataAttribute('chosen', String(chosen.length)),
         ],
         [`${plural(chosen.length, 'person', 'people')} chosen.`],

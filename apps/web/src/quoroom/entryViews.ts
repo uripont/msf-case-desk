@@ -9,7 +9,7 @@ import { fieldClassName, focusRing, labelClassName } from '../style'
 // Messages. Every control is at least 44 px high, for a phone.
 
 const buttonClassName = clsx(
-  'inline-flex min-h-11 cursor-pointer items-center justify-center border border-msf-line px-3 text-base text-msf-ink transition-colors hover:border-msf-red hover:text-msf-red disabled:cursor-not-allowed disabled:text-msf-grey disabled:hover:border-msf-line disabled:hover:text-msf-grey',
+  'inline-flex min-h-11 cursor-pointer items-center justify-center border border-brand-line px-3 text-base text-brand-ink transition-colors hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:text-brand-grey disabled:hover:border-brand-line disabled:hover:text-brand-grey',
   focusRing,
 )
 
@@ -80,7 +80,7 @@ export const addButton = <M>(
       h.Type('button'),
       h.Class(
         clsx(
-          'inline-flex min-h-11 cursor-pointer items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-black transition-colors hover:bg-msf-mist disabled:cursor-not-allowed disabled:border-msf-line disabled:text-msf-grey disabled:hover:bg-transparent',
+          'inline-flex min-h-11 cursor-pointer items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink transition-colors hover:bg-brand-mist disabled:cursor-not-allowed disabled:border-brand-line disabled:text-brand-grey disabled:hover:bg-transparent',
           focusRing,
         ),
       ),
@@ -91,7 +91,7 @@ export const addButton = <M>(
   )
 
 export const countLine = <M>(h: HtmlBuilder<M>, text: string): Html =>
-  h.p([h.Role('status'), h.Class('text-sm text-msf-grey')], [text])
+  h.p([h.Role('status'), h.Class('text-sm text-brand-grey')], [text])
 
 // ---- Not applicable ------------------------------------------------------------------
 
@@ -113,7 +113,7 @@ export const notApplicableForm = <M>(
     [
       h.AriaLabel(`Not applicable: ${form.label}`),
       h.Class(
-        'flex flex-col gap-3 border-l-2 border-msf-ink bg-msf-mist px-4 py-3',
+        'flex flex-col gap-3 border-l-2 border-brand-ink bg-brand-mist px-4 py-3',
       ),
       h.OnSubmit(form.onSubmit),
     ],
@@ -123,7 +123,7 @@ export const notApplicableForm = <M>(
         ['Why is this not applicable?'],
       ),
       h.p(
-        [h.Class('-mt-1 text-sm text-msf-grey')],
+        [h.Class('-mt-1 text-sm text-brand-grey')],
         ['A reason is required. What is already written here is kept.'],
       ),
       h.textarea([
@@ -135,7 +135,7 @@ export const notApplicableForm = <M>(
       ]),
       form.isMissing
         ? h.p(
-            [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+            [h.Role('alert'), h.Class('text-base font-medium text-brand-alert')],
             ['Write a reason before marking this as not applicable.'],
           )
         : h.empty,
@@ -147,7 +147,7 @@ export const notApplicableForm = <M>(
               h.Type('submit'),
               h.Class(
                 clsx(
-                  'inline-flex min-h-11 cursor-pointer items-center border border-msf-ink bg-msf-ink px-4 text-base font-medium text-white',
+                  'inline-flex min-h-11 cursor-pointer items-center border border-brand-ink bg-brand-ink px-4 text-base font-medium text-white',
                   focusRing,
                 ),
               ),
@@ -181,16 +181,16 @@ export const notApplicableNotice = <M>(
       h.Role('group'),
       h.AriaLabel(`Not applicable: ${config.label}`),
       h.Class(
-        'flex flex-col gap-3 border-l-2 border-msf-ink bg-msf-mist px-4 py-3',
+        'flex flex-col gap-3 border-l-2 border-brand-ink bg-brand-mist px-4 py-3',
       ),
     ],
     [
       h.p(
-        [h.Class('text-base font-medium text-msf-black')],
+        [h.Class('text-base font-medium text-brand-ink')],
         ['Not applicable'],
       ),
-      h.p([h.Class('text-pretty text-lg text-msf-ink')], [config.reason]),
-      h.p([h.Class('text-sm text-msf-grey')], [config.keeps]),
+      h.p([h.Class('text-pretty text-lg text-brand-ink')], [config.reason]),
+      h.p([h.Class('text-sm text-brand-grey')], [config.keeps]),
       config.isDisabled
         ? h.empty
         : h.div(

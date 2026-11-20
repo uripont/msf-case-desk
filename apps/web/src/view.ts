@@ -58,13 +58,13 @@ const wordmark = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.p(
         [
           h.Class(
-            'flex flex-wrap items-baseline gap-x-3 text-xl font-black tracking-tight text-msf-black',
+            'flex flex-wrap items-baseline gap-x-3 text-xl font-black tracking-tight text-brand-ink',
           ),
         ],
         [
           PRODUCT_NAME,
           h.span(
-            [h.Class('text-base font-normal text-msf-grey')],
+            [h.Class('text-base font-normal text-brand-grey')],
             [themeOf(model).organisationName],
           ),
         ],
@@ -153,8 +153,8 @@ const pageLink = (
           'cursor-pointer text-base transition-colors',
           focusRing,
           isInTab
-            ? 'font-medium text-msf-black underline decoration-msf-red decoration-2 underline-offset-[6px]'
-            : 'text-msf-grey hover:text-msf-ink',
+            ? 'font-medium text-brand-ink underline decoration-brand-primary decoration-2 underline-offset-[6px]'
+            : 'text-brand-grey hover:text-brand-ink',
         ),
       ),
       ...(isExact ? [h.AriaCurrent('page')] : isInTab ? [h.AriaCurrent('true')] : []),
@@ -171,7 +171,7 @@ const accountBar = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.div(
         [
           h.Class(
-            'flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pt-4 text-sm text-msf-grey',
+            'flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pt-4 text-sm text-brand-grey',
           ),
         ],
         [
@@ -217,7 +217,7 @@ const topBar = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.div(
         [
           h.Class(
-            'flex flex-col gap-x-12 border-b border-msf-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
+            'flex flex-col gap-x-12 border-b border-brand-line pt-5 md:flex-row md:items-end md:justify-between md:pt-6',
           ),
         ],
         [wordmark(model, h)],
@@ -229,18 +229,18 @@ const footer = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.footer(
     [
       h.Class(
-        'mt-24 flex flex-col gap-3 border-t border-msf-line pb-12 pt-8 md:mt-32',
+        'mt-24 flex flex-col gap-3 border-t border-brand-line pb-12 pt-8 md:mt-32',
       ),
     ],
     [
       h.p(
-        [h.Class('max-w-3xl text-base leading-relaxed text-msf-ink')],
+        [h.Class('max-w-3xl text-base leading-relaxed text-brand-ink')],
         [
           `${PRODUCT_NAME}, a reporting system for ${themeOf(model).organisationName}.`,
         ],
       ),
       h.p(
-        [h.Class('max-w-3xl text-sm leading-relaxed text-msf-grey')],
+        [h.Class('max-w-3xl text-sm leading-relaxed text-brand-grey')],
         [
           'A prototype developed at Universitat Pompeu Fabra as part of our Project Management course.',
         ],
@@ -262,13 +262,13 @@ const statusMessage = (
       h.h1(
         [
           h.Class(
-            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink sm:text-5xl',
           ),
         ],
         [title],
       ),
       h.p(
-        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-brand-ink')],
         [body],
       ),
     ],
@@ -282,13 +282,13 @@ const welcomeHeading = (model: Model, h: HtmlBuilder<Message>): Html =>
         [
           h.Id(PAGE_HEADING_ID),
           h.Class(
-            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink sm:text-5xl',
           ),
         ],
         [`Welcome to ${PRODUCT_NAME}`],
       ),
       h.p(
-        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-brand-ink')],
         [
           `Reports for ${themeOf(model).organisationName} are written, reviewed and approved here.`,
         ],
@@ -379,7 +379,7 @@ const leaveDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
           h.AriaLabel(`Leave the ${what}?`),
           h.Role('alertdialog'),
           h.Class(
-            'mb-6 mt-6 flex max-w-4xl flex-col gap-3 border-2 border-msf-ink px-4 py-4',
+            'mb-6 mt-6 flex max-w-4xl flex-col gap-3 border-2 border-brand-ink px-4 py-4',
           ),
         ],
         [
@@ -392,14 +392,14 @@ const leaveDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
             [`This ${what} has changes that are not saved`],
           ),
           h.p(
-            [h.Class('text-pretty text-base text-msf-ink')],
+            [h.Class('text-pretty text-base text-brand-ink')],
             [
               `${isTemplate ? TEMPLATE_LEAVE_REASONS[reason === 'stale' ? 'stale' : 'unsaved'] : LEAVE_REASONS[reason]} If you leave now, they are lost.`,
             ],
           ),
           leaving.isWaiting
             ? h.p(
-                [h.Role('status'), h.Class('text-base text-msf-grey')],
+                [h.Role('status'), h.Class('text-base text-brand-grey')],
                 ['Waiting for the save. You leave as soon as it is done.'],
               )
             : h.empty,
@@ -448,13 +448,13 @@ const unavailablePage = (
         [
           h.Id(PAGE_HEADING_ID),
           h.Class(
-            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+            'max-w-4xl text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink sm:text-5xl',
           ),
         ],
         [title],
       ),
       h.p(
-        [h.Class('max-w-2xl text-pretty text-xl font-light text-msf-ink')],
+        [h.Class('max-w-2xl text-pretty text-xl font-light text-brand-ink')],
         [body],
       ),
       h.a(
@@ -670,7 +670,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
     [
       h.Id('quoroom-root'),
       h.Class(
-        'min-h-dvh border-t-[6px] border-msf-red bg-msf-paper font-sans text-msf-ink',
+        'min-h-dvh border-t-[6px] border-brand-primary bg-brand-paper font-sans text-brand-ink',
       ),
       h.Style(themeStyle(themeOf(model))),
     ],

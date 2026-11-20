@@ -69,8 +69,8 @@ export const viewToggle = <M>(
           clsx(
             'inline-flex h-10 cursor-pointer items-center justify-center border px-4 text-base transition-colors',
             view === target
-              ? 'border-msf-black bg-msf-black font-medium text-white'
-              : 'border-msf-line text-msf-ink hover:border-msf-red hover:text-msf-red',
+              ? 'border-brand-ink bg-brand-ink font-medium text-white'
+              : 'border-brand-line text-brand-ink hover:border-brand-primary hover:text-brand-primary',
             focusRing,
           ),
         ),
@@ -133,7 +133,7 @@ export const previewAll = <M>(
     [h.DataAttribute('preview', view), h.Class('flex min-w-0 flex-col gap-8')],
     [
       h.p(
-        [h.Class('text-lg font-medium text-msf-ink')],
+        [h.Class('text-lg font-medium text-brand-ink')],
         [
           'Case file: ',
           ...markedChildren(
@@ -151,7 +151,7 @@ export const previewAll = <M>(
           [
             h.AriaLabel(section.title),
             h.Class(
-              'flex min-w-0 flex-col gap-4 border-t border-msf-line pt-4',
+              'flex min-w-0 flex-col gap-4 border-t border-brand-line pt-4',
             ),
           ],
           [

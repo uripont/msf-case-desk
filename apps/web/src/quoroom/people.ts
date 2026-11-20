@@ -729,7 +729,7 @@ const toggleBox = (
       h.Class(
         clsx(
           'flex min-h-11 cursor-pointer items-center gap-2 text-base',
-          isPending ? 'text-msf-grey' : 'text-msf-ink',
+          isPending ? 'text-brand-grey' : 'text-brand-ink',
         ),
       ),
     ],
@@ -738,7 +738,7 @@ const toggleBox = (
         h.Id(id),
         h.Type('checkbox'),
         h.AriaLabel(accessibleLabel),
-        h.Class('size-5 shrink-0 accent-msf-red'),
+        h.Class('size-5 shrink-0 accent-brand-primary'),
         h.Checked(isPending ? !isHeld : isHeld),
         ...(isPending ? [h.Disabled(true), h.AriaBusy(true)] : []),
         h.OnClick(Message.ClickedToggle({ accountId: account.id, capability, unit })),
@@ -801,7 +801,7 @@ const personRow = (
       h.Class(
         clsx(
           'flex flex-col gap-2 py-4',
-          isReviewerHere ? 'text-msf-grey' : 'text-msf-ink',
+          isReviewerHere ? 'text-brand-grey' : 'text-brand-ink',
         ),
       ),
     ],
@@ -814,7 +814,7 @@ const personRow = (
               h.Class(
                 clsx(
                   'text-lg font-medium',
-                  isReviewerHere ? 'text-msf-grey' : 'text-msf-black',
+                  isReviewerHere ? 'text-brand-grey' : 'text-brand-ink',
                 ),
               ),
             ],
@@ -822,14 +822,14 @@ const personRow = (
           ),
           isReviewerHere
             ? h.span(
-                [h.Class('bg-msf-mist px-2 text-sm text-msf-grey')],
+                [h.Class('bg-brand-mist px-2 text-sm text-brand-grey')],
                 ['Reviewer'],
               )
             : h.empty,
         ],
       ),
-      h.p([h.Class('text-base text-msf-grey')], [account.email]),
-      h.p([h.Class('text-sm text-msf-grey')], [statusOf(account)]),
+      h.p([h.Class('text-base text-brand-grey')], [account.email]),
+      h.p([h.Class('text-sm text-brand-grey')], [statusOf(account)]),
       Array.match([...deploymentToggles, ...reportsToggle], {
         onEmpty: () => h.empty,
         onNonEmpty: toggles =>
@@ -872,7 +872,7 @@ const folderView = (
     [
       h.AriaLabel(folder.heading),
       h.DataAttribute('folder', folder.key),
-      h.Class('flex flex-col border-b border-msf-line'),
+      h.Class('flex flex-col border-b border-brand-line'),
     ],
     [
       h.h3(
@@ -893,7 +893,7 @@ const folderView = (
             [
               `${isOpen ? '▾' : '▸'} ${folder.heading}`,
               h.span(
-                [h.Class('text-base font-normal text-msf-grey')],
+                [h.Class('text-base font-normal text-brand-grey')],
                 [count === 1 ? '1 person' : `${count} people`],
               ),
             ],
@@ -904,14 +904,14 @@ const folderView = (
         ? Array.match(folder.accounts, {
             onEmpty: () =>
               h.p(
-                [h.Class('pb-4 text-base text-msf-grey')],
+                [h.Class('pb-4 text-base text-brand-grey')],
                 ['Nobody in this unit yet.'],
               ),
             onNonEmpty: accounts =>
               h.ul(
                 [
                   h.AriaLabel(`People in ${folder.heading}`),
-                  h.Class('flex flex-col divide-y divide-msf-line'),
+                  h.Class('flex flex-col divide-y divide-brand-line'),
                 ],
                 Array.map(accounts, account =>
                   personRow(model, h, folder, account),
@@ -1036,7 +1036,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
         onNone: () => h.empty,
         onSome: notice =>
           h.p(
-            [h.Role('status'), h.Class('text-base font-medium text-msf-ink')],
+            [h.Role('status'), h.Class('text-base font-medium text-brand-ink')],
             [notice],
           ),
       }),
@@ -1047,10 +1047,10 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
       panel(h, 'Everyone', [
         Array.match(foldersOf(model), {
           onEmpty: () =>
-            h.p([h.Class('text-lg text-msf-grey')], ['No units yet.']),
+            h.p([h.Class('text-lg text-brand-grey')], ['No units yet.']),
           onNonEmpty: folders =>
             h.div(
-              [h.Class('flex flex-col border-t border-msf-line')],
+              [h.Class('flex flex-col border-t border-brand-line')],
               Array.map(folders, folder => folderView(model, h, folder)),
             ),
         }),

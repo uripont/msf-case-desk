@@ -235,7 +235,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
       pageShell(h, 'Link', 'This link does not work', '', [
         failureAlert(h, failure),
         h.p(
-          [h.Class('text-lg text-msf-ink')],
+          [h.Class('text-lg text-brand-ink')],
           ['Ask the person who gave it to you for a new one.'],
         ),
       ]),

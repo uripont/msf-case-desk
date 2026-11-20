@@ -342,7 +342,7 @@ const itemRow = (
         [
           h.Class(
             clsx(
-              'text-lg text-msf-ink',
+              'text-lg text-brand-ink',
               isUnread(item) ? 'font-bold' : 'font-normal',
             ),
           ),
@@ -352,13 +352,13 @@ const itemRow = (
       item.deadline === undefined
         ? h.empty
         : h.p(
-            [h.Class('text-base text-msf-ink')],
+            [h.Class('text-base text-brand-ink')],
             [
               `Due ${deadlineText(item.deadline.at, model.zone)}${zoneNote(item.deadline.timeZone, model.zone)}.`,
             ],
           ),
       h.p(
-        [h.Class('text-sm text-msf-grey')],
+        [h.Class('text-sm text-brand-grey')],
         [`Sent ${deadlineText(item.at, model.zone)}`],
       ),
       h.div(
@@ -372,7 +372,7 @@ const itemRow = (
                   h.Href(href),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 items-center border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      'inline-flex min-h-11 items-center border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                       focusRing,
                     ),
                   ),
@@ -405,12 +405,12 @@ const shell = (
   h.section(
     [
       h.AriaLabel('Notifications'),
-      h.Class('flex flex-col gap-6 border-t-2 border-msf-ink pt-5'),
+      h.Class('flex flex-col gap-6 border-t-2 border-brand-ink pt-5'),
     ],
     [
       h.h2([h.Class('text-2xl font-black tracking-tight')], ['Notifications']),
       h.p(
-        [h.Class('-mt-2 text-pretty text-base text-msf-grey')],
+        [h.Class('-mt-2 text-pretty text-base text-brand-grey')],
         [IN_APP_ONLY],
       ),
       ...children,
@@ -430,7 +430,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
         Array.match(model.items, {
           onEmpty: () =>
             h.p(
-              [h.Class('text-lg text-msf-grey')],
+              [h.Class('text-lg text-brand-grey')],
               [
                 'Nothing yet. Requests, reminders and decisions about your reports appear here.',
               ],
@@ -438,7 +438,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
           onNonEmpty: rows =>
             subPanel(h, 'Newest first', [
               h.p(
-                [h.Id('unread-count'), h.Class('text-base text-msf-ink')],
+                [h.Id('unread-count'), h.Class('text-base text-brand-ink')],
                 [
                   model.unread === 0
                     ? 'You have read everything.'
@@ -459,7 +459,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
                 [
                   h.AriaLabel('Notifications'),
                   h.Class(
-                    'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                    'flex flex-col divide-y divide-brand-line border-y border-brand-line',
                   ),
                 ],
                 Array.map(rows, item => itemRow(h, model, item)),

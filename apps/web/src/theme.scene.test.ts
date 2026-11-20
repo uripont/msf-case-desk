@@ -32,11 +32,10 @@ const signedIn = (config: AppConfig) =>
 describe('the theme as custom properties', () => {
   test('colours and fonts become the properties the views draw with', () => {
     check(themeStyle(INVENTED.theme)).toEqual({
-      '--color-msf-red': '#0b5d3b',
-      '--color-msf-black': '#101820',
-      '--color-msf-ink': '#101820',
-      '--color-msf-paper': '#fafaf5',
-      '--color-msf-accent': '#7a1f5c',
+      '--color-brand-primary': '#0b5d3b',
+      '--color-brand-ink': '#101820',
+      '--color-brand-paper': '#fafaf5',
+      '--color-brand-accent': '#7a1f5c',
       '--font-sans': "'Noto Sans', 'Helvetica Neue', Arial, sans-serif",
       '--font-heading': "'Source Serif 4', Georgia, 'Times New Roman', serif",
     })
@@ -44,7 +43,7 @@ describe('the theme as custom properties', () => {
 
   test('the default theme is the neutral Quoroom one from the domain', () => {
     check(themeOf(openedAt('/').model)).toEqual(DEFAULT_THEME)
-    check(defaultThemeStyle['--color-msf-red']).toBe(
+    check(defaultThemeStyle['--color-brand-primary']).toBe(
       DEFAULT_THEME.colors.primary,
     )
   })
@@ -56,11 +55,11 @@ describe('the theme in the app', () => {
       { update, view },
       given(signedIn(INVENTED)),
       expect(selector('#quoroom-root')).toHaveStyle(
-        '--color-msf-red',
+        '--color-brand-primary',
         '#0b5d3b',
       ),
       expect(selector('#quoroom-root')).toHaveStyle(
-        '--color-msf-accent',
+        '--color-brand-accent',
         '#7a1f5c',
       ),
       expect(selector('#quoroom-root')).toHaveStyle(
@@ -86,7 +85,7 @@ describe('the theme in the app', () => {
       { update, view },
       given(openedAt('/').model),
       expect(selector('#quoroom-root')).toHaveStyle(
-        '--color-msf-red',
+        '--color-brand-primary',
         DEFAULT_THEME.colors.primary,
       ),
       expect(role('heading', { name: 'Opening Quoroom' })).toExist(),
@@ -99,7 +98,7 @@ describe('the theme in the app', () => {
       expect(role('heading', { name: 'Sign in' })).toExist(),
       expect(text('Invented Organisation')).toExist(),
       expect(selector('#quoroom-root')).toHaveStyle(
-        '--color-msf-red',
+        '--color-brand-primary',
         '#0b5d3b',
       ),
     )
@@ -111,7 +110,7 @@ describe('the theme in the app', () => {
       { update, view },
       given(update(failed, Message.FailedCheckSession()).model),
       expect(selector('#quoroom-root')).toHaveStyle(
-        '--color-msf-red',
+        '--color-brand-primary',
         DEFAULT_THEME.colors.primary,
       ),
       expect(text('Your organisation')).toExist(),

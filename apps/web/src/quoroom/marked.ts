@@ -27,7 +27,7 @@ export const markedChildren = <M>(
               [
                 h.DataAttribute(REPLACEMENT, 'replaced'),
                 h.Class(
-                  'bg-yellow-200 font-semibold text-msf-black underline decoration-2 underline-offset-2',
+                  'bg-yellow-200 font-semibold text-brand-ink underline decoration-2 underline-offset-2',
                 ),
               ],
               [part.text],

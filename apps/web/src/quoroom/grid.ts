@@ -392,7 +392,7 @@ const statusLine = (row: RevisionRow): string =>
 
 const th = (h: HtmlBuilder<Message>, label: string): Html =>
   h.th(
-    [h.Scope('col'), h.Class('px-3 py-2 text-left text-sm font-medium text-msf-grey')],
+    [h.Scope('col'), h.Class('px-3 py-2 text-left text-sm font-medium text-brand-grey')],
     [label],
   )
 
@@ -402,7 +402,7 @@ const td = (
   attributes: ReadonlyArray<ReturnType<HtmlBuilder<Message>['Class']>> = [],
 ): Html =>
   h.td(
-    [h.Class('px-3 py-2 align-top text-base text-msf-ink'), ...attributes],
+    [h.Class('px-3 py-2 align-top text-base text-brand-ink'), ...attributes],
     children,
   )
 
@@ -413,7 +413,7 @@ const fact = (
   empty: string,
 ): Html =>
   at === undefined
-    ? h.span([h.Class('text-msf-grey')], [empty])
+    ? h.span([h.Class('text-brand-grey')], [empty])
     : h.span([h.DataAttribute('at', String(at))], [`${label}${momentText(at)}`])
 
 const scrollBox = (
@@ -428,7 +428,7 @@ const scrollBox = (
       h.Tabindex(0),
       h.Class(
         clsx(
-          'max-w-full overflow-x-auto border-y border-msf-line',
+          'max-w-full overflow-x-auto border-y border-brand-line',
           focusRing,
         ),
       ),
@@ -449,7 +449,7 @@ const decisionCell = (
     [
       cell.decision === undefined
         ? h.span(
-            [h.Class('text-msf-grey')],
+            [h.Class('text-brand-grey')],
             [votes ? 'No decision yet' : 'Does not vote'],
           )
         : h.span(
@@ -465,14 +465,14 @@ const decisionCell = (
         Array.filter(cell.reviews, review => !review.standing),
         review =>
           h.span(
-            [h.Class('text-sm text-msf-grey')],
+            [h.Class('text-sm text-brand-grey')],
             [
               `${decisionText(review.decision)}${review.hasComments ? ' with comments' : ''}, ${momentText(review.at)}`,
             ],
           ),
       ),
       cell.reviews.some(review => review.standing && review.hasComments)
-        ? h.span([h.Class('text-sm text-msf-grey')], ['With comments'])
+        ? h.span([h.Class('text-sm text-brand-grey')], ['With comments'])
         : h.empty,
     ],
   )
@@ -493,17 +493,17 @@ const reviewerRow = (
   return h.keyed('tr')(
     cell.accountId,
     [
-      h.Class('border-b border-msf-line'),
+      h.Class('border-b border-brand-line'),
       h.DataAttribute('reviewer', cell.accountId),
       h.DataAttribute('removed', cell.removed ? 'true' : 'false'),
     ],
     [
       h.th(
-        [h.Scope('row'), h.Class('px-3 py-2 text-left text-base font-medium text-msf-black')],
+        [h.Scope('row'), h.Class('px-3 py-2 text-left text-base font-medium text-brand-ink')],
         [
           nameOf(view, cell.accountId),
           cell.removed
-            ? h.span([h.Class('block text-sm font-normal text-msf-grey')], ['Removed from the round'])
+            ? h.span([h.Class('block text-sm font-normal text-brand-grey')], ['Removed from the round'])
             : '',
         ],
       ),
@@ -513,7 +513,7 @@ const reviewerRow = (
       td(h, [decisionCell(h, cell, votes)]),
       td(h, [
         Array.match(cell.reminders, {
-          onEmpty: () => h.span([h.Class('text-msf-grey')], ['No reminder sent']),
+          onEmpty: () => h.span([h.Class('text-brand-grey')], ['No reminder sent']),
           onNonEmpty: reminders =>
             h.div(
               [h.Class('flex flex-col gap-1')],
@@ -566,7 +566,7 @@ const ruleLines = (
       return h.keyed('li')(
         role.roleId,
         [
-          h.Class('text-base text-msf-ink'),
+          h.Class('text-base text-brand-ink'),
           h.DataAttribute('role-rule', role.roleId),
           h.DataAttribute('met', role.met ? 'true' : 'false'),
         ],
@@ -595,15 +595,15 @@ const revisionSection = (
     ],
     [
       h.h2(
-        [h.Class('text-2xl font-black text-msf-black')],
+        [h.Class('text-2xl font-black text-brand-ink')],
         [`${row.label}, from Draft ${row.draft}`],
       ),
       h.p(
-        [h.Class('text-lg font-medium text-msf-ink'), h.DataAttribute('round-status', row.status)],
+        [h.Class('text-lg font-medium text-brand-ink'), h.DataAttribute('round-status', row.status)],
         [statusLine(row)],
       ),
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           [
             row.publishedAt === undefined ? '' : `Published ${momentText(row.publishedAt)}. `,
@@ -625,7 +625,7 @@ const revisionSection = (
               [],
               [
                 h.tr(
-                  [h.Class('border-b border-msf-line')],
+                  [h.Class('border-b border-brand-line')],
                   [
                     th(h, 'Reviewer'),
                     th(h, 'Role'),
@@ -660,7 +660,7 @@ const draftsTable = (h: HtmlBuilder<Message>, view: Grid): Html =>
           [],
           [
             h.tr(
-              [h.Class('border-b border-msf-line')],
+              [h.Class('border-b border-brand-line')],
               [
                 th(h, 'Draft'),
                 th(h, 'Shared'),
@@ -675,17 +675,17 @@ const draftsTable = (h: HtmlBuilder<Message>, view: Grid): Html =>
             h.keyed('tr')(
               String(draft.draft),
               [
-                h.Class('border-b border-msf-line'),
+                h.Class('border-b border-brand-line'),
                 h.DataAttribute('grid-draft', String(draft.draft)),
               ],
               [
                 h.th(
-                  [h.Scope('row'), h.Class('px-3 py-2 text-left text-base font-medium text-msf-black')],
+                  [h.Scope('row'), h.Class('px-3 py-2 text-left text-base font-medium text-brand-ink')],
                   [draft.label],
                 ),
                 td(h, [
                   draft.sharedAt === undefined
-                    ? h.span([h.Class('text-msf-grey')], ['The empty template'])
+                    ? h.span([h.Class('text-brand-grey')], ['The empty template'])
                     : h.span(
                         [],
                         [
@@ -721,17 +721,17 @@ const removalPanel = (
       h.AriaLabel(`Remove ${name}`),
       h.Role('alertdialog'),
       h.DataAttribute('removal', accountId),
-      h.Class('flex flex-col gap-3 border-2 border-msf-ink px-4 py-4'),
+      h.Class('flex flex-col gap-3 border-2 border-brand-ink px-4 py-4'),
     ],
     [
-      h.h3([h.Class('text-xl font-black text-msf-black')], [`Remove ${name} from this round?`]),
+      h.h3([h.Class('text-xl font-black text-brand-ink')], [`Remove ${name} from this round?`]),
       removal.kind === 'refused'
         ? alertText(h, removal.message)
         : h.div(
             [h.Class('flex flex-col gap-2')],
             [
               h.p(
-                [h.Class('text-base text-msf-ink')],
+                [h.Class('text-base text-brand-ink')],
                 [
                   'The removal is logged and they are told. The approval rule is worked out again without them:',
                 ],
@@ -741,14 +741,14 @@ const removalPanel = (
                 Array.map(removal.lines, line =>
                   h.keyed('li')(
                     line.roleId,
-                    [h.Class('text-base text-msf-ink')],
+                    [h.Class('text-base text-brand-ink')],
                     [line.text],
                   ),
                 ),
               ),
               removal.decidesNow
                 ? h.p(
-                    [h.Class('text-base font-medium text-msf-ink'), h.DataAttribute('decides-now', 'true')],
+                    [h.Class('text-base font-medium text-brand-ink'), h.DataAttribute('decides-now', 'true')],
                     ['With this removal the rule is met, so the round is decided now.'],
                   )
                 : h.empty,
@@ -782,7 +782,7 @@ const extendForm = (
     [h.Class('flex flex-col gap-3'), h.DataAttribute('extend-form', String(round.revision))],
     [
       h.p(
-        [h.Class('text-base text-msf-ink')],
+        [h.Class('text-base text-brand-ink')],
         [
           `The deadline of Revision ${round.revision} is ${deadlineText(round.deadline.at, round.deadline.timeZone)}. It can only be moved later; the reviewers are told.`,
         ],
@@ -859,7 +859,7 @@ const actionsPanel = (
               h.ul(
                 [h.AriaLabel('Rule as it stands'), h.Class('flex flex-col gap-1')],
                 Array.map(roleLines(template, round, Option.none()), line =>
-                  h.keyed('li')(line.roleId, [h.Class('text-base text-msf-grey')], [line.text]),
+                  h.keyed('li')(line.roleId, [h.Class('text-base text-brand-grey')], [line.text]),
                 ),
               ),
             ],
@@ -882,14 +882,14 @@ const shell = (
           h.a(
             [
               h.Href(pathOf(AppRoute.Report({ reportId }))),
-              h.Class(clsx('text-base text-msf-ink underline', focusRing)),
+              h.Class(clsx('text-base text-brand-ink underline', focusRing)),
             ],
             ['Back to the report'],
           ),
           h.a(
             [
               h.Href(pathOf(AppRoute.Audit({ reportId }))),
-              h.Class(clsx('text-base text-msf-ink underline', focusRing)),
+              h.Class(clsx('text-base text-brand-ink underline', focusRing)),
             ],
             ['Audit log'],
           ),
@@ -898,7 +898,7 @@ const shell = (
       h.h1(
         [
           h.Id('page-heading'),
-          h.Class('text-balance text-4xl font-black tracking-[-0.025em] text-msf-black'),
+          h.Class('text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink'),
         ],
         ['Status grid'],
       ),
@@ -920,7 +920,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
         onSome: ({ template, grid }) =>
           shell(h, model.reportId, [
             h.p(
-              [h.Class('text-base text-msf-grey')],
+              [h.Class('text-base text-brand-grey')],
               ['Every time is shown in your own time zone. A fact that was not recorded is not shown as a time.'],
             ),
             Option.match(model.maybeNotice, {
@@ -938,7 +938,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
               [
                 Array.match(grid.grid.revisions, {
                   onEmpty: () =>
-                    h.p([h.Class('text-lg text-msf-grey')], ['No revision has been published.']),
+                    h.p([h.Class('text-lg text-brand-grey')], ['No revision has been published.']),
                   onNonEmpty: rows =>
                     h.div(
                       [h.Class('flex flex-col gap-8')],

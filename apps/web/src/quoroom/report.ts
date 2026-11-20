@@ -2247,12 +2247,12 @@ const navigatorRow = (
           ...(isSelected ? [h.AriaCurrent('true')] : []),
           h.Class(
             clsx(
-              'flex min-h-11 w-full cursor-pointer items-baseline justify-between gap-3 border-l-2 py-2 pr-3 text-left text-base transition-colors hover:bg-msf-mist',
+              'flex min-h-11 w-full cursor-pointer items-baseline justify-between gap-3 border-l-2 py-2 pr-3 text-left text-base transition-colors hover:bg-brand-mist',
               INDENT[Math.min(row.depth, INDENT.length) - 1],
               isSelected
-                ? 'border-msf-red bg-msf-mist font-medium text-msf-black'
-                : 'border-transparent text-msf-ink',
-              state === 'ended' && 'italic text-msf-grey',
+                ? 'border-brand-primary bg-brand-mist font-medium text-brand-ink'
+                : 'border-transparent text-brand-ink',
+              state === 'ended' && 'italic text-brand-grey',
               focusRing,
             ),
           ),
@@ -2265,14 +2265,14 @@ const navigatorRow = (
               rowLabel(row),
               row.frontMatter
                 ? h.span(
-                    [h.Class('ml-2 text-sm text-msf-grey')],
+                    [h.Class('ml-2 text-sm text-brand-grey')],
                     ['Front matter'],
                   )
                 : h.empty,
             ],
           ),
           h.span(
-            [h.Class('shrink-0 text-sm text-msf-grey')],
+            [h.Class('shrink-0 text-sm text-brand-grey')],
             [stateText(state)],
           ),
         ],
@@ -2307,7 +2307,7 @@ const navigator = (
           h.AriaControls('section-navigator'),
           h.Class(
             clsx(
-              'flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 border border-msf-line px-3 text-left text-base font-medium md:hidden',
+              'flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 border border-brand-line px-3 text-left text-base font-medium md:hidden',
               focusRing,
             ),
           ),
@@ -2316,7 +2316,7 @@ const navigator = (
         [
           'Sections',
           h.span(
-            [h.Class('text-sm font-normal text-msf-grey')],
+            [h.Class('text-sm font-normal text-brand-grey')],
             [`${complete} of ${total} complete`],
           ),
         ],
@@ -2329,11 +2329,11 @@ const navigator = (
         ],
         [
           h.p(
-            [h.Class('mb-2 hidden text-sm text-msf-grey md:block')],
+            [h.Class('mb-2 hidden text-sm text-brand-grey md:block')],
             [`${complete} of ${total} sections complete`],
           ),
           h.ul(
-            [h.Class('flex flex-col border-y border-msf-line')],
+            [h.Class('flex flex-col border-y border-brand-line')],
             Array.map(outline.rows, row =>
               navigatorRow(
                 row,
@@ -2362,11 +2362,11 @@ const guidanceBlock = (text: string, h: HtmlBuilder<Message>): Html =>
   h.aside(
     [
       h.AriaLabel('Guidance'),
-      h.Class('border-l-2 border-msf-line bg-msf-mist px-4 py-3'),
+      h.Class('border-l-2 border-brand-line bg-brand-mist px-4 py-3'),
     ],
     [
-      h.p([h.Class('text-sm font-medium text-msf-grey')], ['Guidance']),
-      h.p([h.Class('text-pretty text-base italic text-msf-ink')], [text]),
+      h.p([h.Class('text-sm font-medium text-brand-grey')], ['Guidance']),
+      h.p([h.Class('text-pretty text-base italic text-brand-ink')], [text]),
     ],
   )
 
@@ -2477,7 +2477,7 @@ const groupCard = (
                   h.ol(
                     [
                       h.AriaLabel(child.title),
-                      h.Class('flex flex-col border-y border-msf-line'),
+                      h.Class('flex flex-col border-y border-brand-line'),
                     ],
                     Array.map(list, (row, index) =>
                       h.keyed('li')(
@@ -2551,7 +2551,7 @@ const subsectionList = (
           h.ul(
             [
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(children, child =>
@@ -2593,7 +2593,7 @@ const stepButtons = (
   return h.div(
     [
       h.Class(
-        'flex flex-wrap justify-between gap-3 border-t border-msf-line pt-5',
+        'flex flex-wrap justify-between gap-3 border-t border-brand-line pt-5',
       ),
     ],
     [
@@ -2726,7 +2726,7 @@ const entryHeader = (
   const index = Array.findFirstIndex(entries, entry => entry.id === entryId)
   const stored = entries.find(entry => entry.id === entryId)?.title ?? ''
   return h.div(
-    [h.Class('flex flex-col gap-4 border-l-2 border-msf-line pl-4')],
+    [h.Class('flex flex-col gap-4 border-l-2 border-brand-line pl-4')],
     [
       textField(h, {
         id: `entry-title-${entryId}`,
@@ -2793,7 +2793,7 @@ const sectionBody = (
       : [guidanceBlock(section.instruction, h)]),
     state === 'ended'
       ? h.p(
-          [h.Role('status'), h.Class('text-lg text-msf-ink')],
+          [h.Role('status'), h.Class('text-lg text-brand-ink')],
           [
             'This section is not in force: the report ended earlier. What it holds is kept and comes back if the answer that ended the report changes.',
           ],
@@ -2803,7 +2803,7 @@ const sectionBody = (
           [
             isDisabled
               ? h.p(
-                  [h.Class('text-base text-msf-grey')],
+                  [h.Class('text-base text-brand-grey')],
                   [access.kind === 'read_only' ? access.reason : ''],
                 )
               : h.empty,
@@ -2835,7 +2835,7 @@ const sectionView = (
     {
       onNone: () =>
         h.p(
-          [h.Class('text-lg text-msf-grey')],
+          [h.Class('text-lg text-brand-grey')],
           ['This template has no sections.'],
         ),
       onSome: row =>
@@ -2853,7 +2853,7 @@ const sectionView = (
                   [rowLabel(row)],
                 ),
                 h.p(
-                  [h.Class('text-base text-msf-grey')],
+                  [h.Class('text-base text-brand-grey')],
                   [stateText(outline.states.get(row.key) ?? 'empty')],
                 ),
               ],
@@ -2861,7 +2861,7 @@ const sectionView = (
             ...(model.view === 'redacted'
               ? [
                   h.p(
-                    [h.Class('text-base text-msf-ink')],
+                    [h.Class('text-base text-brand-ink')],
                     [viewNote('redacted')],
                   ),
                   previewSection(
@@ -2885,7 +2885,7 @@ const sectionView = (
                   {
                     onNone: () => [
                       h.p(
-                        [h.Class('text-base text-msf-grey')],
+                        [h.Class('text-base text-brand-grey')],
                         ['This section is no longer in the report.'],
                       ),
                     ],
@@ -2931,7 +2931,7 @@ const refusalNote = (model: Model, h: HtmlBuilder<Message>): Html =>
       onNone: () => h.empty,
       onSome: reason =>
         h.p(
-          [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+          [h.Role('alert'), h.Class('text-base font-medium text-brand-alert')],
           [reason],
         ),
     },
@@ -2945,7 +2945,7 @@ const savedText = (model: Model): string =>
 
 const saveIndicator = (model: Model, h: HtmlBuilder<Message>): Html => {
   const counter = h.span(
-    [h.Class('text-sm font-normal text-msf-grey')],
+    [h.Class('text-sm font-normal text-brand-grey')],
     [`Save ${model.saveCounter}`],
   )
   const line = (text: string): Html =>
@@ -2966,7 +2966,7 @@ const saveIndicator = (model: Model, h: HtmlBuilder<Message>): Html => {
         [h.Class('flex flex-wrap items-baseline gap-3')],
         [
           h.p(
-            [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+            [h.Role('alert'), h.Class('text-base font-medium text-brand-alert')],
             [
               failure._tag === 'Unavailable'
                 ? 'Not saved — retrying'
@@ -2987,7 +2987,7 @@ const staleBanner = (model: Model, h: HtmlBuilder<Message>): Html =>
         [
           h.AriaLabel('This working copy changed in another tab'),
           h.Role('alert'),
-          h.Class('flex flex-col gap-3 border-2 border-msf-red px-4 py-4'),
+          h.Class('flex flex-col gap-3 border-2 border-brand-primary px-4 py-4'),
         ],
         [
           h.h2(
@@ -2995,7 +2995,7 @@ const staleBanner = (model: Model, h: HtmlBuilder<Message>): Html =>
             ['This working copy changed in another tab'],
           ),
           h.p(
-            [h.Class('text-pretty text-base text-msf-ink')],
+            [h.Class('text-pretty text-base text-brand-ink')],
             [
               'Your last edit was not saved, so nothing saved in the other tab was overwritten. Reload the saved version. Your edit is kept here, and you can copy it or put it back.',
             ],
@@ -3022,12 +3022,12 @@ const keptEditsPanel = (
       h.section(
         [
           h.AriaLabel('Edits that were not saved'),
-          h.Class('flex flex-col gap-4 border-2 border-msf-ink px-4 py-4'),
+          h.Class('flex flex-col gap-4 border-2 border-brand-ink px-4 py-4'),
         ],
         [
           h.h2([h.Class('text-xl font-black')], ['Edits that were not saved']),
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             [
               'These were typed here, but the working copy had changed in another tab. Copy the text, or put the whole section back as you had it.',
             ],
@@ -3066,7 +3066,7 @@ const keptEditsPanel = (
                     }).join('\n\n'),
                   ),
                   h.Class(
-                    'min-h-32 w-full border border-msf-line bg-white px-3 py-2 text-base',
+                    'min-h-32 w-full border border-brand-line bg-white px-3 py-2 text-base',
                   ),
                 ]),
                 h.div(
@@ -3131,7 +3131,7 @@ const confirmationPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
         [
           h.AriaLabel(heading),
           h.Role('alertdialog'),
-          h.Class('flex flex-col gap-3 border-2 border-msf-ink px-4 py-4'),
+          h.Class('flex flex-col gap-3 border-2 border-brand-ink px-4 py-4'),
         ],
         [
           h.h2(
@@ -3142,7 +3142,7 @@ const confirmationPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
             ],
             [heading],
           ),
-          h.p([h.Class('text-pretty text-base text-msf-ink')], [text]),
+          h.p([h.Class('text-pretty text-base text-brand-ink')], [text]),
           h.div(
             [h.Class('flex flex-wrap gap-2')],
             [
@@ -3173,7 +3173,7 @@ const sharePrompt = (
         ? h.empty
         : hasUnsavedEdits(model)
           ? h.p(
-              [h.Role('status'), h.Class('text-base text-msf-grey')],
+              [h.Role('status'), h.Class('text-base text-brand-grey')],
               ['Sharing is available once everything is saved.'],
             )
           : h.a(
@@ -3181,7 +3181,7 @@ const sharePrompt = (
                 h.Href(pathOf(AppRoute.Share({ reportId: model.reportId }))),
                 h.Class(
                   clsx(
-                    'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                    'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                     focusRing,
                   ),
                 ),
@@ -3239,7 +3239,7 @@ const reviewPanel = (
           Option.match(currentRoundOf(model.revisions), {
             onNone: () =>
               h.p(
-                [h.Class('text-lg text-msf-ink')],
+                [h.Class('text-lg text-brand-ink')],
                 [
                   Array.isReadonlyArrayEmpty(model.revisions)
                     ? 'Nothing has been published for review yet.'
@@ -3251,7 +3251,7 @@ const reviewPanel = (
                 [
                   h.Role('status'),
                   h.DataAttribute('current-round', String(revision.number)),
-                  h.Class('text-lg font-medium text-msf-ink'),
+                  h.Class('text-lg font-medium text-brand-ink'),
                 ],
                 [
                   `${revision.label} is open. ${roundLine(revision, model.nowMs)}`,
@@ -3267,7 +3267,7 @@ const reviewPanel = (
                   ),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                       focusRing,
                     ),
                   ),
@@ -3284,7 +3284,7 @@ const reviewPanel = (
                   ),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                       focusRing,
                     ),
                   ),
@@ -3298,7 +3298,7 @@ const reviewPanel = (
                   h.Href(pathOf(AppRoute.Grid({ reportId: model.reportId }))),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                      'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                       focusRing,
                     ),
                   ),
@@ -3310,7 +3310,7 @@ const reviewPanel = (
               h.Href(pathOf(AppRoute.Audit({ reportId: model.reportId }))),
               h.Class(
                 clsx(
-                  'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                  'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                   focusRing,
                 ),
               ),
@@ -3322,7 +3322,7 @@ const reviewPanel = (
               h.Href(pathOf(AppRoute.Downloads({ reportId: model.reportId }))),
               h.Class(
                 clsx(
-                  'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                  'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                   focusRing,
                 ),
               ),
@@ -3345,7 +3345,7 @@ const workingCopyPanel = (model: Model, h: HtmlBuilder<Message>): Html =>
         'Your working copy',
         [
           h.p(
-            [h.Class('text-base text-msf-ink')],
+            [h.Class('text-base text-brand-ink')],
             [
               `Started from draft ${copy.baseDraft}. The latest shared draft is ${copy.latestDraft}.`,
             ],
@@ -3386,7 +3386,7 @@ const draftingPanel = (model: Model, h: HtmlBuilder<Message>): Html => {
       Array.match(others, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['No other author has a working copy of this report.'],
           ),
         onNonEmpty: list =>
@@ -3394,14 +3394,14 @@ const draftingPanel = (model: Model, h: HtmlBuilder<Message>): Html => {
             [
               h.AriaLabel('Other authors drafting'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(list, entry =>
               h.keyed('li')(
                 entry.accountId,
                 [
-                  h.Class('py-3 text-lg text-msf-ink'),
+                  h.Class('py-3 text-lg text-brand-ink'),
                   h.DataAttribute('drafting', entry.accountId),
                 ],
                 [draftingLine(entry)],
@@ -3412,7 +3412,7 @@ const draftingPanel = (model: Model, h: HtmlBuilder<Message>): Html => {
       h.a(
         [
           h.Href(pathOf(AppRoute.Drafts({ reportId: model.reportId }))),
-          h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+          h.Class(clsx('self-start text-lg text-brand-ink underline', focusRing)),
         ],
         ['Draft history'],
       ),
@@ -3427,13 +3427,13 @@ const endedBanner = (end: EndState, h: HtmlBuilder<Message>): Html =>
     : h.section(
         [
           h.AriaLabel('The report ends here'),
-          h.Class('flex flex-col gap-2 border-2 border-msf-ink px-4 py-4'),
+          h.Class('flex flex-col gap-2 border-2 border-brand-ink px-4 py-4'),
         ],
         [
           h.h2([h.Class('text-xl font-black')], ['The report ends here']),
           h.p([h.Class('text-pretty text-lg')], [end.outcomeText]),
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             [
               'Later required sections are marked as ended. If the answer that ended the report changes, they come back with what they held.',
             ],
@@ -3455,7 +3455,7 @@ const authorsPanel = (
         [
           h.AriaLabel('Authors of this report'),
           h.Class(
-            'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+            'flex flex-col divide-y divide-brand-line border-y border-brand-line',
           ),
         ],
         Array.map(detail.authors, author =>
@@ -3470,7 +3470,7 @@ const authorsPanel = (
         ? Array.match(candidates, {
             onEmpty: () =>
               h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 [
                   'Every author of this unit is already on this report. Someone with People gives Reports in this unit to others.',
                 ],
@@ -3536,7 +3536,7 @@ const loadedView = (
             [
               h.Href(pathOf(AppRoute.Reports())),
               h.Class(
-                clsx('self-start text-base text-msf-ink underline', focusRing),
+                clsx('self-start text-base text-brand-ink underline', focusRing),
               ),
             ],
             ['All reports'],
@@ -3545,19 +3545,19 @@ const loadedView = (
             [
               h.Id('page-heading'),
               h.Class(
-                'text-balance text-3xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-4xl',
+                'text-balance text-3xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink sm:text-4xl',
               ),
             ],
             [template.name],
           ),
           h.p(
-            [h.Class('text-pretty text-lg text-msf-ink')],
+            [h.Class('text-pretty text-lg text-brand-ink')],
             [
               `${detail.summary.caseFile.reference}: ${detail.summary.caseFile.title}`,
             ],
           ),
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             [
               `${reportStateText(detail.summary.state)} · Draft ${detail.summary.latestDraft}`,
             ],
@@ -3580,7 +3580,7 @@ const loadedView = (
               h.Href(pathOf(AppRoute.Names({ reportId: model.reportId }))),
               h.Class(
                 clsx(
-                  'inline-flex min-h-10 items-center border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+                  'inline-flex min-h-10 items-center border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
                   focusRing,
                 ),
               ),
@@ -3618,7 +3618,7 @@ const shell = (children: ReadonlyArray<Html>, h: HtmlBuilder<Message>): Html =>
       h.h1(
         [
           h.Id('page-heading'),
-          h.Class('text-4xl font-black tracking-[-0.025em] text-msf-black'),
+          h.Class('text-4xl font-black tracking-[-0.025em] text-brand-ink'),
         ],
         ['Report'],
       ),
@@ -3636,7 +3636,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
             ? h.p(
                 [
                   h.Role('alert'),
-                  h.Class('text-lg font-medium text-msf-alert'),
+                  h.Class('text-lg font-medium text-brand-alert'),
                 ],
                 ['This report is not available to you.'],
               )

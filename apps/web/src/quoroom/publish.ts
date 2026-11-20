@@ -388,7 +388,7 @@ const shell = (
         [
           h.Href(pathOf(AppRoute.Report({ reportId: model.reportId }))),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         ['Back to the report'],
@@ -397,7 +397,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         ['Publish for review'],
@@ -413,11 +413,11 @@ const roundsPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
     [
       Option.match(currentRoundOf(model.revisions), {
         onNone: () =>
-          h.p([h.Class('text-lg text-msf-ink')], ['No round is open.']),
+          h.p([h.Class('text-lg text-brand-ink')], ['No round is open.']),
         onSome: revision =>
           h.p(
             [
-              h.Class('text-lg font-medium text-msf-ink'),
+              h.Class('text-lg font-medium text-brand-ink'),
               h.DataAttribute('current-round', String(revision.number)),
             ],
             [`${revision.label} is open. ${roundLine(revision, model.nowMs)}`],
@@ -447,18 +447,18 @@ const publishPanel = (
     h,
     `Publish Revision ${next}`,
     archived
-      ? [h.p([h.Class('text-lg text-msf-ink')], ['This report is archived.'])]
+      ? [h.p([h.Class('text-lg text-brand-ink')], ['This report is archived.'])]
       : choices.latestDraft < 1
         ? [
             h.p(
-              [h.Class('text-lg text-msf-ink')],
+              [h.Class('text-lg text-brand-ink')],
               ['Nothing has been shared yet. Share a draft first.'],
             ),
             shareLink(h, model, 'Share your working copy'),
           ]
         : [
             h.p(
-              [h.Class('text-lg text-msf-ink')],
+              [h.Class('text-lg text-brand-ink')],
               [
                 `Revision ${next} is the latest shared draft, ${draftLabel(choices.latestDraft)}. A shared draft never changes.`,
               ],
@@ -467,7 +467,7 @@ const publishPanel = (
               ? h.p(
                   [
                     h.Role('note'),
-                    h.Class('text-base font-medium text-msf-ink'),
+                    h.Class('text-base font-medium text-brand-ink'),
                   ],
                   [
                     `Publishing it replaces the open round. The reviewers of Revision ${next - 1} are told that it was replaced.`,
@@ -479,7 +479,7 @@ const publishPanel = (
                   [h.Class('flex flex-col gap-2')],
                   [
                     h.p(
-                      [h.Class('text-base text-msf-grey')],
+                      [h.Class('text-base text-brand-grey')],
                       [
                         'Your working copy has changes that are not shared. They are not in this revision. To publish them, share and publish from the share screen, which first shows the redacted version.',
                       ],
@@ -511,7 +511,7 @@ const publishPanel = (
                         ),
                         h.Class(
                           clsx(
-                            'self-start text-lg text-msf-ink underline',
+                            'self-start text-lg text-brand-ink underline',
                             focusRing,
                           ),
                         ),
@@ -532,7 +532,7 @@ const publishPanel = (
                 h.Disabled(model.isPublishing),
                 h.Class(
                   clsx(
-                    'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-msf-red px-6 text-lg font-medium text-white transition-colors hover:bg-msf-black disabled:cursor-wait disabled:opacity-70',
+                    'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-brand-primary px-6 text-lg font-medium text-white transition-colors hover:bg-brand-ink disabled:cursor-wait disabled:opacity-70',
                     focusRing,
                   ),
                 ),
@@ -552,7 +552,7 @@ const shareLink = (
   h.a(
     [
       h.Href(pathOf(AppRoute.Share({ reportId: model.reportId }))),
-      h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+      h.Class(clsx('self-start text-lg text-brand-ink underline', focusRing)),
     ],
     [label],
   )
@@ -584,7 +584,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
                     [
                       h.Role('status'),
                       h.DataAttribute('published', String(number)),
-                      h.Class('text-2xl font-black text-msf-black'),
+                      h.Class('text-2xl font-black text-brand-ink'),
                     ],
                     [`Revision ${number} is published.`],
                   ),

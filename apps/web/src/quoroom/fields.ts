@@ -148,7 +148,7 @@ const hints = <M>(
   scope: string,
 ): ReadonlyArray<Html> => [
   h.p(
-    [h.Id(hintId(item.id, scope)), h.Class('-mt-1 text-sm text-msf-grey')],
+    [h.Id(hintId(item.id, scope)), h.Class('-mt-1 text-sm text-brand-grey')],
     [requirementNote(item)],
   ),
   item.instruction === undefined
@@ -156,7 +156,7 @@ const hints = <M>(
     : h.p(
         [
           h.Id(guidanceId(item.id, scope)),
-          h.Class('-mt-1 text-pretty text-sm italic text-msf-grey'),
+          h.Class('-mt-1 text-pretty text-sm italic text-brand-grey'),
         ],
         [item.instruction],
       ),
@@ -207,7 +207,7 @@ const grouped = <M>(
     ],
     [
       h.legend(
-        [h.Class('mb-2 text-base font-medium text-msf-ink')],
+        [h.Class('mb-2 text-base font-medium text-brand-ink')],
         [item.label],
       ),
       ...hints(h, item, scope),
@@ -323,7 +323,7 @@ const clearButton = <M>(h: HtmlBuilder<M>, item: Item, message: M): Html =>
       h.Type('button'),
       h.Class(
         clsx(
-          'inline-flex h-10 cursor-pointer items-center self-start border border-msf-line px-3 text-base text-msf-ink transition-colors hover:border-msf-red hover:text-msf-red',
+          'inline-flex h-10 cursor-pointer items-center self-start border border-brand-line px-3 text-base text-brand-ink transition-colors hover:border-brand-primary hover:text-brand-primary',
           focusRing,
         ),
       ),
@@ -352,7 +352,7 @@ const selectField = <M>(
             h.Id(`${fieldId(item.id, context.scope)}-${option.id}`),
             h.Type(item.multiple ? 'checkbox' : 'radio'),
             h.Name(fieldId(item.id, context.scope)),
-            h.Class('mt-1 size-5 shrink-0 accent-msf-red'),
+            h.Class('mt-1 size-5 shrink-0 accent-brand-primary'),
             h.Checked(Array.contains(chosen, option.id)),
             h.Disabled(context.isDisabled),
             h.OnClick(
@@ -383,7 +383,7 @@ export const personText = (person: Person): string => person.name
 
 const noPeopleNote = <M>(h: HtmlBuilder<M>): Html =>
   h.p(
-    [h.Class('text-base text-msf-grey')],
+    [h.Class('text-base text-brand-grey')],
     [
       'No people are listed in this report yet. The names list is added in a later step.',
     ],
@@ -451,7 +451,7 @@ const peopleField = <M>(
           h.input([
             h.Id(`${fieldId(item.id, context.scope)}-${person.id}`),
             h.Type('checkbox'),
-            h.Class('mt-1 size-5 shrink-0 accent-msf-red'),
+            h.Class('mt-1 size-5 shrink-0 accent-brand-primary'),
             h.Checked(Array.contains(chosen, person.id)),
             h.Disabled(context.isDisabled),
             h.OnClick(
@@ -547,7 +547,7 @@ const signatureField = <M>(
       ],
     ),
     h.p(
-      [h.Class('text-sm text-msf-grey')],
+      [h.Class('text-sm text-brand-grey')],
       [
         'Quoroom keeps a name and a date. The signature line is printed in the PDF.',
       ],
@@ -574,13 +574,13 @@ const caseValueField = <M>(
         h.Id(fieldId(item.id, context.scope)),
         h.AriaLabel(`${item.label}, from the case file`),
         h.Class(
-          'min-h-12 border border-msf-line bg-msf-mist px-3 py-3 text-lg text-msf-black',
+          'min-h-12 border border-brand-line bg-brand-mist px-3 py-3 text-lg text-brand-ink',
         ),
       ],
       [caseValueText(context.caseValues, item)],
     ),
     h.p(
-      [h.Class('-mt-1 text-sm text-msf-grey')],
+      [h.Class('-mt-1 text-sm text-brand-grey')],
       [
         'From the case file. It is shown here and cannot be changed in the report.',
       ],
@@ -606,7 +606,7 @@ const editorPending = <M>(
       h.DataAttribute('slot', 'rich-text'),
       h.Role('status'),
       h.Class(
-        'flex min-h-24 items-center border border-dashed border-msf-line px-3 py-3 text-base text-msf-grey',
+        'flex min-h-24 items-center border border-dashed border-brand-line px-3 py-3 text-base text-brand-grey',
       ),
     ],
     [text],
@@ -622,12 +622,12 @@ const editorFailed = <M>(
       h.Id(fieldId(item.id, context.scope)),
       h.DataAttribute('slot', 'rich-text'),
       h.Class(
-        'flex flex-col items-start gap-3 border border-msf-alert px-3 py-3',
+        'flex flex-col items-start gap-3 border border-brand-alert px-3 py-3',
       ),
     ],
     [
       h.p(
-        [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+        [h.Role('alert'), h.Class('text-base font-medium text-brand-alert')],
         ['The text editor could not be loaded. Nothing written is lost.'],
       ),
       h.button(
@@ -635,7 +635,7 @@ const editorFailed = <M>(
           h.Type('button'),
           h.Class(
             clsx(
-              'min-h-11 cursor-pointer border border-msf-ink px-4 text-base font-medium',
+              'min-h-11 cursor-pointer border border-brand-ink px-4 text-base font-medium',
               focusRing,
             ),
           ),
@@ -692,7 +692,7 @@ const richTextControl = <M>(
             [
               h.Id(fieldId(item.id, context.scope)),
               h.DataAttribute('slot', 'rich-text'),
-              h.Class('text-base text-msf-grey'),
+              h.Class('text-base text-brand-grey'),
             ],
             ['Nothing written.'],
           ),
@@ -731,7 +731,7 @@ const richTextSlot = <M>(
       : h.p(
           [
             h.DataAttribute('slot', 'image-usage'),
-            h.Class('text-sm text-msf-grey'),
+            h.Class('text-sm text-brand-grey'),
           ],
           [context.richText.usageText],
         ),
@@ -780,7 +780,7 @@ const repeatedField = <M>(
                 h.AriaLabel(label),
                 h.DataAttribute('entry', entry.id),
                 h.Class(
-                  'flex min-w-0 flex-col gap-5 border-l-4 border-msf-line pl-4',
+                  'flex min-w-0 flex-col gap-5 border-l-4 border-brand-line pl-4',
                 ),
               ],
               [

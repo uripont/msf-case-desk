@@ -5,12 +5,11 @@ import {
 } from '@quoroom/domain'
 
 // NOTE: The look of the deployment (D24). `/api/config` gives the theme, and
-// the app applies it as CSS custom properties on its root element. The class
-// names in the views keep their `msf-` names (internal names stay), but the
-// tokens behind them are the theme's: `msf-red` is the primary colour,
-// `msf-black` and `msf-ink` the text colour, `msf-paper` the background. Errors
-// keep their own fixed colour, so a theme can never make them look like
-// decoration. The fonts are the bundled set (D16).
+// the app applies it as CSS custom properties on its root element. The `brand-`
+// colours in the views are the theme's: `brand-primary` is the primary colour,
+// `brand-ink` the text colour, `brand-paper` the background, `brand-accent` the
+// accent. Errors keep their own fixed colour, so a theme can never make them
+// look like decoration. The fonts are the bundled set (D16).
 
 // STYLE
 
@@ -25,11 +24,10 @@ const FONT_STACKS: Readonly<Record<FontFamily, string>> = {
 export const fontStackOf = (font: FontFamily): string => FONT_STACKS[font]
 
 export const themeStyle = (theme: PublicTheme): Record<string, string> => ({
-  '--color-msf-red': theme.colors.primary,
-  '--color-msf-black': theme.colors.text,
-  '--color-msf-ink': theme.colors.text,
-  '--color-msf-paper': theme.colors.background,
-  '--color-msf-accent': theme.colors.accent,
+  '--color-brand-primary': theme.colors.primary,
+  '--color-brand-ink': theme.colors.text,
+  '--color-brand-paper': theme.colors.background,
+  '--color-brand-accent': theme.colors.accent,
   '--font-sans': fontStackOf(theme.fonts.body),
   '--font-heading': fontStackOf(theme.fonts.heading),
 })

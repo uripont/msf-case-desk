@@ -37,7 +37,7 @@ import { highlightedChildren } from './marked'
 // safe to share" line, the image) is counted.
 export const RICH_TEXT_BLOCK = 'rt-block'
 
-const HEADING_CLASS = 'mt-2 font-bold text-msf-black'
+const HEADING_CLASS = 'mt-2 font-bold text-brand-ink'
 
 const withMark =
   <M>(h: HtmlBuilder<M>, mark: Mark) =>
@@ -53,7 +53,7 @@ const withMark =
                 h.Href(mark.attrs.href),
                 h.Rel('noopener noreferrer nofollow'),
                 h.Target('_blank'),
-                h.Class('text-msf-red underline'),
+                h.Class('text-brand-primary underline'),
               ],
               [child],
             )
@@ -212,7 +212,7 @@ const cellView = <M>(
   ctx: Ctx,
 ): Html => {
   const attributes = [
-    h.Class('border border-msf-line px-2 py-1 text-left align-top'),
+    h.Class('border border-brand-line px-2 py-1 text-left align-top'),
     ...Option.match(Option.fromNullishOr(cell.attrs?.colspan), {
       onNone: () => [],
       onSome: span => [h.Colspan(span)],
@@ -226,7 +226,7 @@ const cellView = <M>(
     listBlockView(h, block, ctx),
   )
   return cell.type === 'tableHeader'
-    ? h.th([...attributes, h.Class('bg-msf-mist font-medium')], children)
+    ? h.th([...attributes, h.Class('bg-brand-mist font-medium')], children)
     : h.td(attributes, children)
 }
 
@@ -278,7 +278,7 @@ const blockView = <M>(
           ? h.div(
               [
                 h.Class(
-                  'border border-msf-line bg-msf-mist px-3 py-6 text-center text-base text-msf-grey',
+                  'border border-brand-line bg-brand-mist px-3 py-6 text-center text-base text-brand-grey',
                 ),
               ],
               [block.attrs.alt === '' ? 'Image' : `Image: ${block.attrs.alt}`],
@@ -288,7 +288,7 @@ const blockView = <M>(
               picture.Report(reportId),
               picture.Context(imageContext),
               picture.Alt(block.attrs.alt),
-              h.Class('block max-w-full border border-msf-line bg-msf-mist'),
+              h.Class('block max-w-full border border-brand-line bg-brand-mist'),
             ]),
         ctx.safeNote
           ? h.p(
@@ -296,7 +296,7 @@ const blockView = <M>(
                 h.Class(
                   clsx(
                     'text-sm font-medium',
-                    block.attrs.safeToShare ? 'text-msf-ink' : 'text-msf-grey',
+                    block.attrs.safeToShare ? 'text-brand-ink' : 'text-brand-grey',
                   ),
                 ),
               ],
@@ -309,7 +309,7 @@ const blockView = <M>(
           : h.empty,
         h.figcaption(
           [
-            h.Class('text-sm text-msf-grey'),
+            h.Class('text-sm text-brand-grey'),
             h.DataAttribute(RICH_TEXT_BLOCK, ''),
           ],
           inlines(h, block, ctx),
@@ -343,12 +343,12 @@ export const richTextView = <M>(
   }
   return isRichTextEmpty(doc)
     ? h.p(
-        [h.Class('text-base text-msf-grey'), ...attributes],
+        [h.Class('text-base text-brand-grey'), ...attributes],
         ['Nothing written.'],
       )
     : h.div(
         [
-          h.Class('flex min-w-0 flex-col gap-3 text-lg text-msf-ink'),
+          h.Class('flex min-w-0 flex-col gap-3 text-lg text-brand-ink'),
           ...attributes,
         ],
         Array.map(doc.content, block =>

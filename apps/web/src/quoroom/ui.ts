@@ -42,8 +42,8 @@ export const reportsNav = <M>(
                 'text-base',
                 focusRing,
                 page === current
-                  ? 'font-medium text-msf-black underline decoration-msf-red decoration-2 underline-offset-[6px]'
-                  : 'text-msf-grey underline hover:text-msf-ink',
+                  ? 'font-medium text-brand-ink underline decoration-brand-primary decoration-2 underline-offset-[6px]'
+                  : 'text-brand-grey underline hover:text-brand-ink',
               ),
             ),
             ...(page === current ? [h.AriaCurrent('page')] : []),
@@ -73,7 +73,7 @@ export const pageShell = <M>(
             [
               h.Id(PAGE_HEADING_ID),
               h.Class(
-                'text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+                'text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink sm:text-5xl',
               ),
             ],
             [title],
@@ -81,7 +81,7 @@ export const pageShell = <M>(
           lede === ''
             ? h.empty
             : h.p(
-                [h.Class('text-pretty text-lg font-light text-msf-ink')],
+                [h.Class('text-pretty text-lg font-light text-brand-ink')],
                 [lede],
               ),
         ],
@@ -99,14 +99,14 @@ export const panel = <M>(
   h.section(
     [
       h.AriaLabel(heading),
-      h.Class('flex flex-col gap-5 border-t-2 border-msf-ink pt-5'),
+      h.Class('flex flex-col gap-5 border-t-2 border-brand-ink pt-5'),
     ],
     [
       h.h2([h.Class('text-2xl font-black tracking-tight')], [heading]),
       Option.match(maybeNote, {
         onNone: () => h.empty,
         onSome: note =>
-          h.p([h.Class('-mt-2 text-pretty text-base text-msf-grey')], [note]),
+          h.p([h.Class('-mt-2 text-pretty text-base text-brand-grey')], [note]),
       }),
       ...children,
     ],
@@ -144,7 +144,7 @@ export const textField = <M>(
       h.label([h.Class(labelClassName), h.For(config.id)], [config.label]),
       config.hint === undefined
         ? h.empty
-        : h.p([h.Class('-mt-1 text-sm text-msf-grey')], [config.hint]),
+        : h.p([h.Class('-mt-1 text-sm text-brand-grey')], [config.hint]),
       h.input([
         h.Id(config.id),
         h.Type(config.type ?? 'text'),
@@ -199,7 +199,7 @@ export const checkboxField = <M>(
           h.input([
             h.Id(id),
             h.Type('checkbox'),
-            h.Class('mt-1 size-5 shrink-0 accent-msf-red'),
+            h.Class('mt-1 size-5 shrink-0 accent-brand-primary'),
             h.Checked(isChecked),
             h.OnClick(onClick),
           ]),
@@ -208,7 +208,7 @@ export const checkboxField = <M>(
       ),
       Option.match(maybeHint, {
         onNone: () => h.empty,
-        onSome: hint => h.p([h.Class('ml-8 text-sm text-msf-grey')], [hint]),
+        onSome: hint => h.p([h.Class('ml-8 text-sm text-brand-grey')], [hint]),
       }),
     ],
   )
@@ -268,7 +268,7 @@ export const smallButton = <M>(
       h.Type('button'),
       h.Class(
         clsx(
-          'inline-flex h-10 cursor-pointer items-center justify-center border border-msf-line px-3 text-base text-msf-ink transition-colors hover:border-msf-red hover:text-msf-red',
+          'inline-flex h-10 cursor-pointer items-center justify-center border border-brand-line px-3 text-base text-brand-ink transition-colors hover:border-brand-primary hover:text-brand-primary',
           focusRing,
         ),
       ),
@@ -283,18 +283,18 @@ export const smallButton = <M>(
 
 export const alertText = <M>(h: HtmlBuilder<M>, text: string): Html =>
   h.p(
-    [h.Role('alert'), h.Class('text-base font-medium text-msf-alert')],
+    [h.Role('alert'), h.Class('text-base font-medium text-brand-alert')],
     [text],
   )
 
 export const statusText = <M>(h: HtmlBuilder<M>, text: string): Html =>
-  h.p([h.Role('status'), h.Class('text-base font-medium text-msf-ink')], [text])
+  h.p([h.Role('status'), h.Class('text-base font-medium text-brand-ink')], [text])
 
 export const failureAlert = <M>(h: HtmlBuilder<M>, failure: Failure): Html =>
   alertText(h, failureText(failure))
 
 export const loadingText = <M>(h: HtmlBuilder<M>, text: string): Html =>
-  h.p([h.Role('status'), h.Class('text-lg text-msf-grey')], [text])
+  h.p([h.Role('status'), h.Class('text-lg text-brand-grey')], [text])
 
 // NOTE: never throws: a time no date can hold reads as an unknown time.
 export const formatMoment = (epochMs: number): string => {

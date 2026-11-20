@@ -96,7 +96,7 @@ describe('the theme screen', () => {
       { update, view },
       given(saved),
       expect(selector('#quoroom-root')).toHaveStyle(
-        '--color-msf-red',
+        '--color-brand-primary',
         '#0b5d3b',
       ),
       expect(text('Renamed Organisation')).toExist(),

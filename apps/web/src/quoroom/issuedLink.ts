@@ -60,7 +60,7 @@ export const issuedLinkPanel = <M>(
 ): Html =>
   panel(h, 'One-time link', [
     h.p(
-      [h.Class('text-pretty text-lg text-msf-ink')],
+      [h.Class('text-pretty text-lg text-brand-ink')],
       [
         `${link.purpose === 'activate' ? 'Activation' : 'Password reset'} link for ${link.name}. It is shown only once and works until ${formatMoment(link.expiresAt)}. Send it to them yourself.`,
       ],

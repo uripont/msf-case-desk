@@ -24,7 +24,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
             [
               h.Id(PAGE_HEADING_ID),
               h.Class(
-                'text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black sm:text-5xl',
+                'text-4xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink sm:text-5xl',
               ),
             ],
             ['Sign in'],
@@ -32,7 +32,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
           Option.match(model.maybeEndedFor, {
             onNone: () =>
               h.p(
-                [h.Class('text-pretty text-lg font-light text-msf-ink')],
+                [h.Class('text-pretty text-lg font-light text-brand-ink')],
                 [
                   'Quoroom is where reports are written, reviewed and approved. Use the account you were given.',
                 ],
@@ -41,7 +41,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
               h.p(
                 [
                   h.Role('status'),
-                  h.Class('text-pretty text-lg font-medium text-msf-ink'),
+                  h.Class('text-pretty text-lg font-medium text-brand-ink'),
                 ],
                 [
                   'Your session has ended. Sign in again to carry on where you were. What you were writing is kept.',
@@ -94,7 +94,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
               h.p(
                 [
                   h.Role('alert'),
-                  h.Class('text-base font-medium text-msf-alert'),
+                  h.Class('text-base font-medium text-brand-alert'),
                 ],
                 [failureText(failure)],
               ),

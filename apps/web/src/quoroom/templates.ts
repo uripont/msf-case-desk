@@ -559,14 +559,14 @@ const rowView = (
         [h.Class('flex flex-col gap-1')],
         [
           h.p(
-            [h.Class('text-xl font-bold text-msf-black')],
+            [h.Class('text-xl font-bold text-brand-ink')],
             [summary.builtIn ? `${summary.name} (built in)` : summary.name],
           ),
-          h.p([h.Class('text-base text-msf-grey')], [stateText(summary)]),
+          h.p([h.Class('text-base text-brand-grey')], [stateText(summary)]),
           summary.draftName === undefined || summary.draftName === summary.name
             ? h.empty
             : h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 [`The draft is named ${summary.draftName}.`],
               ),
         ],
@@ -582,7 +582,7 @@ const rowView = (
                     h.AriaLabel(`Edit the draft of ${summary.name}`),
                     h.Class(
                       clsx(
-                        'inline-flex h-10 items-center border border-msf-ink px-3 text-base text-msf-ink hover:border-msf-red hover:text-msf-red',
+                        'inline-flex h-10 items-center border border-brand-ink px-3 text-base text-brand-ink hover:border-brand-primary hover:text-brand-primary',
                         focusRing,
                       ),
                     ),
@@ -602,7 +602,7 @@ const rowView = (
                     ),
                     h.Class(
                       clsx(
-                        'inline-flex h-10 items-center border border-msf-line px-3 text-base text-msf-ink hover:border-msf-red hover:text-msf-red',
+                        'inline-flex h-10 items-center border border-brand-line px-3 text-base text-brand-ink hover:border-brand-primary hover:text-brand-primary',
                         focusRing,
                       ),
                     ),
@@ -660,11 +660,11 @@ const rowView = (
             [
               h.Role('alertdialog'),
               h.AriaLabel(`Discard the draft of ${summary.name}?`),
-              h.Class('flex flex-col gap-3 border border-msf-alert p-4'),
+              h.Class('flex flex-col gap-3 border border-brand-alert p-4'),
             ],
             [
               h.p(
-                [h.Class('text-base text-msf-ink')],
+                [h.Class('text-base text-brand-ink')],
                 ['Discard this draft? Its changes are lost. Published versions are not affected.'],
               ),
               h.div(
@@ -690,11 +690,11 @@ const rowView = (
             [
               h.Role('alertdialog'),
               h.AriaLabel(`Retire ${summary.name}?`),
-              h.Class('flex flex-col gap-3 border border-msf-alert p-4'),
+              h.Class('flex flex-col gap-3 border border-brand-alert p-4'),
             ],
             [
               h.p(
-                [h.Class('text-base text-msf-ink')],
+                [h.Class('text-base text-brand-ink')],
                 [
                   `Retire ${summary.name}? No new report can start on it. Reports already started keep working and keep their version.`,
                 ],
@@ -720,16 +720,16 @@ const rowView = (
 
 const createdView = (h: HtmlBuilder<Message>, created: CreatedDraft): Html =>
   h.div(
-    [h.Role('status'), h.Class('flex flex-col gap-2 border border-msf-ink p-4')],
+    [h.Role('status'), h.Class('flex flex-col gap-2 border border-brand-ink p-4')],
     [
       h.p(
-        [h.Class('text-base text-msf-ink')],
+        [h.Class('text-base text-brand-ink')],
         [`A draft of ${created.name} was made (version ${created.version}).`],
       ),
       h.a(
         [
           h.Href(editorPath(created.templateId, created.version)),
-          h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+          h.Class(clsx('self-start text-lg text-brand-ink underline', focusRing)),
         ],
         ['Open the draft'],
       ),
@@ -755,13 +755,13 @@ const loaded = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => [
     [
       Array.match(model.templates, {
         onEmpty: () =>
-          h.p([h.Class('text-lg text-msf-grey')], ['There are no templates.']),
+          h.p([h.Class('text-lg text-brand-grey')], ['There are no templates.']),
         onNonEmpty: templates =>
           h.ul(
             [
               h.AriaLabel('Templates'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(templates, summary => rowView(h, model, summary)),

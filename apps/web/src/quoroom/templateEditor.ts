@@ -923,7 +923,7 @@ const problemList = (h: H, found: ReadonlyArray<FormProblem>): Html =>
         Array.map(list, entry =>
           h.li(
             [
-              h.Class('text-sm font-medium text-msf-alert'),
+              h.Class('text-sm font-medium text-brand-alert'),
               h.DataAttribute('problem-code', entry.problem.code),
             ],
             [entry.problem.message],
@@ -961,7 +961,7 @@ const input = (
       controlLabel(h, config.id, config.label),
       config.hint === undefined
         ? h.empty
-        : h.p([h.Class('text-sm text-msf-grey')], [config.hint]),
+        : h.p([h.Class('text-sm text-brand-grey')], [config.hint]),
       h.input([
         h.Id(config.id),
         h.Type(config.type ?? 'text'),
@@ -990,7 +990,7 @@ const area = (
       controlLabel(h, id, label),
       hint === undefined
         ? h.empty
-        : h.p([h.Class('text-sm text-msf-grey')], [hint]),
+        : h.p([h.Class('text-sm text-brand-grey')], [hint]),
       h.textarea([
         h.Id(id),
         h.Value(value),
@@ -1026,7 +1026,7 @@ const card = (h: H, children: ReadonlyArray<Html>): Html =>
   h.div(
     [
       h.Class(
-        'flex min-w-0 flex-col gap-3 border border-msf-line bg-white p-3 md:p-4',
+        'flex min-w-0 flex-col gap-3 border border-brand-line bg-white p-3 md:p-4',
       ),
     ],
     children,
@@ -1067,7 +1067,7 @@ const panelOf = (
     [
       h.AriaLabel(heading),
       h.DataAttribute('panel', key),
-      h.Class('flex flex-col gap-4 border-t-2 border-msf-ink pt-5'),
+      h.Class('flex flex-col gap-4 border-t-2 border-brand-ink pt-5'),
     ],
     [
       h.h2(
@@ -1078,14 +1078,14 @@ const panelOf = (
         ? [
             locked
               ? h.p(
-                  [h.Class('text-sm font-medium text-msf-alert')],
+                  [h.Class('text-sm font-medium text-brand-alert')],
                   ['Something here needs fixing, so it stays open.'],
                 )
               : h.empty,
             note === ''
               ? h.empty
               : h.p(
-                  [h.Class('-mt-2 text-pretty text-base text-msf-grey')],
+                  [h.Class('-mt-2 text-pretty text-base text-brand-grey')],
                   [note],
                 ),
             ...children,
@@ -1171,7 +1171,7 @@ const rolePermissionBoxes = (h: H, role: FormRole): ReadonlyArray<Html> => {
             h.input([
               h.Id(id),
               h.Type('checkbox'),
-              h.Class('size-5 shrink-0 accent-msf-red'),
+              h.Class('size-5 shrink-0 accent-brand-primary'),
               h.Checked(role.permissions.includes(permission)),
               h.Disabled(required),
               h.OnClick(
@@ -1237,7 +1237,7 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
           ),
           role.kind === 'drafting'
             ? h.p(
-                [h.Class('pb-2 text-base text-msf-ink')],
+                [h.Class('pb-2 text-base text-brand-ink')],
                 ['Sees the full text.'],
               )
             : choice(
@@ -1265,7 +1265,7 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
         h.div(
           [h.Class('flex flex-col gap-1')],
           [
-            h.p([h.Class('text-sm font-medium text-msf-ink')], ['Permissions']),
+            h.p([h.Class('text-sm font-medium text-brand-ink')], ['Permissions']),
             ...rolePermissionBoxes(h, role),
           ],
         ),
@@ -1430,7 +1430,7 @@ const numberingPanel = (h: H, context: Context): Html => {
               card(h, [
                 row(h, [
                   h.p(
-                    [h.Class('pb-2 text-base font-medium text-msf-ink')],
+                    [h.Class('pb-2 text-base font-medium text-brand-ink')],
                     [`Level ${index + 1}`],
                   ),
                   choice(
@@ -1512,7 +1512,7 @@ const optionRow = (
     [h.Class('list-none'), h.DataAttribute('option-id', option.id)],
     [
       h.div(
-        [h.Class('flex flex-col gap-2 border-l-2 border-msf-line pl-3')],
+        [h.Class('flex flex-col gap-2 border-l-2 border-brand-line pl-3')],
         [
           row(h, [
             input(h, {
@@ -1630,11 +1630,11 @@ const confirmRemove = (
         [
           h.Role('alertdialog'),
           h.AriaLabel(`Remove ${name}?`),
-          h.Class('flex flex-col gap-2 border border-msf-alert p-3'),
+          h.Class('flex flex-col gap-2 border border-brand-alert p-3'),
         ],
         [
           h.p(
-            [h.Class('text-base text-msf-ink')],
+            [h.Class('text-base text-brand-ink')],
             [
               kind === 'section'
                 ? `Remove "${name}" with its subsections and items?`
@@ -1844,7 +1844,7 @@ const itemCard = (h: H, context: Context, item: FormItem): Html => {
           : h.empty,
         item.type === 'repeated'
           ? h.div(
-              [h.Class('flex flex-col gap-3 border-l-2 border-msf-ink pl-3')],
+              [h.Class('flex flex-col gap-3 border-l-2 border-brand-ink pl-3')],
               [
                 row(h, [
                   input(h, {
@@ -1955,7 +1955,7 @@ const sectionCard = (
             h.p(
               [
                 h.Class(
-                  'text-sm font-bold uppercase tracking-wide text-msf-grey',
+                  'text-sm font-bold uppercase tracking-wide text-brand-grey',
                 ),
               ],
               [kind],
@@ -1966,11 +1966,11 @@ const sectionCard = (
               isOpen ? `Close ${name}` : `Open ${name}`,
               isOpen,
               locked,
-              'text-lg font-bold text-msf-black',
+              'text-lg font-bold text-brand-ink',
             ),
             locked
               ? h.span(
-                  [h.Class('text-sm font-medium text-msf-alert')],
+                  [h.Class('text-sm font-medium text-brand-alert')],
                   ['needs fixing'],
                 )
               : h.empty,
@@ -2149,7 +2149,7 @@ const sectionCard = (
                     [
                       h.AriaLabel(`Subsections of ${name}`),
                       h.Class(
-                        'flex flex-col gap-3 border-l-2 border-msf-ink pl-3',
+                        'flex flex-col gap-3 border-l-2 border-brand-ink pl-3',
                       ),
                     ],
                     Array.map(list, child =>
@@ -2300,7 +2300,7 @@ const endingPanel = (h: H, context: Context): Html => {
     'A choice can end the report: the author is told the outcome, and the sections that are not marked below are left out. Mark a choice as ending in its options.',
     [
       h.p(
-        [h.Class('text-base text-msf-ink')],
+        [h.Class('text-base text-brand-ink')],
         [
           ends.length === 0
             ? 'No choice ends the report.'
@@ -2318,7 +2318,7 @@ const endingPanel = (h: H, context: Context): Html => {
         [h.Class('flex flex-col gap-2')],
         [
           h.p(
-            [h.Class('text-base font-medium text-msf-ink')],
+            [h.Class('text-base font-medium text-brand-ink')],
             ['Sections that stay in force after an early ending'],
           ),
           ...Array.map(form.sections, section =>
@@ -2367,7 +2367,7 @@ const coverPanel = (h: H, context: Context): Html => {
               card(h, [
                 row(h, [
                   h.p(
-                    [h.Class('pb-2 text-base font-medium text-msf-ink')],
+                    [h.Class('pb-2 text-base font-medium text-brand-ink')],
                     [`Line ${lineIndex + 1}`],
                   ),
                   choice(
@@ -2633,7 +2633,7 @@ const previewSection = (
       section.repeat === undefined
         ? h.empty
         : h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             [
               `Repeated: one for each entry, at least ${section.repeat.min}${
                 section.repeat.max === undefined
@@ -2645,13 +2645,13 @@ const previewSection = (
       section.requirement === 'required'
         ? h.empty
         : h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             ['This section can be left out.'],
           ),
       section.instruction === undefined
         ? h.empty
         : h.p(
-            [h.Class('text-base italic text-msf-grey')],
+            [h.Class('text-base italic text-brand-grey')],
             [section.instruction],
           ),
       readOnlySection(h, own, undefined, {
@@ -2688,7 +2688,7 @@ const previewView = (h: H, model: Model): Html => {
       return h.section(
         [
           h.AriaLabel('Preview of a new report'),
-          h.Class('flex flex-col gap-8 border-t-2 border-msf-ink pt-5'),
+          h.Class('flex flex-col gap-8 border-t-2 border-brand-ink pt-5'),
         ],
         [
           h.h2(
@@ -2696,7 +2696,7 @@ const previewView = (h: H, model: Model): Html => {
             ['Preview of a new report'],
           ),
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             [
               `A new report from this template starts empty. ${template.caseReferenceLabel}: shown from the case. Reading only: nothing here is saved.`,
             ],
@@ -2731,7 +2731,7 @@ const publishPanel = (h: H, model: Model): Html =>
         [
           h.Role('region'),
           h.AriaLabel('Publish this version'),
-          h.Class('flex flex-col gap-3 border-2 border-msf-ink p-4'),
+          h.Class('flex flex-col gap-3 border-2 border-brand-ink p-4'),
         ],
         [
           h.h2(
@@ -2739,7 +2739,7 @@ const publishPanel = (h: H, model: Model): Html =>
             [`Publish version ${model.version}?`],
           ),
           h.p(
-            [h.Class('text-base text-msf-ink')],
+            [h.Class('text-base text-brand-ink')],
             [
               'Once published a version never changes. New reports use it from now on; reports that already exist keep the version they started with.',
             ],
@@ -2747,7 +2747,7 @@ const publishPanel = (h: H, model: Model): Html =>
           Array.match(changes, {
             onEmpty: () =>
               h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 ['Nothing differs from the previous version.'],
               ),
             onNonEmpty: list =>
@@ -2755,13 +2755,13 @@ const publishPanel = (h: H, model: Model): Html =>
                 [
                   h.AriaLabel('Changes since the previous version'),
                   h.Class(
-                    'flex max-h-72 flex-col gap-1 overflow-y-auto border border-msf-line p-3',
+                    'flex max-h-72 flex-col gap-1 overflow-y-auto border border-brand-line p-3',
                   ),
                 ],
                 Array.map(list, change =>
                   h.li(
                     [
-                      h.Class('text-base text-msf-ink'),
+                      h.Class('text-base text-brand-ink'),
                       h.DataAttribute('change', change.change),
                     ],
                     [changeText(change)],
@@ -2784,15 +2784,15 @@ const publishPanel = (h: H, model: Model): Html =>
       h.div(
         [
           h.Role('status'),
-          h.Class('flex flex-col gap-2 border-2 border-msf-ink p-4'),
+          h.Class('flex flex-col gap-2 border-2 border-brand-ink p-4'),
         ],
         [
           h.p(
-            [h.Class('text-lg font-bold text-msf-black')],
+            [h.Class('text-lg font-bold text-brand-ink')],
             [`Version ${model.version} is published.`],
           ),
           h.p(
-            [h.Class('text-base text-msf-ink')],
+            [h.Class('text-base text-brand-ink')],
             [
               `${changes.length} ${changes.length === 1 ? 'change' : 'changes'} since the previous version. New reports use this version.`,
             ],
@@ -2826,7 +2826,7 @@ const backLink = (h: H): Html =>
   h.a(
     [
       h.Href(pathOf(AppRoute.Templates())),
-      h.Class(clsx('self-start text-base text-msf-ink underline', focusRing)),
+      h.Class(clsx('self-start text-base text-brand-ink underline', focusRing)),
     ],
     ['Back to the templates'],
   )
@@ -2855,21 +2855,21 @@ const loaded = (h: H, model: Model): Html => {
             [
               h.Id('page-heading'),
               h.Class(
-                'text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-msf-black',
+                'text-balance text-4xl font-black leading-[1.05] tracking-[-0.025em] text-brand-ink',
               ),
             ],
             [draft ? `Edit ${model.form.name}` : model.form.name],
           ),
           record === undefined
             ? h.empty
-            : h.p([h.Class('text-lg text-msf-ink')], [summaryOf(record)]),
+            : h.p([h.Class('text-lg text-brand-ink')], [summaryOf(record)]),
         ],
       ),
       draft
         ? h.div(
             [
               h.Class(
-                'sticky top-0 z-10 flex flex-col gap-2 border-b border-msf-line bg-white py-3',
+                'sticky top-0 z-10 flex flex-col gap-2 border-b border-brand-line bg-white py-3',
               ),
               h.DataAttribute('editor-bar', 'draft'),
             ],
@@ -2907,14 +2907,14 @@ const loaded = (h: H, model: Model): Html => {
               h.p(
                 [
                   h.Role('status'),
-                  h.Class('text-base font-medium text-msf-ink'),
+                  h.Class('text-base font-medium text-brand-ink'),
                 ],
                 [saveText(model.save)],
               ),
               unfixed > 0
                 ? h.p(
                     [
-                      h.Class('text-base font-medium text-msf-alert'),
+                      h.Class('text-base font-medium text-brand-alert'),
                       h.DataAttribute('problem-count', String(unfixed)),
                     ],
                     [
@@ -2922,7 +2922,7 @@ const loaded = (h: H, model: Model): Html => {
                     ],
                   )
                 : h.p(
-                    [h.Class('text-base text-msf-grey')],
+                    [h.Class('text-base text-brand-grey')],
                     ['Nothing is marked: this can be published.'],
                   ),
               Option.match(model.maybeNotice, {
@@ -2967,7 +2967,7 @@ const loaded = (h: H, model: Model): Html => {
                       ),
                       h.Class(
                         clsx(
-                          'self-start text-lg text-msf-ink underline',
+                          'self-start text-lg text-brand-ink underline',
                           focusRing,
                         ),
                       ),
@@ -2993,19 +2993,19 @@ const loaded = (h: H, model: Model): Html => {
                       [
                         h.AriaLabel('Problems'),
                         h.Class(
-                          'flex flex-col gap-2 border border-msf-alert p-4',
+                          'flex flex-col gap-2 border border-brand-alert p-4',
                         ),
                       ],
                       [
                         h.h2(
-                          [h.Class('text-xl font-bold text-msf-alert')],
+                          [h.Class('text-xl font-bold text-brand-alert')],
                           ['To fix'],
                         ),
                         h.ul(
                           [h.Class('flex flex-col gap-1')],
                           Array.map(context.problems, entry =>
                             h.li(
-                              [h.Class('text-base text-msf-ink')],
+                              [h.Class('text-base text-brand-ink')],
                               [entry.problem.message],
                             ),
                           ),
@@ -3023,7 +3023,7 @@ const loaded = (h: H, model: Model): Html => {
               ],
             )
           : h.p(
-              [h.Class('text-lg text-msf-ink')],
+              [h.Class('text-lg text-brand-ink')],
               [
                 `This version is ${record?.state === 'retired' ? 'retired' : 'published'}, so it cannot be edited. Preview it, or start a new version to change it.`,
               ],

@@ -301,7 +301,7 @@ const shell = (
         [
           h.Href(pathOf(AppRoute.Report({ reportId }))),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         ['Back to the report'],
@@ -310,7 +310,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         ['Downloads'],
@@ -338,7 +338,7 @@ const versionRow = (
         ],
         [
           h.p(
-            [h.Class('text-lg font-medium text-msf-black')],
+            [h.Class('text-lg font-medium text-brand-ink')],
             [`${first.label}, ${momentText(first.at)}`],
           ),
           h.div(
@@ -374,7 +374,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
           const groups = Array.groupBy(downloads.versions, groupKey)
           return shell(h, model.reportId, [
             h.p(
-              [h.Class('text-base text-msf-grey')],
+              [h.Class('text-base text-brand-grey')],
               [
                 `${downloads.reportName}, ${downloads.caseReference}. A PDF is made on this device when you ask for it, from the version as you may read it. Nothing is stored.`,
               ],
@@ -412,7 +412,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
               [
                 h.AriaLabel('Versions'),
                 h.Class(
-                  'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                  'flex flex-col divide-y divide-brand-line border-y border-brand-line',
                 ),
               ],
               Array.map(Object.values(groups), group =>

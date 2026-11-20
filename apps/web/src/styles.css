@@ -23,15 +23,14 @@
   --font-heading:
     'Hanken Grotesk Variable', 'Helvetica Neue', Arial, sans-serif;
 
-  --color-msf-red: #1f4e79;
-  --color-msf-alert: #b42318;
-  --color-msf-accent: #9a3412;
-  --color-msf-black: #1a1a1a;
-  --color-msf-ink: #1a1a1a;
-  --color-msf-grey: #767676;
-  --color-msf-line: #dbdbdb;
-  --color-msf-mist: #f6f6f6;
-  --color-msf-paper: #ffffff;
+  --color-brand-primary: #1f4e79;
+  --color-brand-alert: #b42318;
+  --color-brand-accent: #9a3412;
+  --color-brand-ink: #1a1a1a;
+  --color-brand-grey: #767676;
+  --color-brand-line: #dbdbdb;
+  --color-brand-mist: #f6f6f6;
+  --color-brand-paper: #ffffff;
 
   --radius-xs: 0;
   --radius-sm: 0;
@@ -46,7 +45,7 @@
 }
 
 html {
-  @apply bg-white text-msf-ink;
+  @apply bg-white text-brand-ink;
   font-family: var(--font-sans);
 }
 
@@ -67,7 +66,7 @@ button {
 }
 
 ::selection {
-  background: var(--color-msf-accent);
+  background: var(--color-brand-accent);
   color: #ffffff;
 }
 
@@ -88,8 +87,8 @@ button {
   min-width: 0;
   max-width: 100%;
   flex-direction: column;
-  border: 1px solid var(--color-msf-line);
-  background: var(--color-msf-paper);
+  border: 1px solid var(--color-brand-line);
+  background: var(--color-brand-paper);
 }
 
 .quoroom-editor [hidden] {
@@ -100,8 +99,8 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-  border-bottom: 1px solid var(--color-msf-line);
-  background: var(--color-msf-mist);
+  border-bottom: 1px solid var(--color-brand-line);
+  background: var(--color-brand-mist);
   padding: 0.25rem;
 }
 
@@ -115,12 +114,12 @@ button {
 .quoroom-block-style,
 .quoroom-link-input {
   min-height: 2.75rem;
-  border: 1px solid var(--color-msf-line);
-  background: var(--color-msf-paper);
+  border: 1px solid var(--color-brand-line);
+  background: var(--color-brand-paper);
   padding: 0 0.75rem;
   font: inherit;
   font-size: 1rem;
-  color: var(--color-msf-ink);
+  color: var(--color-brand-ink);
 }
 
 .quoroom-tool {
@@ -129,9 +128,9 @@ button {
 }
 
 .quoroom-tool[aria-pressed='true'] {
-  border-color: var(--color-msf-ink);
-  background: var(--color-msf-ink);
-  color: var(--color-msf-paper);
+  border-color: var(--color-brand-ink);
+  background: var(--color-brand-ink);
+  color: var(--color-brand-paper);
 }
 
 .quoroom-tool:disabled {
@@ -142,7 +141,7 @@ button {
 .quoroom-tool:focus-visible,
 .quoroom-block-style:focus-visible,
 .quoroom-link-input:focus-visible {
-  outline: 2px solid var(--color-msf-red);
+  outline: 2px solid var(--color-brand-primary);
   outline-offset: 2px;
 }
 
@@ -151,7 +150,7 @@ button {
   flex-wrap: wrap;
   align-items: end;
   gap: 0.5rem;
-  border-bottom: 1px solid var(--color-msf-line);
+  border-bottom: 1px solid var(--color-brand-line);
   padding: 0.5rem;
 }
 
@@ -169,7 +168,7 @@ button {
   margin: 0;
   padding: 0 0.5rem;
   font-size: 0.875rem;
-  color: var(--color-msf-alert);
+  color: var(--color-brand-alert);
 }
 
 .quoroom-link-message:empty,
@@ -182,7 +181,7 @@ button {
 }
 
 .quoroom-surface:focus-within {
-  outline: 2px solid var(--color-msf-red);
+  outline: 2px solid var(--color-brand-primary);
   outline-offset: -2px;
 }
 
@@ -226,7 +225,7 @@ button {
 }
 
 .quoroom-prose a {
-  color: var(--color-msf-red);
+  color: var(--color-brand-primary);
   text-decoration: underline;
 }
 
@@ -244,19 +243,19 @@ button {
 .quoroom-prose th,
 .quoroom-prose td {
   position: relative;
-  border: 1px solid var(--color-msf-line);
+  border: 1px solid var(--color-brand-line);
   padding: 0.25rem 0.5rem;
   vertical-align: top;
   text-align: left;
 }
 
 .quoroom-prose th {
-  background: var(--color-msf-mist);
+  background: var(--color-brand-mist);
   font-weight: 600;
 }
 
 .quoroom-prose .selectedCell {
-  background: color-mix(in srgb, var(--color-msf-red) 15%, transparent);
+  background: color-mix(in srgb, var(--color-brand-primary) 15%, transparent);
 }
 
 .quoroom-prose .column-resize-handle {
@@ -265,7 +264,7 @@ button {
   right: -2px;
   bottom: -2px;
   width: 4px;
-  background: var(--color-msf-red);
+  background: var(--color-brand-primary);
   pointer-events: none;
 }
 
@@ -275,7 +274,7 @@ button {
 
 .quoroom-figure {
   margin: 0;
-  border: 1px solid var(--color-msf-line);
+  border: 1px solid var(--color-brand-line);
 }
 
 .quoroom-figure-body {
@@ -286,10 +285,10 @@ button {
 .quoroom-figure-image {
   display: block;
   min-height: 3rem;
-  background: var(--color-msf-mist);
+  background: var(--color-brand-mist);
   text-align: center;
   font-size: 1rem;
-  color: var(--color-msf-grey);
+  color: var(--color-brand-grey);
 }
 
 .quoroom-image-picture {
@@ -307,7 +306,7 @@ button {
 
 .quoroom-image-message[role='alert'],
 .quoroom-image-alert {
-  color: var(--color-msf-alert);
+  color: var(--color-brand-alert);
 }
 
 .quoroom-image-panel {
@@ -333,7 +332,7 @@ button {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.5rem;
-  border-top: 1px solid var(--color-msf-line);
+  border-top: 1px solid var(--color-brand-line);
   padding: 0.5rem;
 }
 
@@ -345,7 +344,7 @@ button {
 }
 
 .quoroom-figure[data-safe='false'] .quoroom-figure-badge {
-  color: var(--color-msf-grey);
+  color: var(--color-brand-grey);
 }
 
 .quoroom-figure-alt {
@@ -359,7 +358,7 @@ button {
 
 .quoroom-figure-caption:empty::before {
   content: attr(data-placeholder);
-  color: var(--color-msf-grey);
+  color: var(--color-brand-grey);
 }
 
 .quoroom-figure figcaption {

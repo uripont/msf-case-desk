@@ -608,13 +608,13 @@ const reportRow = (report: ReportSummary, h: HtmlBuilder<Message>) =>
         [
           h.Href(pathOf(AppRoute.Report({ reportId: report.id }))),
           h.Class(
-            'text-lg font-medium text-msf-black underline decoration-msf-line underline-offset-4 hover:decoration-msf-red',
+            'text-lg font-medium text-brand-ink underline decoration-brand-line underline-offset-4 hover:decoration-brand-primary',
           ),
         ],
         [`${report.caseFile.reference}: ${report.caseFile.title}`],
       ),
       h.span(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           `${report.templateName} · ${reportStateText(report.state)} · Draft ${report.latestDraft}`,
         ],
@@ -642,7 +642,7 @@ const pagination = (model: Model, h: HtmlBuilder<Message>) => {
             ? h.empty
             : smallButton(h, 'Previous page', Message.ClickedPreviousPage()),
           h.span(
-            [h.Role('status'), h.Class('text-base text-msf-grey')],
+            [h.Role('status'), h.Class('text-base text-brand-grey')],
             [`Page ${current + 1} of ${pages}`],
           ),
           current === pages - 1
@@ -687,7 +687,7 @@ const reportsPanel = (model: Model, h: HtmlBuilder<Message>) =>
       Array.match(pageOf(model), {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             [
               Array.isReadonlyArrayEmpty(model.reports)
                 ? 'No reports yet. Start one below.'
@@ -699,7 +699,7 @@ const reportsPanel = (model: Model, h: HtmlBuilder<Message>) =>
             [
               h.AriaLabel('Your reports'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(rows, report => reportRow(report, h)),
@@ -740,7 +740,7 @@ const createPanel = (model: Model, h: HtmlBuilder<Message>) =>
       Array.match(model.templates, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['No template is published yet. A template editor publishes one.'],
           ),
         onNonEmpty: templates =>
@@ -858,7 +858,7 @@ const caseFileRow = (
             [h.Class('flex min-w-0 flex-col')],
             [
               h.span([h.Class('text-lg font-medium')], [caseFile.reference]),
-              h.span([h.Class('text-base text-msf-grey')], [caseFile.title]),
+              h.span([h.Class('text-base text-brand-grey')], [caseFile.title]),
             ],
           ),
           smallButton(
@@ -890,7 +890,7 @@ const caseFilesPanel = (model: Model, h: HtmlBuilder<Message>) =>
       Array.match(model.caseFiles, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['No case files yet. A case file is made with its first report.'],
           ),
         onNonEmpty: caseFiles =>
@@ -898,7 +898,7 @@ const caseFilesPanel = (model: Model, h: HtmlBuilder<Message>) =>
             [
               h.AriaLabel('Case files'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(caseFiles, caseFile => caseFileRow(caseFile, model, h)),
@@ -932,7 +932,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
       failure._tag === 'NotAllowed'
         ? [
             h.p(
-              [h.Role('alert'), h.Class('text-lg font-medium text-msf-alert')],
+              [h.Role('alert'), h.Class('text-lg font-medium text-brand-alert')],
               [
                 'You cannot write reports in this unit. Someone with People can give you that.',
               ],
@@ -942,7 +942,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
             h.p(
               [
                 h.Role('alert'),
-                h.Class('text-base font-medium text-msf-alert'),
+                h.Class('text-base font-medium text-brand-alert'),
               ],
               [failureText(failure)],
             ),
@@ -967,7 +967,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
       Array.isReadonlyArrayEmpty(model.units)
         ? pageShell(h, 'Reports', 'Reports', '', [
             h.p(
-              [h.Class('text-lg text-msf-ink')],
+              [h.Class('text-lg text-brand-ink')],
               [
                 'There is no unit yet. Someone with People creates units and gives Reports in a unit.',
               ],

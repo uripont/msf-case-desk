@@ -423,7 +423,7 @@ const main = async (): Promise<void> => {
       await themed.getByText('Synthetic Foundation').first().waitFor()
       const primary = await themed
         .locator('#quoroom-root')
-        .evaluate(element => element.style.getPropertyValue('--color-msf-red'))
+        .evaluate(element => element.style.getPropertyValue('--color-brand-primary'))
       assert.equal(primary, '#0b5e3c')
       await shot(themed, 'theme-applied')
       await themed.context().close()
@@ -2554,7 +2554,7 @@ const main = async (): Promise<void> => {
       assert.notEqual(stored.organisationName, 'Invented Organisation', 'an unreadable theme was stored')
       assert.notEqual(stored.colors.text, '#cccccc')
       assert.equal(
-        (await pia.evaluate(() => (document.querySelector('#quoroom-root') as HTMLElement | null)?.style.getPropertyValue('--color-msf-black'))) === '#cccccc',
+        (await pia.evaluate(() => (document.querySelector('#quoroom-root') as HTMLElement | null)?.style.getPropertyValue('--color-brand-ink'))) === '#cccccc',
         false,
         'the app applied an unreadable colour',
       )
@@ -2609,7 +2609,7 @@ const main = async (): Promise<void> => {
       assert.equal(await pia.evaluate(() => (window as unknown as { __kept?: boolean }).__kept), true, 'the page was reloaded')
       await pia.getByText('Invented Organisation', { exact: true }).first().waitFor()
       assert.equal(
-        await pia.evaluate(() => (document.querySelector('#quoroom-root') as HTMLElement | null)?.style.getPropertyValue('--color-msf-red')),
+        await pia.evaluate(() => (document.querySelector('#quoroom-root') as HTMLElement | null)?.style.getPropertyValue('--color-brand-primary')),
         '#0b5d3b',
       )
       await pia.getByRole('img', { name: 'Invented Organisation logo' }).waitFor()

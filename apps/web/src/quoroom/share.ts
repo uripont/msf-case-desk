@@ -1078,7 +1078,7 @@ type ViewState = Readonly<{
 const titleOfId = (state: ViewState, id: string): string =>
   state.titles[id] ?? 'An entry'
 
-const muted = 'text-base italic text-msf-grey'
+const muted = 'text-base italic text-brand-grey'
 
 const entryBox = <M>(
   h: HtmlBuilder<M>,
@@ -1097,7 +1097,7 @@ const entryBox = <M>(
     [h.Class('flex min-w-0 flex-col gap-3')],
     [
       h.p(
-        [h.Class('text-lg font-bold text-msf-black')],
+        [h.Class('text-lg font-bold text-brand-ink')],
         [entry.title ?? 'Untitled entry'],
       ),
       ...Array.map(Object.entries(entry.values), ([id, value]) =>
@@ -1105,7 +1105,7 @@ const entryBox = <M>(
           [h.Class('flex min-w-0 flex-col gap-1')],
           [
             h.p(
-              [h.Class('text-base font-medium text-msf-grey')],
+              [h.Class('text-base font-medium text-brand-grey')],
               [
                 Option.match(findItemAnywhere(state.template, id), {
                   onNone: () => id,
@@ -1161,7 +1161,7 @@ const sideView = <M>(
       const text = conflict[which]
       return text === undefined || text === ''
         ? h.p([h.Class(muted)], ['Nothing.'])
-        : h.p([h.Class('text-lg text-msf-ink')], [text])
+        : h.p([h.Class('text-lg text-brand-ink')], [text])
     }
     case 'entry_order':
     case 'entries_limit': {
@@ -1169,7 +1169,7 @@ const sideView = <M>(
       return ids === undefined
         ? h.p([h.Class(muted)], ['Nothing.'])
         : h.ol(
-            [h.Class('list-decimal pl-6 text-lg text-msf-ink')],
+            [h.Class('list-decimal pl-6 text-lg text-brand-ink')],
             Array.map(ids, id =>
               h.li(
                 [],
@@ -1181,7 +1181,7 @@ const sideView = <M>(
     case 'section_status': {
       const status = conflict[which]
       return h.p(
-        [h.Class('text-lg text-msf-ink')],
+        [h.Class('text-lg text-brand-ink')],
         [
           status === undefined
             ? 'Applicable.'
@@ -1192,7 +1192,7 @@ const sideView = <M>(
     case 'image_flag': {
       const flag = conflict[which]
       return h.p(
-        [h.Class('text-lg text-msf-ink')],
+        [h.Class('text-lg text-brand-ink')],
         [
           flag === undefined
             ? 'No flag.'
@@ -1207,13 +1207,13 @@ const sideView = <M>(
       return person === undefined
         ? h.p([h.Class(muted)], ['Not there (deleted).'])
         : h.div(
-            [h.Class('flex flex-col gap-1 text-lg text-msf-ink')],
+            [h.Class('flex flex-col gap-1 text-lg text-brand-ink')],
             [
               h.p([], [`${person.name}, shown as ${person.label}`]),
               person.aliases.length === 0
                 ? h.empty
                 : h.p(
-                    [h.Class('text-base text-msf-grey')],
+                    [h.Class('text-base text-brand-grey')],
                     [`Also written as: ${person.aliases.join(', ')}`],
                   ),
             ],
@@ -1230,12 +1230,12 @@ const sideColumn = <M>(
 ): Html =>
   h.div(
     [
-      h.Class('flex min-w-0 flex-col gap-2 border border-msf-line px-3 py-3'),
+      h.Class('flex min-w-0 flex-col gap-2 border border-brand-line px-3 py-3'),
       h.DataAttribute('side', which),
     ],
     [
       h.p(
-        [h.Class('text-sm font-bold uppercase tracking-wide text-msf-grey')],
+        [h.Class('text-sm font-bold uppercase tracking-wide text-brand-grey')],
         [label],
       ),
       body,
@@ -1258,8 +1258,8 @@ const choiceButton = (
         clsx(
           'inline-flex min-h-11 cursor-pointer items-center justify-center border px-3 text-base transition-colors',
           isChosen
-            ? 'border-msf-ink bg-msf-ink font-medium text-white'
-            : 'border-msf-line text-msf-ink hover:border-msf-red hover:text-msf-red',
+            ? 'border-brand-ink bg-brand-ink font-medium text-white'
+            : 'border-brand-line text-brand-ink hover:border-brand-primary hover:text-brand-primary',
           focusRing,
         ),
       ),
@@ -1387,12 +1387,12 @@ const controls = (
       ),
       Option.match(choice, {
         onNone: () =>
-          h.p([h.Class('text-base text-msf-grey')], ['Not chosen yet.']),
+          h.p([h.Class('text-base text-brand-grey')], ['Not chosen yet.']),
         onSome: found =>
           Choice.match(found, {
             Side: ({ side: chosen }) =>
               h.p(
-                [h.Class('text-base font-medium text-msf-ink')],
+                [h.Class('text-base font-medium text-brand-ink')],
                 [chosen === 'ours' ? 'Chosen: mine.' : 'Chosen: theirs.'],
               ),
             Edited: edited =>
@@ -1400,7 +1400,7 @@ const controls = (
                 [h.Class('flex flex-col gap-2')],
                 [
                   h.p(
-                    [h.Class('text-base font-medium text-msf-ink')],
+                    [h.Class('text-base font-medium text-brand-ink')],
                     ['Chosen: the combined version below.'],
                   ),
                   combinedEditor(h, model, conflict.key, edited, label),
@@ -1412,7 +1412,7 @@ const controls = (
                 [
                   h.label(
                     [
-                      h.Class('text-base font-medium text-msf-ink'),
+                      h.Class('text-base font-medium text-brand-ink'),
                       h.For(`label-${conflict.key}`),
                     ],
                     [`New label for ${label}`],
@@ -1424,7 +1424,7 @@ const controls = (
                     h.Autocomplete('off'),
                     h.Class(
                       clsx(
-                        'h-12 w-full border border-msf-line bg-white px-3 text-lg',
+                        'h-12 w-full border border-brand-line bg-white px-3 text-lg',
                         focusRing,
                       ),
                     ),
@@ -1445,8 +1445,8 @@ const controls = (
                             clsx(
                               'text-base font-medium',
                               ids.length > conflict.max
-                                ? 'text-msf-alert'
-                                : 'text-msf-ink',
+                                ? 'text-brand-alert'
+                                : 'text-brand-ink',
                             ),
                           ),
                         ],
@@ -1464,7 +1464,7 @@ const controls = (
                           [
                             h.input([
                               h.Type('checkbox'),
-                              h.Class('size-5 accent-msf-red'),
+                              h.Class('size-5 accent-brand-primary'),
                               h.Checked(Array.contains(ids, id)),
                               h.OnClick(
                                 Message.ToggledKeep({ key: conflict.key, id }),
@@ -1522,11 +1522,11 @@ const conflictCard = (
     [
       h.AriaLabel(`Conflict ${index + 1}: ${label}`),
       h.DataAttribute('conflict', conflict.key),
-      h.Class('flex flex-col gap-4 border-2 border-msf-ink px-3 py-4 sm:px-4'),
+      h.Class('flex flex-col gap-4 border-2 border-brand-ink px-3 py-4 sm:px-4'),
     ],
     [
-      h.h3([h.Class('text-xl font-black text-msf-black')], [label]),
-      h.p([h.Class('text-base text-msf-grey')], [kindNote(conflict)]),
+      h.h3([h.Class('text-xl font-black text-brand-ink')], [label]),
+      h.p([h.Class('text-base text-brand-grey')], [kindNote(conflict)]),
       h.div(
         [h.Class('grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3')],
         [
@@ -1569,7 +1569,7 @@ const omittedChanges = (
     ? [
         h.li(
           [
-            h.Class('py-3 text-lg text-msf-grey'),
+            h.Class('py-3 text-lg text-brand-grey'),
             h.DataAttribute('automatic', 'omitted'),
           ],
           [omittedText(comparison.automaticOmitted ?? 0)],
@@ -1590,7 +1590,7 @@ const automaticPanel = (
       Array.match(changes, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['Nothing else changed on either side.'],
           ),
         onNonEmpty: list =>
@@ -1598,7 +1598,7 @@ const automaticPanel = (
             [
               h.AriaLabel('Changes taken automatically'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             [
@@ -1606,7 +1606,7 @@ const automaticPanel = (
                 h.keyed('li')(
                   change.key,
                   [
-                    h.Class('py-3 text-lg text-msf-ink'),
+                    h.Class('py-3 text-lg text-brand-ink'),
                     h.DataAttribute('automatic', change.side),
                   ],
                   [
@@ -1637,7 +1637,7 @@ const comparisonView = (
     [h.Class('flex flex-col gap-8')],
     [
       h.p(
-        [h.Class('text-pretty text-lg text-msf-ink')],
+        [h.Class('text-pretty text-lg text-brand-ink')],
         [
           `Your working copy started from ${draftLabel(comparison.baseDraft)}. ${draftLabel(comparison.theirsDraft)} was shared since. ${
             comparison.conflicts.length === 0
@@ -1668,7 +1668,7 @@ const comparisonView = (
           h.Disabled(isBusy),
           h.Class(
             clsx(
-              'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-msf-red px-6 text-lg font-medium text-white transition-colors hover:bg-msf-black disabled:cursor-wait disabled:opacity-70',
+              'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-brand-primary px-6 text-lg font-medium text-white transition-colors hover:bg-brand-ink disabled:cursor-wait disabled:opacity-70',
               focusRing,
             ),
           ),
@@ -1706,7 +1706,7 @@ const progressView = (
             [
               alertText(h, failureText(failure)),
               h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 [
                   'The working copy or the shared drafts changed while you were sharing, so continuing would fail again. Nothing was shared. Load it again and share from there.',
                 ],
@@ -1724,7 +1724,7 @@ const progressView = (
             [
               alertText(h, failureText(failure)),
               h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 [
                   next >= copy.sectionIds.length
                     ? 'Every section was sent. Only the last step is left.'
@@ -1757,7 +1757,7 @@ const shell = (
         [
           h.Href(pathOf(AppRoute.Report({ reportId: model.reportId }))),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         ['Back to the report'],
@@ -1766,7 +1766,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         [title],
@@ -1787,7 +1787,7 @@ const publishSection = (
   h.section(
     [
       h.AriaLabel('Publish for review'),
-      h.Class('flex min-w-0 flex-col gap-4 border-t-2 border-msf-ink pt-5'),
+      h.Class('flex min-w-0 flex-col gap-4 border-t-2 border-brand-ink pt-5'),
     ],
     [
       h.h2(
@@ -1843,7 +1843,7 @@ const readyView = (
       h.section(
         [
           h.AriaLabel('Preview of what will be shared'),
-          h.Class('flex min-w-0 flex-col gap-4 border-t-2 border-msf-ink pt-5'),
+          h.Class('flex min-w-0 flex-col gap-4 border-t-2 border-brand-ink pt-5'),
         ],
         [
           h.h2(
@@ -1851,7 +1851,7 @@ const readyView = (
             ['Check the redacted version'],
           ),
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             [
               `${model.people.length === 0 ? 'The people list is empty, so no name is replaced. ' : ''}${viewNote(model.view)}`,
             ],
@@ -1873,7 +1873,7 @@ const readyView = (
       h.a(
         [
           h.Href(pathOf(AppRoute.Names({ reportId: model.reportId }))),
-          h.Class(clsx('self-start text-lg text-msf-ink underline', focusRing)),
+          h.Class(clsx('self-start text-lg text-brand-ink underline', focusRing)),
         ],
         ['People, names and pictures'],
       ),
@@ -1891,7 +1891,7 @@ const readyView = (
           h.Disabled(problems > 0),
           h.Class(
             clsx(
-              'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-msf-red px-6 text-lg font-medium text-white transition-colors hover:bg-msf-black disabled:cursor-not-allowed disabled:opacity-50',
+              'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-brand-primary px-6 text-lg font-medium text-white transition-colors hover:bg-brand-ink disabled:cursor-not-allowed disabled:opacity-50',
               focusRing,
             ),
           ),
@@ -1904,7 +1904,7 @@ const readyView = (
         ],
       ),
       h.p(
-        [h.Class('max-w-prose text-base text-msf-grey')],
+        [h.Class('max-w-prose text-base text-brand-grey')],
         [
           'Sharing confirms that you read the redacted version above. Reviewers of a redacted role only ever receive that text.',
         ],
@@ -1937,7 +1937,7 @@ const loadedView = (
             [
               h.Role('status'),
               h.DataAttribute('shared', String(draft)),
-              h.Class('text-2xl font-black text-msf-black'),
+              h.Class('text-2xl font-black text-brand-ink'),
             ],
             [`Shared as ${draftLabel(draft)}.`],
           ),
@@ -1951,7 +1951,7 @@ const loadedView = (
                     [
                       h.Role('status'),
                       h.DataAttribute('published', String(revision)),
-                      h.Class('text-2xl font-black text-msf-black'),
+                      h.Class('text-2xl font-black text-brand-ink'),
                     ],
                     [`Published as Revision ${revision}.`],
                   ),
@@ -1962,7 +1962,7 @@ const loadedView = (
                       ),
                       h.Class(
                         clsx(
-                          'self-start text-lg text-msf-ink underline',
+                          'self-start text-lg text-brand-ink underline',
                           focusRing,
                         ),
                       ),
@@ -1973,7 +1973,7 @@ const loadedView = (
               ),
           }),
           h.p(
-            [h.Class('text-lg text-msf-ink')],
+            [h.Class('text-lg text-brand-ink')],
             [
               'The other authors see it in the history. A shared draft never changes.',
             ],
@@ -1986,14 +1986,14 @@ const loadedView = (
                   h.Href(
                     pathOf(AppRoute.Draft({ reportId: model.reportId, draft })),
                   ),
-                  h.Class(clsx('text-lg text-msf-ink underline', focusRing)),
+                  h.Class(clsx('text-lg text-brand-ink underline', focusRing)),
                 ],
                 [`Read ${draftLabel(draft)}`],
               ),
               h.a(
                 [
                   h.Href(pathOf(AppRoute.Drafts({ reportId: model.reportId }))),
-                  h.Class(clsx('text-lg text-msf-ink underline', focusRing)),
+                  h.Class(clsx('text-lg text-brand-ink underline', focusRing)),
                 ],
                 ['Draft history'],
               ),
@@ -2023,7 +2023,7 @@ const loadedView = (
     Ready: () =>
       shell(h, model, [
         h.p(
-          [h.Class('text-pretty text-lg text-msf-ink')],
+          [h.Class('text-pretty text-lg text-brand-ink')],
           [
             `Your working copy started from ${draftLabel(copy.baseDraft)}. Sharing it makes ${next}, which the other authors can read. A shared draft never changes afterwards.`,
           ],
@@ -2031,7 +2031,7 @@ const loadedView = (
         canShare(model)
           ? readyView(h, model, template, next)
           : h.p(
-              [h.Role('status'), h.Class('text-lg text-msf-grey')],
+              [h.Role('status'), h.Class('text-lg text-brand-grey')],
               ['There is nothing new to share.'],
             ),
       ]),

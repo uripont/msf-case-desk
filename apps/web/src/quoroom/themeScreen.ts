@@ -688,7 +688,7 @@ const problemLines = (
       [
         h.Role('alert'),
         h.DataAttribute('theme-problem', key),
-        h.Class('text-base font-medium text-msf-alert'),
+        h.Class('text-base font-medium text-brand-alert'),
       ],
       [problemText(problem)],
     ),
@@ -724,7 +724,7 @@ const colourField = (
     [h.Class('flex flex-col gap-2'), h.DataAttribute('theme-colour', name)],
     [
       h.label([h.Class(labelClassName), h.For(id)], [colourLabels[name]]),
-      h.p([h.Class('-mt-1 text-sm text-msf-grey')], [colourHints[name]]),
+      h.p([h.Class('-mt-1 text-sm text-brand-grey')], [colourHints[name]]),
       h.div(
         [h.Class('flex items-center gap-3')],
         [
@@ -742,7 +742,7 @@ const colourField = (
             h.Value(isHex(value) ? value.trim().toLowerCase() : '#000000'),
             h.AriaLabel(`Pick the ${colourLabels[name].toLowerCase()}`),
             h.Class(
-              'h-12 w-14 cursor-pointer border border-msf-line bg-white p-1',
+              'h-12 w-14 cursor-pointer border border-brand-line bg-white p-1',
             ),
             h.OnInput(next => Message.UpdatedColour({ name, value: next })),
           ]),
@@ -754,7 +754,7 @@ const colourField = (
           h.p(
             [
               h.DataAttribute('theme-ratio', name),
-              h.Class('text-sm text-msf-grey'),
+              h.Class('text-sm text-brand-grey'),
             ],
             [
               `Contrast with the background: ${text} (at least ${READABLE_RATIO}:1 is needed).`,
@@ -787,13 +787,13 @@ const logoPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
         onNone: () =>
           Option.isSome(model.fields.maybeLogoId)
             ? loadingText(h, 'Loading the logo.')
-            : h.p([h.Class('text-base text-msf-grey')], ['No logo is set.']),
+            : h.p([h.Class('text-base text-brand-grey')], ['No logo is set.']),
         onSome: preview =>
           h.img([
             h.Src(preview.src),
             h.Alt('The logo as uploaded'),
             h.DataAttribute('theme-logo', preview.imageId),
-            h.Class('block h-16 w-auto self-start border border-msf-line p-2'),
+            h.Class('block h-16 w-auto self-start border border-brand-line p-2'),
           ]),
       }),
       h.div(
@@ -807,7 +807,7 @@ const logoPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
             h.Id('theme-logo-file'),
             h.Type('file'),
             h.Accept('image/*'),
-            h.Class('text-base text-msf-ink'),
+            h.Class('text-base text-brand-ink'),
             h.OnFileChange(files => Message.SelectedLogoFile({ files })),
           ]),
         ],
@@ -830,11 +830,10 @@ const previewStyle = (fields: ThemeFields): Record<string, string> => {
   const pick = (value: string, fallback: string): string =>
     isHex(value) ? value.trim().toLowerCase() : fallback
   return {
-    '--color-msf-red': pick(fields.primary, DEFAULT_THEME.colors.primary),
-    '--color-msf-accent': pick(fields.accent, DEFAULT_THEME.colors.accent),
-    '--color-msf-black': pick(fields.text, DEFAULT_THEME.colors.text),
-    '--color-msf-ink': pick(fields.text, DEFAULT_THEME.colors.text),
-    '--color-msf-paper': pick(
+    '--color-brand-primary': pick(fields.primary, DEFAULT_THEME.colors.primary),
+    '--color-brand-accent': pick(fields.accent, DEFAULT_THEME.colors.accent),
+    '--color-brand-ink': pick(fields.text, DEFAULT_THEME.colors.text),
+    '--color-brand-paper': pick(
       fields.background,
       DEFAULT_THEME.colors.background,
     ),
@@ -851,11 +850,11 @@ const appPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
       h.AriaLabel('Preview of an app page'),
       h.Style({
         ...previewStyle(model.fields),
-        backgroundColor: 'var(--color-msf-paper)',
-        color: 'var(--color-msf-ink)',
+        backgroundColor: 'var(--color-brand-paper)',
+        color: 'var(--color-brand-ink)',
         fontFamily: 'var(--font-sans)',
       }),
-      h.Class('flex flex-col gap-4 border border-msf-line p-5'),
+      h.Class('flex flex-col gap-4 border border-brand-line p-5'),
     ],
     [
       h.div(
@@ -891,7 +890,7 @@ const appPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
       ),
       h.h3(
         [
-          h.Style({ color: 'var(--color-msf-red)' }),
+          h.Style({ color: 'var(--color-brand-primary)' }),
           h.Class('text-2xl font-black'),
         ],
         ['A heading in the heading font'],
@@ -902,7 +901,7 @@ const appPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
           'Body text is set in the body font and the text colour, on the background colour. ',
           h.span(
             [
-              h.Style({ color: 'var(--color-msf-accent)' }),
+              h.Style({ color: 'var(--color-brand-accent)' }),
               h.Class('font-medium'),
             ],
             ['A highlight in the accent colour.'],
@@ -912,8 +911,8 @@ const appPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
       h.span(
         [
           h.Style({
-            backgroundColor: 'var(--color-msf-red)',
-            color: 'var(--color-msf-paper)',
+            backgroundColor: 'var(--color-brand-primary)',
+            color: 'var(--color-brand-paper)',
           }),
           h.Class(
             'inline-flex h-10 items-center self-start px-4 text-base font-medium',
@@ -931,7 +930,7 @@ const pdfPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
       h.Src(src),
       h.Title('Sample PDF'),
       h.DataAttribute('sample-pdf', 'true'),
-      h.Class('h-[34rem] w-full border border-msf-line bg-white'),
+      h.Class('h-[34rem] w-full border border-brand-line bg-white'),
     ])
   const shown = (maybeSrc: Option.Option<string>): ReadonlyArray<Html> =>
     Option.match(maybeSrc, { onNone: () => [], onSome: src => [frame(src)] })
@@ -944,7 +943,7 @@ const pdfPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
     PdfPreview.match<ReadonlyArray<Html>>(model.pdf, {
       Hidden: () => [
         h.p(
-          [h.Class('text-base text-msf-grey')],
+          [h.Class('text-base text-brand-grey')],
           [
             'A sample document, with a cover page and a page of text, is made with the theme as typed. The PDF tools are loaded only when you ask for it.',
           ],
@@ -971,7 +970,7 @@ const pdfPreview = (h: HtmlBuilder<Message>, model: Model): Html => {
             h.Href(src),
             h.Download('quoroom-sample.pdf'),
             h.Class(
-              clsx('self-start text-base text-msf-ink underline', focusRing),
+              clsx('self-start text-base text-brand-ink underline', focusRing),
             ),
           ],
           ['Download the sample PDF'],
@@ -1030,7 +1029,7 @@ const loaded = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => {
               ? h.p(
                   [
                     h.Role('alert'),
-                    h.Class('text-base font-medium text-msf-alert'),
+                    h.Class('text-base font-medium text-brand-alert'),
                   ],
                   [
                     'Some text would be hard to read. A theme like this cannot be saved.',

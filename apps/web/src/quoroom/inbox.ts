@@ -217,13 +217,13 @@ const itemRow = (
     ],
     [
       h.p(
-        [h.Class('text-xl font-bold text-msf-black')],
+        [h.Class('text-xl font-bold text-brand-ink')],
         [`${item.label} of ${item.caseReference}`],
       ),
-      h.p([h.Class('text-base text-msf-grey')], [item.reportName]),
-      h.p([h.Class('text-lg text-msf-ink')], [statusLine(item)]),
+      h.p([h.Class('text-base text-brand-grey')], [item.reportName]),
+      h.p([h.Class('text-lg text-brand-ink')], [statusLine(item)]),
       h.p(
-        [h.Class('text-base text-msf-ink')],
+        [h.Class('text-base text-brand-ink')],
         [
           `Due ${deadlineText(item.deadline.at, model.zone)}${zoneNote(item.deadline.timeZone, model.zone)}`,
           item.status === 'open'
@@ -233,7 +233,7 @@ const itemRow = (
       ),
       item.hasPending
         ? h.p(
-            [h.Class('text-base font-medium text-msf-ink')],
+            [h.Class('text-base font-medium text-brand-ink')],
             ['You have comments that are not sent yet.'],
           )
         : h.empty,
@@ -249,7 +249,7 @@ const itemRow = (
           ),
           h.Class(
             clsx(
-              'mt-2 inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+              'mt-2 inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
               focusRing,
             ),
           ),
@@ -274,7 +274,7 @@ const listPanel = (
           [
             h.AriaLabel(heading),
             h.Class(
-              'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+              'flex flex-col divide-y divide-brand-line border-y border-brand-line',
             ),
           ],
           Array.map(rows, item => itemRow(h, model, item)),
@@ -289,7 +289,7 @@ const shell = (
   h.section(
     [
       h.AriaLabel('Inbox'),
-      h.Class('flex flex-col gap-6 border-t-2 border-msf-ink pt-5'),
+      h.Class('flex flex-col gap-6 border-t-2 border-brand-ink pt-5'),
     ],
     [
       h.h2([h.Class('text-2xl font-black tracking-tight')], ['Inbox']),
@@ -309,7 +309,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
       shell(h, [
         Array.isReadonlyArrayEmpty(model.items)
           ? h.p(
-              [h.Class('text-lg text-msf-grey')],
+              [h.Class('text-lg text-brand-grey')],
               ['Nothing is waiting for you. Rounds you are asked to review appear here.'],
             )
           : h.empty,

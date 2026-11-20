@@ -895,7 +895,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
 
 const link = (h: HtmlBuilder<Message>, href: string, label: string): Html =>
   h.a(
-    [h.Href(href), h.Class(clsx('text-lg text-msf-ink underline', focusRing))],
+    [h.Href(href), h.Class(clsx('text-lg text-brand-ink underline', focusRing))],
     [label],
   )
 
@@ -914,7 +914,7 @@ const shell = (
         [
           h.Href(pathOf(AppRoute.Inbox())),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         ['Back to the inbox'],
@@ -923,7 +923,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         [title],
@@ -946,7 +946,7 @@ const visibilityChoice = (
   h.fieldset(
     [h.Class('flex flex-col gap-2')],
     [
-      h.legend([h.Class('text-base font-medium text-msf-ink')], ['Visible to']),
+      h.legend([h.Class('text-base font-medium text-brand-ink')], ['Visible to']),
       ...Array.map(
         [
           {
@@ -971,15 +971,15 @@ const visibilityChoice = (
                 h.Id(`${idPrefix}-${choice.value}`),
                 h.Type('radio'),
                 h.Name(`${idPrefix}-visibility`),
-                h.Class('mt-1 size-5 shrink-0 accent-msf-red'),
+                h.Class('mt-1 size-5 shrink-0 accent-brand-primary'),
                 h.Checked(current === choice.value),
                 h.OnClick(choose(choice.value)),
               ]),
               h.span(
                 [h.Class('flex flex-col')],
                 [
-                  h.span([h.Class('font-medium text-msf-ink')], [choice.label]),
-                  h.span([h.Class('text-sm text-msf-grey')], [choice.hint]),
+                  h.span([h.Class('font-medium text-brand-ink')], [choice.label]),
+                  h.span([h.Class('text-sm text-brand-grey')], [choice.hint]),
                 ],
               ),
             ],
@@ -1009,15 +1009,15 @@ const composerView = (
     onSome: heading =>
       h.form(
         [
-          h.Class('flex flex-col gap-3 border-2 border-msf-ink px-3 py-3'),
+          h.Class('flex flex-col gap-3 border-2 border-brand-ink px-3 py-3'),
           h.AriaLabel('New comment'),
           h.OnSubmit(Message.SubmittedComment()),
         ],
         [
-          h.p([h.Class('text-base font-medium text-msf-ink')], [heading]),
+          h.p([h.Class('text-base font-medium text-brand-ink')], [heading]),
           h.label(
             [
-              h.Class('text-base font-medium text-msf-ink'),
+              h.Class('text-base font-medium text-brand-ink'),
               h.For('new-comment'),
             ],
             ['Your comment'],
@@ -1027,7 +1027,7 @@ const composerView = (
             h.Value(model.commentText),
             h.Class(
               clsx(
-                'min-h-24 w-full border border-msf-line bg-white px-3 py-2 text-lg',
+                'min-h-24 w-full border border-brand-line bg-white px-3 py-2 text-lg',
                 focusRing,
               ),
             ),
@@ -1037,7 +1037,7 @@ const composerView = (
             Message.ChoseVisibility({ visibility }),
           ),
           h.p(
-            [h.Class('text-sm text-msf-grey')],
+            [h.Class('text-sm text-brand-grey')],
             ['It stays in your pending review until you send the review.'],
           ),
           h.div(
@@ -1051,7 +1051,7 @@ const composerView = (
                   ),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 cursor-pointer items-center justify-center bg-msf-ink px-4 text-base font-medium text-white disabled:opacity-60',
+                      'inline-flex min-h-11 cursor-pointer items-center justify-center bg-brand-ink px-4 text-base font-medium text-white disabled:opacity-60',
                       focusRing,
                     ),
                   ),
@@ -1101,14 +1101,14 @@ const editView = (
 ): Html =>
   h.form(
     [
-      h.Class('flex flex-col gap-3 border-2 border-msf-ink px-3 py-3'),
+      h.Class('flex flex-col gap-3 border-2 border-brand-ink px-3 py-3'),
       h.AriaLabel('Edit comment'),
       h.OnSubmit(Message.SubmittedEdit()),
     ],
     [
       h.label(
         [
-          h.Class('text-base font-medium text-msf-ink'),
+          h.Class('text-base font-medium text-brand-ink'),
           h.For(`edit-${editing.commentId}`),
         ],
         ['Edit your comment'],
@@ -1118,7 +1118,7 @@ const editView = (
         h.Value(editing.text),
         h.Class(
           clsx(
-            'min-h-24 w-full border border-msf-line bg-white px-3 py-2 text-lg',
+            'min-h-24 w-full border border-brand-line bg-white px-3 py-2 text-lg',
             focusRing,
           ),
         ),
@@ -1139,7 +1139,7 @@ const editView = (
               h.Disabled(model.isSending || editing.text.trim() === ''),
               h.Class(
                 clsx(
-                  'inline-flex min-h-11 cursor-pointer items-center justify-center bg-msf-ink px-4 text-base font-medium text-white disabled:opacity-60',
+                  'inline-flex min-h-11 cursor-pointer items-center justify-center bg-brand-ink px-4 text-base font-medium text-white disabled:opacity-60',
                   focusRing,
                 ),
               ),
@@ -1175,7 +1175,7 @@ const commentCard = (
     comment.id,
     [
       h.Class(
-        clsx('flex flex-col gap-3 py-4', comment.resolved && 'text-msf-grey'),
+        clsx('flex flex-col gap-3 py-4', comment.resolved && 'text-brand-grey'),
       ),
       h.DataAttribute('comment', comment.id),
       h.DataAttribute('visibility', comment.visibility),
@@ -1184,14 +1184,14 @@ const commentCard = (
     ],
     [
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           `${comment.mine ? 'You' : comment.authorName}, ${momentText(comment.createdAt)}, on ${locationText(template, comment)}`,
           comment.resolved ? ' · Resolved by the authors' : '',
         ],
       ),
       h.p(
-        [h.Class('text-sm font-medium text-msf-ink')],
+        [h.Class('text-sm font-medium text-brand-ink')],
         [
           `${VISIBILITY_LABEL[comment.visibility]}${comment.mine ? (comment.sent ? ' · Sent' : ' · Not sent yet') : ''}`,
         ],
@@ -1200,7 +1200,7 @@ const commentCard = (
         ? h.blockquote(
             [
               h.Class(
-                'border-l-4 border-sky-700 pl-3 text-lg italic text-msf-ink',
+                'border-l-4 border-sky-700 pl-3 text-lg italic text-brand-ink',
               ),
             ],
             [comment.anchor.quoted],
@@ -1210,7 +1210,7 @@ const commentCard = (
           ? h.blockquote(
               [
                 h.Class(
-                  'border-l-4 border-msf-line pl-3 text-lg italic text-msf-ink',
+                  'border-l-4 border-brand-line pl-3 text-lg italic text-brand-ink',
                 ),
               ],
               [comment.anchor.quoted],
@@ -1220,7 +1220,7 @@ const commentCard = (
         onSome: editing => editView(h, model, editing),
         onNone: () =>
           h.p(
-            [h.Class('whitespace-pre-wrap text-lg text-msf-ink')],
+            [h.Class('whitespace-pre-wrap text-lg text-brand-ink')],
             [comment.body],
           ),
       }),
@@ -1228,16 +1228,16 @@ const commentCard = (
         h.keyed('div')(
           reply.id,
           [
-            h.Class('ml-4 flex flex-col gap-1 border-l-2 border-msf-line pl-3'),
+            h.Class('ml-4 flex flex-col gap-1 border-l-2 border-brand-line pl-3'),
             h.DataAttribute('reply', reply.id),
           ],
           [
             h.p(
-              [h.Class('text-sm text-msf-grey')],
+              [h.Class('text-sm text-brand-grey')],
               [`Reply from ${reply.authorName}, ${momentText(reply.createdAt)}`],
             ),
             h.p(
-              [h.Class('whitespace-pre-wrap text-lg text-msf-ink')],
+              [h.Class('whitespace-pre-wrap text-lg text-brand-ink')],
               [reply.body],
             ),
           ],
@@ -1280,7 +1280,7 @@ const commentsPanel = (
       h.Class('flex min-w-0 flex-col gap-4'),
     ],
     [
-      h.h2([h.Class('text-2xl font-black text-msf-black')], ['Comments']),
+      h.h2([h.Class('text-2xl font-black text-brand-ink')], ['Comments']),
       mayComment(model)
         ? h.div(
             [h.Class('flex flex-col gap-3')],
@@ -1298,7 +1298,7 @@ const commentsPanel = (
               ),
               Composer.guards.Closed(model.composer)
                 ? h.p(
-                    [h.Class('text-base text-msf-grey')],
+                    [h.Class('text-base text-brand-grey')],
                     [
                       `Select some text to comment on it, or comment on ${sectionTitle} as a whole.`,
                     ],
@@ -1314,13 +1314,13 @@ const commentsPanel = (
       }),
       Array.match(comments, {
         onEmpty: () =>
-          h.p([h.Class('text-lg text-msf-grey')], ['No comments here yet.']),
+          h.p([h.Class('text-lg text-brand-grey')], ['No comments here yet.']),
         onNonEmpty: list =>
           h.ul(
             [
               h.AriaLabel(`Comments on ${sectionTitle}`),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(list, comment =>
@@ -1341,13 +1341,13 @@ const selectionBar = (h: HtmlBuilder<Message>, model: Model): Html =>
             [
               h.DataAttribute('selection-bar', 'true'),
               h.Class(
-                'fixed inset-x-0 bottom-0 z-20 flex flex-wrap items-center gap-3 border-t-2 border-msf-ink bg-white px-5 py-3 sm:px-10',
+                'fixed inset-x-0 bottom-0 z-20 flex flex-wrap items-center gap-3 border-t-2 border-brand-ink bg-white px-5 py-3 sm:px-10',
               ),
             ],
             [
               h.p(
                 [
-                  h.Class('min-w-0 flex-1 truncate text-base text-msf-ink'),
+                  h.Class('min-w-0 flex-1 truncate text-base text-brand-ink'),
                   h.DataAttribute('selected', 'true'),
                 ],
                 [`Selected: "${snippet(selection.quoted)}"`],
@@ -1357,7 +1357,7 @@ const selectionBar = (h: HtmlBuilder<Message>, model: Model): Html =>
                   h.Type('button'),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 cursor-pointer items-center justify-center bg-msf-ink px-4 text-base font-medium text-white',
+                      'inline-flex min-h-11 cursor-pointer items-center justify-center bg-brand-ink px-4 text-base font-medium text-white',
                       focusRing,
                     ),
                   ),
@@ -1420,16 +1420,16 @@ const sendDialog = (
           h.Role('alertdialog'),
           h.DataAttribute('dialog', 'send-review'),
           h.Class(
-            'flex max-w-3xl flex-col gap-4 border-2 border-msf-ink bg-white px-4 py-4',
+            'flex max-w-3xl flex-col gap-4 border-2 border-brand-ink bg-white px-4 py-4',
           ),
         ],
         [
           h.h2(
-            [h.Class('text-2xl font-black text-msf-black')],
+            [h.Class('text-2xl font-black text-brand-ink')],
             ['Send your review'],
           ),
           h.p(
-            [h.Class('text-lg text-msf-ink'), h.Role('status')],
+            [h.Class('text-lg text-brand-ink'), h.Role('status')],
             ['Checking your comments…'],
           ),
           actionButton(
@@ -1467,18 +1467,18 @@ const sendDialogBody = (
       h.Role('alertdialog'),
       h.DataAttribute('dialog', 'send-review'),
       h.Class(
-        'flex max-w-3xl flex-col gap-4 border-2 border-msf-ink bg-white px-4 py-4',
+        'flex max-w-3xl flex-col gap-4 border-2 border-brand-ink bg-white px-4 py-4',
       ),
     ],
     [
       h.h2(
-        [h.Class('text-2xl font-black text-msf-black')],
+        [h.Class('text-2xl font-black text-brand-ink')],
         ['Send your review'],
       ),
       Array.match(pending, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-ink')],
+            [h.Class('text-lg text-brand-ink')],
             ['You have no comments waiting. Only your decision is sent.'],
           ),
         onNonEmpty: list =>
@@ -1486,7 +1486,7 @@ const sendDialogBody = (
             [h.Class('flex flex-col gap-2')],
             [
               h.p(
-                [h.Class('text-lg font-medium text-msf-ink')],
+                [h.Class('text-lg font-medium text-brand-ink')],
                 [
                   `${list.length} ${list.length === 1 ? 'comment is' : 'comments are'} sent: ${toAuthors} to the authors only, ${toCommittee} to the whole committee.`,
                 ],
@@ -1507,7 +1507,7 @@ const sendDialogBody = (
         [h.Class('flex flex-col gap-2')],
         [
           h.legend(
-            [h.Class('text-base font-medium text-msf-ink')],
+            [h.Class('text-base font-medium text-brand-ink')],
             ['Your decision'],
           ),
           ...Array.map(
@@ -1526,7 +1526,7 @@ const sendDialogBody = (
                     h.Id(`decision-${choice.value}`),
                     h.Type('radio'),
                     h.Name('decision'),
-                    h.Class('mt-1 size-5 shrink-0 accent-msf-red'),
+                    h.Class('mt-1 size-5 shrink-0 accent-brand-primary'),
                     h.Checked(
                       Option.exists(
                         maybeDecision,
@@ -1540,11 +1540,11 @@ const sendDialogBody = (
                     [h.Class('flex flex-col')],
                     [
                       h.span(
-                        [h.Class('font-medium text-msf-ink')],
+                        [h.Class('font-medium text-brand-ink')],
                         [choice.label],
                       ),
                       h.span(
-                        [h.Class('text-sm text-msf-grey')],
+                        [h.Class('text-sm text-brand-grey')],
                         [choice.hint],
                       ),
                     ],
@@ -1555,7 +1555,7 @@ const sendDialogBody = (
         ],
       ),
       h.p(
-        [h.Class('text-base text-msf-ink')],
+        [h.Class('text-base text-brand-ink')],
         [
           'Once the review is sent you can no longer change these comments or who sees them.',
         ],
@@ -1569,7 +1569,7 @@ const sendDialogBody = (
               h.Disabled(Option.isNone(maybeDecision) || isSending),
               h.Class(
                 clsx(
-                  'inline-flex min-h-11 cursor-pointer items-center justify-center bg-msf-red px-4 text-base font-medium text-white disabled:opacity-60',
+                  'inline-flex min-h-11 cursor-pointer items-center justify-center bg-brand-primary px-4 text-base font-medium text-white disabled:opacity-60',
                   focusRing,
                 ),
               ),
@@ -1608,7 +1608,7 @@ const pendingPanel = (
             [
               h.Role('status'),
               h.DataAttribute('review-sent', result.decision),
-              h.Class('text-lg font-medium text-msf-ink'),
+              h.Class('text-lg font-medium text-brand-ink'),
             ],
             [
               `Your review was sent: ${decisionText(result.decision)}, with ${result.commentsSent} ${result.commentsSent === 1 ? 'comment' : 'comments'}.`,
@@ -1618,13 +1618,13 @@ const pendingPanel = (
       outline.myDecision === undefined || Option.isSome(model.maybeSent)
         ? h.empty
         : h.p(
-            [h.Class('text-lg text-msf-ink')],
+            [h.Class('text-lg text-brand-ink')],
             [`Your last review: ${decisionText(outline.myDecision)}.`],
           ),
       Array.match(pending, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['No comments are waiting to be sent.'],
           ),
         onNonEmpty: list =>
@@ -1634,7 +1634,7 @@ const pendingPanel = (
               h.p(
                 [
                   h.DataAttribute('pending-count', String(list.length)),
-                  h.Class('text-lg font-medium text-msf-ink'),
+                  h.Class('text-lg font-medium text-brand-ink'),
                 ],
                 [
                   `${list.length} ${list.length === 1 ? 'comment is' : 'comments are'} waiting to be sent. They are kept for you until you send the review.`,
@@ -1658,7 +1658,7 @@ const pendingPanel = (
               h.Type('button'),
               h.Class(
                 clsx(
-                  'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-msf-red px-6 text-lg font-medium text-white',
+                  'inline-flex min-h-12 cursor-pointer items-center justify-center self-start bg-brand-primary px-6 text-lg font-medium text-white',
                   focusRing,
                 ),
               ),
@@ -1688,12 +1688,12 @@ const banner = (
           h.Role('status'),
           h.DataAttribute('banner', 'superseded'),
           h.Class(
-            'flex flex-col gap-2 border-2 border-msf-ink bg-msf-mist px-4 py-3',
+            'flex flex-col gap-2 border-2 border-brand-ink bg-brand-mist px-4 py-3',
           ),
         ],
         [
           h.p(
-            [h.Class('text-lg font-medium text-msf-ink')],
+            [h.Class('text-lg font-medium text-brand-ink')],
             [
               `This revision was replaced by Revision ${model.revision + 1}. It is read-only and takes no more reviews.`,
             ],
@@ -1716,12 +1716,12 @@ const banner = (
             h.Role('status'),
             h.DataAttribute('banner', 'decided'),
             h.Class(
-              'flex flex-col gap-2 border-2 border-msf-ink bg-msf-mist px-4 py-3',
+              'flex flex-col gap-2 border-2 border-brand-ink bg-brand-mist px-4 py-3',
             ),
           ],
           [
             h.p(
-              [h.Class('text-lg font-medium text-msf-ink')],
+              [h.Class('text-lg font-medium text-brand-ink')],
               [
                 outline.round.decidedBy === 'deadline'
                   ? 'This round was decided at its deadline. It is read-only and takes no more reviews.'
@@ -1730,7 +1730,7 @@ const banner = (
             ),
           ],
         )
-      : h.p([h.Class('text-base text-msf-ink')], [deadline])
+      : h.p([h.Class('text-base text-brand-ink')], [deadline])
 }
 
 const sectionNav = (
@@ -1755,8 +1755,8 @@ const sectionNav = (
             clsx(
               'min-h-11 cursor-pointer border px-3 text-base',
               section.id === model.sectionId
-                ? 'border-msf-ink bg-msf-ink text-white'
-                : 'border-msf-line text-msf-ink hover:border-msf-red',
+                ? 'border-brand-ink bg-brand-ink text-white'
+                : 'border-brand-line text-brand-ink hover:border-brand-primary',
               focusRing,
             ),
           ),
@@ -1777,7 +1777,7 @@ const readingView = (
   const current = findSection(topLevelSections(template), model.sectionId)
   return shell(h, outline.label, [
     h.p(
-      [h.Class('text-base text-msf-grey')],
+      [h.Class('text-base text-brand-grey')],
       [`${outline.caseReference} · ${outline.caseTitle}`],
     ),
     banner(h, model, outline),
@@ -1809,7 +1809,7 @@ const readingView = (
                   ],
                   [
                     h.h2(
-                      [h.Class('text-2xl font-black text-msf-black')],
+                      [h.Class('text-2xl font-black text-brand-ink')],
                       [section.title],
                     ),
                     readOnlySection(

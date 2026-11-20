@@ -850,7 +850,7 @@ const shell = (
         [
           h.Href(pathOf(AppRoute.Report({ reportId: model.reportId }))),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         ['Back to the report'],
@@ -859,7 +859,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         ['People, names and pictures'],
@@ -878,7 +878,7 @@ const problemList = (
       h.ul(
         [h.Role('alert'), h.Class('flex flex-col gap-1')],
         Array.map(list, text =>
-          h.li([h.Class('text-base font-medium text-msf-alert')], [text]),
+          h.li([h.Class('text-base font-medium text-brand-alert')], [text]),
         ),
       ),
   })
@@ -892,7 +892,7 @@ const personForm = (
     [
       h.AriaLabel(editing.isNew ? 'Add a person' : 'Edit a person'),
       h.Class(
-        'flex flex-col gap-4 border-l-2 border-msf-ink bg-msf-mist px-4 py-4',
+        'flex flex-col gap-4 border-l-2 border-brand-ink bg-brand-mist px-4 py-4',
       ),
       h.OnSubmit(Message.SubmittedPerson()),
     ],
@@ -923,7 +923,7 @@ const personForm = (
             ['Other names and spellings'],
           ),
           h.p(
-            [h.Class('-mt-1 text-sm text-msf-grey')],
+            [h.Class('-mt-1 text-sm text-brand-grey')],
             [
               'One per line: nicknames, first name alone, spellings and typos. Each one is replaced like the name.',
             ],
@@ -944,7 +944,7 @@ const personForm = (
             ['Label reviewers read instead'],
           ),
           h.p(
-            [h.Class('-mt-1 text-sm text-msf-grey')],
+            [h.Class('-mt-1 text-sm text-brand-grey')],
             ['Each person has their own label, such as "Person 1".'],
           ),
           h.input([
@@ -984,13 +984,13 @@ const personRow = (
     person.id,
     [h.Class('flex flex-col gap-2 py-4'), h.DataAttribute('person', person.id)],
     [
-      h.p([h.Class('text-lg font-bold text-msf-black')], [person.name]),
+      h.p([h.Class('text-lg font-bold text-brand-ink')], [person.name]),
       h.p(
-        [h.Class('text-base text-msf-ink')],
+        [h.Class('text-base text-brand-ink')],
         [`Reviewers read: ${person.label}`],
       ),
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           Array.match(person.aliases, {
             onEmpty: () => 'No other names or spellings.',
@@ -1007,12 +1007,12 @@ const personRow = (
                       h.Role('alertdialog'),
                       h.AriaLabel(`Remove ${person.name}`),
                       h.Class(
-                        'flex flex-col gap-3 border-l-2 border-msf-alert bg-msf-mist px-4 py-3',
+                        'flex flex-col gap-3 border-l-2 border-brand-alert bg-brand-mist px-4 py-3',
                       ),
                     ],
                     [
                       h.p(
-                        [h.Class('text-base text-msf-ink')],
+                        [h.Class('text-base text-brand-ink')],
                         [
                           `Remove ${person.name}? Their name and spellings will no longer be replaced for reviewers of a redacted role, so they would read them as written.`,
                         ],
@@ -1069,7 +1069,7 @@ const peoplePanel = (h: HtmlBuilder<Message>, model: Model): Html => {
       Array.match(model.people, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['No one is in the list yet. Nothing is replaced for reviewers.'],
           ),
         onNonEmpty: people =>
@@ -1077,7 +1077,7 @@ const peoplePanel = (h: HtmlBuilder<Message>, model: Model): Html => {
             [
               h.AriaLabel('People of this report'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(people, person => personRow(h, model, person, canEdit)),
@@ -1094,7 +1094,7 @@ const peoplePanel = (h: HtmlBuilder<Message>, model: Model): Html => {
                 Message.ClickedAddPerson(),
               )
             : h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 ['This list cannot be changed now.'],
               ),
       }),
@@ -1126,7 +1126,7 @@ const suggestionRow = (
     [h.Class('flex flex-col gap-3 py-4'), h.DataAttribute('suggestion', '')],
     [
       h.p(
-        [h.Class('text-lg font-bold text-msf-black')],
+        [h.Class('text-lg font-bold text-brand-ink')],
         [`${suggestion.text} (${suggestion.count}×)`],
       ),
       h.div(
@@ -1183,7 +1183,7 @@ const suggestionsPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
       Array.match(model.suggestions, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['No other name found in the text.'],
           ),
         onNonEmpty: list =>
@@ -1191,7 +1191,7 @@ const suggestionsPanel = (h: HtmlBuilder<Message>, model: Model): Html =>
             [
               h.AriaLabel('Names found in the text'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(list, suggestion => suggestionRow(h, model, suggestion)),
@@ -1225,10 +1225,10 @@ const pictureRow = (
         element.Report(model.reportId),
         element.Context(''),
         element.Alt(picture.alt),
-        h.Class('block max-h-56 max-w-full border border-msf-line bg-msf-mist'),
+        h.Class('block max-h-56 max-w-full border border-brand-line bg-brand-mist'),
       ]),
       h.p(
-        [h.Class('text-base font-medium text-msf-ink')],
+        [h.Class('text-base font-medium text-brand-ink')],
         [
           picture.alt === ''
             ? `Picture ${index + 1}`
@@ -1236,7 +1236,7 @@ const pictureRow = (
         ],
       ),
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           picture.safe
             ? 'Marked safe to share. Reviewers of a redacted role can see it. Withdrawing it takes effect at once, in every published revision.'
@@ -1253,8 +1253,8 @@ const pictureRow = (
                 clsx(
                   'inline-flex h-11 cursor-pointer items-center self-start border px-4 text-base font-medium disabled:cursor-not-allowed disabled:opacity-50',
                   picture.safe
-                    ? 'border-msf-black bg-msf-black text-white'
-                    : 'border-msf-ink text-msf-ink hover:border-msf-red hover:text-msf-red',
+                    ? 'border-brand-ink bg-brand-ink text-white'
+                    : 'border-brand-ink text-brand-ink hover:border-brand-primary hover:text-brand-primary',
                   focusRing,
                 ),
               ),
@@ -1285,7 +1285,7 @@ const picturesPanel = (h: HtmlBuilder<Message>, model: Model): Html => {
       Array.match(pictures, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-lg text-msf-grey')],
+            [h.Class('text-lg text-brand-grey')],
             ['There are no pictures in this report.'],
           ),
         onNonEmpty: list =>
@@ -1293,7 +1293,7 @@ const picturesPanel = (h: HtmlBuilder<Message>, model: Model): Html => {
             [
               h.AriaLabel('Pictures of this report'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(list, (picture, index) =>
@@ -1314,7 +1314,7 @@ const picturesPanel = (h: HtmlBuilder<Message>, model: Model): Html => {
 
 const redactedLink = (h: HtmlBuilder<Message>, model: Model): Html =>
   h.p(
-    [h.Class('text-base text-msf-ink')],
+    [h.Class('text-base text-brand-ink')],
     [
       'To read the text as reviewers will, open ',
       h.a(

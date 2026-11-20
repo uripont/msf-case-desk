@@ -310,7 +310,7 @@ const commentCard = (
     comment.id,
     [
       h.Class(
-        clsx('flex flex-col gap-3 py-4', comment.resolved && 'text-msf-grey'),
+        clsx('flex flex-col gap-3 py-4', comment.resolved && 'text-brand-grey'),
       ),
       h.DataAttribute('comment', comment.id),
       h.DataAttribute('visibility', comment.visibility),
@@ -318,14 +318,14 @@ const commentCard = (
     ],
     [
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           `${comment.authorName}, ${momentText(comment.createdAt)}, on ${locationText(template, comment)}`,
           comment.resolved ? ' · Resolved' : '',
         ],
       ),
       h.p(
-        [h.Class('text-sm font-medium text-msf-ink')],
+        [h.Class('text-sm font-medium text-brand-ink')],
         [
           comment.visibility === 'committee'
             ? 'Shared with the whole committee'
@@ -336,14 +336,14 @@ const commentCard = (
         ? h.blockquote(
             [
               h.Class(
-                'border-l-4 border-msf-line pl-3 text-lg italic text-msf-ink',
+                'border-l-4 border-brand-line pl-3 text-lg italic text-brand-ink',
               ),
             ],
             [comment.anchor.quoted],
           )
         : h.empty,
       h.p(
-        [h.Class('whitespace-pre-wrap text-lg text-msf-ink')],
+        [h.Class('whitespace-pre-wrap text-lg text-brand-ink')],
         [comment.body],
       ),
       comment.redactedBody === undefined
@@ -351,7 +351,7 @@ const commentCard = (
         : h.p(
             [
               h.Class(
-                'whitespace-pre-wrap border-l-4 border-msf-line pl-3 text-base text-msf-grey',
+                'whitespace-pre-wrap border-l-4 border-brand-line pl-3 text-base text-brand-grey',
               ),
               h.DataAttribute('redacted-twin', 'true'),
             ],
@@ -361,16 +361,16 @@ const commentCard = (
         h.keyed('div')(
           reply.id,
           [
-            h.Class('ml-4 flex flex-col gap-1 border-l-2 border-msf-line pl-3'),
+            h.Class('ml-4 flex flex-col gap-1 border-l-2 border-brand-line pl-3'),
             h.DataAttribute('reply', reply.id),
           ],
           [
             h.p(
-              [h.Class('text-sm text-msf-grey')],
+              [h.Class('text-sm text-brand-grey')],
               [`${reply.authorName}, ${momentText(reply.createdAt)}`],
             ),
             h.p(
-              [h.Class('whitespace-pre-wrap text-lg text-msf-ink')],
+              [h.Class('whitespace-pre-wrap text-lg text-brand-ink')],
               [reply.body],
             ),
           ],
@@ -382,7 +382,7 @@ const commentCard = (
             [
               h.label(
                 [
-                  h.Class('text-base font-medium text-msf-ink'),
+                  h.Class('text-base font-medium text-brand-ink'),
                   h.For(`reply-${comment.id}`),
                 ],
                 ['Reply'],
@@ -392,7 +392,7 @@ const commentCard = (
                 h.Value(model.replyTexts[comment.id] ?? ''),
                 h.Class(
                   clsx(
-                    'min-h-20 w-full border border-msf-line bg-white px-3 py-2 text-lg',
+                    'min-h-20 w-full border border-brand-line bg-white px-3 py-2 text-lg',
                     focusRing,
                   ),
                 ),
@@ -445,18 +445,18 @@ const groupView = (
     ],
     [
       h.h2(
-        [h.Class('text-2xl font-black text-msf-black')],
+        [h.Class('text-2xl font-black text-brand-ink')],
         [`Comments on ${group.revision.label}`],
       ),
       Array.match(group.comments, {
         onEmpty: () =>
-          h.p([h.Class('text-lg text-msf-grey')], ['No comments yet.']),
+          h.p([h.Class('text-lg text-brand-grey')], ['No comments yet.']),
         onNonEmpty: list =>
           h.ul(
             [
               h.AriaLabel(`Comments on ${group.revision.label}`),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(list, comment => commentCard(h, model, template, comment)),
@@ -480,7 +480,7 @@ const shell = (
         [
           h.Href(pathOf(AppRoute.Report({ reportId }))),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         ['Back to the report'],
@@ -489,7 +489,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         ['Comments from reviewers'],
@@ -518,7 +518,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
             Array.match(model.groups, {
               onEmpty: () =>
                 h.p(
-                  [h.Class('text-lg text-msf-grey')],
+                  [h.Class('text-lg text-brand-grey')],
                   ['No revision has been published yet.'],
                 ),
               onNonEmpty: groups =>

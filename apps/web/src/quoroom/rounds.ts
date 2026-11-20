@@ -44,7 +44,7 @@ export const revisionsList = <M>(
   Array.match(revisions, {
     onEmpty: () =>
       h.p(
-        [h.Class('text-lg text-msf-grey')],
+        [h.Class('text-lg text-brand-grey')],
         ['No revision has been published.'],
       ),
     onNonEmpty: list =>
@@ -52,7 +52,7 @@ export const revisionsList = <M>(
         [
           h.AriaLabel('Revisions'),
           h.Class(
-            'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+            'flex flex-col divide-y divide-brand-line border-y border-brand-line',
           ),
         ],
         Array.map(Array.reverse(list), revision =>
@@ -65,12 +65,12 @@ export const revisionsList = <M>(
             ],
             [
               h.p(
-                [h.Class('text-lg font-bold text-msf-black')],
+                [h.Class('text-lg font-bold text-brand-ink')],
                 [`${revision.label}, from Draft ${revision.draft}`],
               ),
-              h.p([h.Class('text-base text-msf-ink')], [statusText(revision)]),
+              h.p([h.Class('text-base text-brand-ink')], [statusText(revision)]),
               h.p(
-                [h.Class('text-base text-msf-grey')],
+                [h.Class('text-base text-brand-grey')],
                 [roundLine(revision, nowMs)],
               ),
             ],

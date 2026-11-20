@@ -113,7 +113,7 @@ export const outcomeOf = (
 }
 
 const linkClass = clsx(
-  'inline-flex min-h-11 items-center self-start border border-msf-ink px-4 text-base font-medium text-msf-ink hover:bg-msf-mist',
+  'inline-flex min-h-11 items-center self-start border border-brand-ink px-4 text-base font-medium text-brand-ink hover:bg-brand-mist',
   focusRing,
 )
 
@@ -128,11 +128,11 @@ export const outcomeView = <M>(
       h.AriaLabel('Outcome of the round'),
       h.Role('status'),
       h.DataAttribute('outcome', outcome.kind),
-      h.Class('flex flex-col gap-3 border-2 border-msf-ink px-4 py-4'),
+      h.Class('flex flex-col gap-3 border-2 border-brand-ink px-4 py-4'),
     ],
     [
-      h.h2([h.Class('text-xl font-black text-msf-black')], [outcome.heading]),
-      h.p([h.Class('text-pretty text-base text-msf-ink')], [outcome.body]),
+      h.h2([h.Class('text-xl font-black text-brand-ink')], [outcome.heading]),
+      h.p([h.Class('text-pretty text-base text-brand-ink')], [outcome.body]),
       Array.match(outcome.actions, {
         onEmpty: () => h.empty,
         onNonEmpty: actions =>

@@ -301,7 +301,7 @@ describe('the OpenOrange configuration', () => {
 
   test('`database` finds its cluster in either flag form', () => {
     expect(flagValue(['--cluster', 'prod', '--region', 'eu'], '--cluster')).toBe('prod')
-    expect(flagValue(['--org=msf', '--cluster=prod'], '--org')).toBe('msf')
+    expect(flagValue(['--org=example', '--cluster=prod'], '--org')).toBe('example')
     expect(flagValue(['--dry-run', '--outdir', 'out'], '--cluster')).toBeUndefined()
   })
 })

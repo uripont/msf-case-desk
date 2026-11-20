@@ -82,7 +82,7 @@ const plain = <M>(
   ranges: ReadonlyArray<HighlightRange>,
 ): Html =>
   text === ''
-    ? h.p([h.Class('text-base text-msf-grey')], [EMPTY])
+    ? h.p([h.Class('text-base text-brand-grey')], [EMPTY])
     : h.p([...attributes], highlightedChildren(h, text, 0, ranges, marks))
 
 const rangesFor = (
@@ -156,7 +156,7 @@ const itemRow = <M>(
     item.type === 'repeated'
       ? repeatedItemView(h, item, value, context, entryPath)
       : value === undefined
-        ? h.p([h.Class('text-base text-msf-grey')], [EMPTY])
+        ? h.p([h.Class('text-base text-brand-grey')], [EMPTY])
         : value.type === 'rich_text'
           ? richTextView(
               h,
@@ -173,7 +173,7 @@ const itemRow = <M>(
             : plain(
                 h,
                 shownText(item, value, context),
-                attributes('whitespace-pre-wrap text-lg text-msf-ink'),
+                attributes('whitespace-pre-wrap text-lg text-brand-ink'),
                 context.marks ?? [],
                 rangesFor(
                   context,
@@ -187,7 +187,7 @@ const itemRow = <M>(
     [
       item.type === 'case_value'
         ? h.empty
-        : h.p([h.Class('text-base font-medium text-msf-grey')], [item.label]),
+        : h.p([h.Class('text-base font-medium text-brand-grey')], [item.label]),
       item.type === 'case_value' ? h.empty : body,
     ],
   )
@@ -203,7 +203,7 @@ const repeatedItemView = <M>(
   const entries: ReadonlyArray<ItemEntry> =
     value?.type === 'repeated' ? value.entries : []
   return Array.match(entries, {
-    onEmpty: () => h.p([h.Class('text-base text-msf-grey')], ['None.']),
+    onEmpty: () => h.p([h.Class('text-base text-brand-grey')], ['None.']),
     onNonEmpty: list =>
       h.div(
         [h.Class('flex flex-col gap-3')],
@@ -211,12 +211,12 @@ const repeatedItemView = <M>(
           h.keyed('div')(
             entry.id,
             [
-              h.Class('flex flex-col gap-3 border-l-2 border-msf-line pl-3'),
+              h.Class('flex flex-col gap-3 border-l-2 border-brand-line pl-3'),
               h.DataAttribute('entry', entry.id),
             ],
             [
               h.p(
-                [h.Class('text-lg font-bold text-msf-black')],
+                [h.Class('text-lg font-bold text-brand-ink')],
                 markedChildren(
                   h,
                   entryDisplayTitle(entry, item.entryLabel, index),
@@ -246,7 +246,7 @@ const heading = <M>(
     [
       h.Class(
         clsx(
-          'font-black text-msf-black',
+          'font-black text-brand-ink',
           depth <= 1 ? 'text-2xl' : depth === 2 ? 'text-xl' : 'text-lg',
         ),
       ),
@@ -266,7 +266,7 @@ const entryView = <M>(
   h.keyed('div')(
     entry.id,
     [
-      h.Class('flex min-w-0 flex-col gap-4 border-l-2 border-msf-line pl-3'),
+      h.Class('flex min-w-0 flex-col gap-4 border-l-2 border-brand-line pl-3'),
       h.DataAttribute('entry', entry.id),
     ],
     [
@@ -314,7 +314,7 @@ const sectionBody = <M>(
       notApplicable === undefined
         ? h.empty
         : h.p(
-            [h.Class('text-base font-medium text-msf-ink')],
+            [h.Class('text-base font-medium text-brand-ink')],
             markedChildren(
               h,
               `Not applicable: ${notApplicable.reason}`,
@@ -341,7 +341,7 @@ const sectionBody = <M>(
             ],
           )
         : Array.match(content?.entries ?? [], {
-            onEmpty: () => h.p([h.Class('text-base text-msf-grey')], ['None.']),
+            onEmpty: () => h.p([h.Class('text-base text-brand-grey')], ['None.']),
             onNonEmpty: entries =>
               h.div(
                 [h.Class('flex flex-col gap-6')],
@@ -381,7 +381,7 @@ export const valueView = <M>(
 ): Html => {
   if (value === undefined) {
     return h.p(
-      [h.Class('text-base italic text-msf-grey')],
+      [h.Class('text-base italic text-brand-grey')],
       ['Nothing (removed or empty).'],
     )
   }
@@ -396,7 +396,7 @@ export const valueView = <M>(
   }
   if (value.type === 'repeated') {
     return h.p(
-      [h.Class('text-base text-msf-ink')],
+      [h.Class('text-base text-brand-ink')],
       [`${value.entries.length} entries`],
     )
   }
@@ -418,6 +418,6 @@ export const valueView = <M>(
     onSome: item => valueText(item, value, context.people),
   })
   return text === ''
-    ? h.p([h.Class('text-base italic text-msf-grey')], ['Empty.'])
-    : h.p([h.Class('whitespace-pre-wrap text-lg text-msf-ink')], [text])
+    ? h.p([h.Class('text-base italic text-brand-grey')], ['Empty.'])
+    : h.p([h.Class('whitespace-pre-wrap text-lg text-brand-ink')], [text])
 }

@@ -630,7 +630,7 @@ export const subscriptions = Subscription.make<Model, Message>()(entry => ({
 
 const link = (h: HtmlBuilder<Message>, href: string, label: string): Html =>
   h.a(
-    [h.Href(href), h.Class(clsx('text-lg text-msf-ink underline', focusRing))],
+    [h.Href(href), h.Class(clsx('text-lg text-brand-ink underline', focusRing))],
     [label],
   )
 
@@ -652,7 +652,7 @@ const shell = (
         [
           h.Href(backHref),
           h.Class(
-            clsx('self-start text-base text-msf-ink underline', focusRing),
+            clsx('self-start text-base text-brand-ink underline', focusRing),
           ),
         ],
         [backLabel],
@@ -661,7 +661,7 @@ const shell = (
         [
           h.Id('page-heading'),
           h.Class(
-            'text-balance text-4xl font-black tracking-[-0.025em] text-msf-black',
+            'text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink',
           ),
         ],
         [title],
@@ -720,7 +720,7 @@ const comparePanel = (
       [h.Class('flex flex-col gap-1')],
       [
         h.label(
-          [h.Class('text-base font-medium text-msf-ink'), h.For(id)],
+          [h.Class('text-base font-medium text-brand-ink'), h.For(id)],
           [label],
         ),
         h.select(
@@ -729,7 +729,7 @@ const comparePanel = (
             h.Value(value),
             h.Class(
               clsx(
-                'h-12 border border-msf-line bg-white px-3 text-lg',
+                'h-12 border border-brand-line bg-white px-3 text-lg',
                 focusRing,
               ),
             ),
@@ -767,7 +767,7 @@ const comparePanel = (
               h.Disabled(model.isComparing),
               h.Class(
                 clsx(
-                  'inline-flex min-h-12 cursor-pointer items-center justify-center bg-msf-ink px-5 text-lg font-medium text-white',
+                  'inline-flex min-h-12 cursor-pointer items-center justify-center bg-brand-ink px-5 text-lg font-medium text-white',
                   focusRing,
                 ),
               ),
@@ -786,7 +786,7 @@ const comparePanel = (
             ],
             [
               h.p(
-                [h.Role('status'), h.Class('text-lg font-medium text-msf-ink')],
+                [h.Role('status'), h.Class('text-lg font-medium text-brand-ink')],
                 [
                   `${draftLabel(comparison.from)} to ${draftLabel(comparison.to)}: ${
                     comparison.changes.length === 0
@@ -802,13 +802,13 @@ const comparePanel = (
                     [
                       h.AriaLabel('Changes between the two drafts'),
                       h.Class(
-                        'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                        'flex flex-col divide-y divide-brand-line border-y border-brand-line',
                       ),
                     ],
                     Array.map(changes, change =>
                       h.keyed('li')(
                         change.key,
-                        [h.Class('py-3 text-lg text-msf-ink')],
+                        [h.Class('py-3 text-lg text-brand-ink')],
                         [
                           `${VERBS[change.change]}: ${changeLabel(template, change)}`,
                         ],
@@ -839,7 +839,7 @@ const listView = (
           [
             h.AriaLabel('Shared drafts'),
             h.Class(
-              'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+              'flex flex-col divide-y divide-brand-line border-y border-brand-line',
             ),
           ],
           Array.map([...history.drafts].reverse(), draft =>
@@ -856,11 +856,11 @@ const listView = (
                   [h.Class('flex flex-col')],
                   [
                     h.p(
-                      [h.Class('text-xl font-bold text-msf-black')],
+                      [h.Class('text-xl font-bold text-brand-ink')],
                       [draftLabel(draft.number)],
                     ),
                     h.p(
-                      [h.Class('text-base text-msf-grey')],
+                      [h.Class('text-base text-brand-grey')],
                       [
                         `${sharedLine(draft)}${draft.baseDraft === undefined ? '' : `, from ${draftLabel(draft.baseDraft)}`}`,
                       ],
@@ -893,13 +893,13 @@ const listView = (
             [
               h.AriaLabel('Published revisions'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(revisions, revision =>
               h.keyed('li')(
                 String(revision.number),
-                [h.Class('py-3 text-lg text-msf-ink')],
+                [h.Class('py-3 text-lg text-brand-ink')],
                 [
                   `${revision.label}, from ${draftLabel(revision.draft)}, published ${momentText(revision.publishedAt)}. ${revisionStatusText(revision)}`,
                 ],
@@ -943,14 +943,14 @@ const commentCard = (
     comment.id,
     [
       h.Class(
-        clsx('flex flex-col gap-3 py-4', comment.resolved && 'text-msf-grey'),
+        clsx('flex flex-col gap-3 py-4', comment.resolved && 'text-brand-grey'),
       ),
       h.DataAttribute('comment', comment.id),
       h.DataAttribute('resolved', comment.resolved ? 'true' : 'false'),
     ],
     [
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           `${comment.authorName}, ${momentText(comment.createdAt)}, on ${commentLocation(template, comment)}`,
           comment.resolved ? ' · Resolved' : '',
@@ -960,30 +960,30 @@ const commentCard = (
         ? h.blockquote(
             [
               h.Class(
-                'border-l-4 border-msf-line pl-3 text-lg italic text-msf-ink',
+                'border-l-4 border-brand-line pl-3 text-lg italic text-brand-ink',
               ),
             ],
             [comment.anchor.quoted],
           )
         : h.empty,
       h.p(
-        [h.Class('whitespace-pre-wrap text-lg text-msf-ink')],
+        [h.Class('whitespace-pre-wrap text-lg text-brand-ink')],
         [comment.body],
       ),
       ...Array.map(comment.replies, reply =>
         h.keyed('div')(
           reply.id,
           [
-            h.Class('ml-4 flex flex-col gap-1 border-l-2 border-msf-line pl-3'),
+            h.Class('ml-4 flex flex-col gap-1 border-l-2 border-brand-line pl-3'),
             h.DataAttribute('reply', reply.id),
           ],
           [
             h.p(
-              [h.Class('text-sm text-msf-grey')],
+              [h.Class('text-sm text-brand-grey')],
               [`${reply.authorName}, ${momentText(reply.createdAt)}`],
             ),
             h.p(
-              [h.Class('whitespace-pre-wrap text-lg text-msf-ink')],
+              [h.Class('whitespace-pre-wrap text-lg text-brand-ink')],
               [reply.body],
             ),
           ],
@@ -995,7 +995,7 @@ const commentCard = (
             [
               h.label(
                 [
-                  h.Class('text-base font-medium text-msf-ink'),
+                  h.Class('text-base font-medium text-brand-ink'),
                   h.For(`reply-${comment.id}`),
                 ],
                 ['Reply'],
@@ -1005,7 +1005,7 @@ const commentCard = (
                 h.Value(model.replyTexts[comment.id] ?? ''),
                 h.Class(
                   clsx(
-                    'min-h-20 w-full border border-msf-line bg-white px-3 py-2 text-lg',
+                    'min-h-20 w-full border border-brand-line bg-white px-3 py-2 text-lg',
                     focusRing,
                   ),
                 ),
@@ -1064,15 +1064,15 @@ const composerView = (
     onSome: heading =>
       h.form(
         [
-          h.Class('flex flex-col gap-3 border-2 border-msf-ink px-3 py-3'),
+          h.Class('flex flex-col gap-3 border-2 border-brand-ink px-3 py-3'),
           h.AriaLabel('New comment'),
           h.OnSubmit(Message.SubmittedComment()),
         ],
         [
-          h.p([h.Class('text-base font-medium text-msf-ink')], [heading]),
+          h.p([h.Class('text-base font-medium text-brand-ink')], [heading]),
           h.label(
             [
-              h.Class('text-base font-medium text-msf-ink'),
+              h.Class('text-base font-medium text-brand-ink'),
               h.For('new-comment'),
             ],
             ['Your comment'],
@@ -1082,7 +1082,7 @@ const composerView = (
             h.Value(model.commentText),
             h.Class(
               clsx(
-                'min-h-24 w-full border border-msf-line bg-white px-3 py-2 text-lg',
+                'min-h-24 w-full border border-brand-line bg-white px-3 py-2 text-lg',
                 focusRing,
               ),
             ),
@@ -1099,7 +1099,7 @@ const composerView = (
                   ),
                   h.Class(
                     clsx(
-                      'inline-flex min-h-11 cursor-pointer items-center justify-center bg-msf-ink px-4 text-base font-medium text-white disabled:opacity-60',
+                      'inline-flex min-h-11 cursor-pointer items-center justify-center bg-brand-ink px-4 text-base font-medium text-white disabled:opacity-60',
                       focusRing,
                     ),
                   ),
@@ -1154,13 +1154,13 @@ const commentsPanel = (
               Option.match(model.maybeSelection, {
                 onNone: () =>
                   h.p(
-                    [h.Class('text-base text-msf-grey')],
+                    [h.Class('text-base text-brand-grey')],
                     ['Select some text above to comment on it.'],
                   ),
                 onSome: selection =>
                   h.p(
                     [
-                      h.Class('text-base text-msf-ink'),
+                      h.Class('text-base text-brand-ink'),
                       h.DataAttribute('selected', 'true'),
                     ],
                     [`Selected: "${selection.quoted}"`],
@@ -1176,13 +1176,13 @@ const commentsPanel = (
       }),
       Array.match(state.comments, {
         onEmpty: () =>
-          h.p([h.Class('text-lg text-msf-grey')], ['No comments yet.']),
+          h.p([h.Class('text-lg text-brand-grey')], ['No comments yet.']),
         onNonEmpty: comments =>
           h.ul(
             [
               h.AriaLabel('Comments on this draft'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(comments, comment =>
@@ -1210,7 +1210,7 @@ const draftView = (
     draftLabel(header.number),
     [
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           `${sharedLine(header)}${header.baseDraft === undefined ? '' : `, from ${draftLabel(header.baseDraft)}`}. Read-only: a shared draft never changes.`,
         ],
@@ -1229,8 +1229,8 @@ const draftView = (
                 clsx(
                   'min-h-11 cursor-pointer border px-3 text-base',
                   section.id === model.sectionId
-                    ? 'border-msf-ink bg-msf-ink text-white'
-                    : 'border-msf-line text-msf-ink hover:border-msf-red',
+                    ? 'border-brand-ink bg-brand-ink text-white'
+                    : 'border-brand-line text-brand-ink hover:border-brand-primary',
                   focusRing,
                 ),
               ),
@@ -1253,7 +1253,7 @@ const draftView = (
                 ],
                 [
                   h.h2(
-                    [h.Class('text-2xl font-black text-msf-black')],
+                    [h.Class('text-2xl font-black text-brand-ink')],
                     [section.title],
                   ),
                   readOnlySection(

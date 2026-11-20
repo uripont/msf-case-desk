@@ -257,9 +257,9 @@ const eventRow = (
       h.DataAttribute('at', String(event.at)),
     ],
     [
-      h.p([h.Class('text-lg font-medium text-msf-black')], [actionText(event.action)]),
+      h.p([h.Class('text-lg font-medium text-brand-ink')], [actionText(event.action)]),
       h.p(
-        [h.Class('text-base text-msf-grey')],
+        [h.Class('text-base text-brand-grey')],
         [
           [
             momentWithZone(event.at),
@@ -271,7 +271,7 @@ const eventRow = (
       ),
       Record.isEmptyRecord(event.meta)
         ? h.empty
-        : h.p([h.Class('text-sm text-msf-grey')], [metaText(event.meta)]),
+        : h.p([h.Class('text-sm text-brand-grey')], [metaText(event.meta)]),
     ],
   )
 
@@ -289,14 +289,14 @@ const shell = (
           h.a(
             [
               h.Href(pathOf(AppRoute.Report({ reportId }))),
-              h.Class(clsx('text-base text-msf-ink underline', focusRing)),
+              h.Class(clsx('text-base text-brand-ink underline', focusRing)),
             ],
             ['Back to the report'],
           ),
           h.a(
             [
               h.Href(pathOf(AppRoute.Grid({ reportId }))),
-              h.Class(clsx('text-base text-msf-ink underline', focusRing)),
+              h.Class(clsx('text-base text-brand-ink underline', focusRing)),
             ],
             ['Status grid'],
           ),
@@ -305,7 +305,7 @@ const shell = (
       h.h1(
         [
           h.Id('page-heading'),
-          h.Class('text-balance text-4xl font-black tracking-[-0.025em] text-msf-black'),
+          h.Class('text-balance text-4xl font-black tracking-[-0.025em] text-brand-ink'),
         ],
         ['Audit log'],
       ),
@@ -325,7 +325,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
       const shown = model.events
       return shell(h, model.reportId, [
         h.p(
-          [h.Class('text-base text-msf-grey')],
+          [h.Class('text-base text-brand-grey')],
           ['Newest first. Every time is shown in your own time zone. The log holds facts, never report text.'],
         ),
         selectField(h, 'audit-kind', 'Show', model.kind, KINDS, value =>
@@ -338,7 +338,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
         Array.match(shown, {
           onEmpty: () =>
             h.p(
-              [h.Class('text-lg text-msf-grey')],
+              [h.Class('text-lg text-brand-grey')],
               [
                 'Nothing of this kind has happened.',
               ],
@@ -347,7 +347,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
             h.ul(
               [
                 h.AriaLabel('Audit events'),
-                h.Class('flex flex-col divide-y divide-msf-line border-y border-msf-line'),
+                h.Class('flex flex-col divide-y divide-brand-line border-y border-brand-line'),
               ],
               Array.map(rows, row => eventRow(h, row)),
             ),

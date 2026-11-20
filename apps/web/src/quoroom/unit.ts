@@ -609,7 +609,7 @@ const noticeBlock = (model: Model, h: HtmlBuilder<Message>) => [
     onNone: () => h.empty,
     onSome: notice =>
       h.p(
-        [h.Role('status'), h.Class('text-base font-medium text-msf-ink')],
+        [h.Role('status'), h.Class('text-base font-medium text-brand-ink')],
         [notice],
       ),
   }),
@@ -628,13 +628,13 @@ const authorsPanel = (model: Model, h: HtmlBuilder<Message>) =>
         Array.filter(model.members, member => member.isAuthor),
         {
           onEmpty: () =>
-            h.p([h.Class('text-lg text-msf-grey')], ['No authors.']),
+            h.p([h.Class('text-lg text-brand-grey')], ['No authors.']),
           onNonEmpty: authors =>
             h.ul(
               [
                 h.AriaLabel('Authors in this unit'),
                 h.Class(
-                  'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                  'flex flex-col divide-y divide-brand-line border-y border-brand-line',
                 ),
               ],
               Array.map(authors, author =>
@@ -644,7 +644,7 @@ const authorsPanel = (model: Model, h: HtmlBuilder<Message>) =>
                   [
                     h.span([h.Class('text-lg font-medium')], [author.name]),
                     h.span(
-                      [h.Class('text-base text-msf-grey')],
+                      [h.Class('text-base text-brand-grey')],
                       [author.email],
                     ),
                   ],
@@ -705,9 +705,9 @@ const reviewerRow = (reviewer: Reviewer, h: HtmlBuilder<Message>) =>
     [h.Class('flex flex-col py-3')],
     [
       h.span([h.Class('text-lg font-medium')], [reviewer.name]),
-      h.span([h.Class('text-base text-msf-grey')], [reviewer.email]),
+      h.span([h.Class('text-base text-brand-grey')], [reviewer.email]),
       h.span(
-        [h.Class('text-sm text-msf-grey')],
+        [h.Class('text-sm text-brand-grey')],
         [reviewer.active ? 'Active' : 'Inactive'],
       ),
     ],
@@ -720,13 +720,13 @@ const reviewersPanel = (model: Model, h: HtmlBuilder<Message>) =>
     [
       Array.match(model.reviewers, {
         onEmpty: () =>
-          h.p([h.Class('text-lg text-msf-grey')], ['No reviewers yet.']),
+          h.p([h.Class('text-lg text-brand-grey')], ['No reviewers yet.']),
         onNonEmpty: reviewers =>
           h.ul(
             [
               h.AriaLabel('Reviewers'),
               h.Class(
-                'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                'flex flex-col divide-y divide-brand-line border-y border-brand-line',
               ),
             ],
             Array.map(reviewers, reviewer => reviewerRow(reviewer, h)),
@@ -792,7 +792,7 @@ const committeeCard = (
       Array.match(reviewers, {
         onEmpty: () =>
           h.p(
-            [h.Class('text-base text-msf-grey')],
+            [h.Class('text-base text-brand-grey')],
             ['Register reviewers to add them.'],
           ),
         onNonEmpty: people =>
@@ -824,13 +824,13 @@ const committeesPanel = (model: Model, h: HtmlBuilder<Message>) =>
         Array.filter(model.committees, committee => !committee.retired),
         {
           onEmpty: () =>
-            h.p([h.Class('text-lg text-msf-grey')], ['No committees yet.']),
+            h.p([h.Class('text-lg text-brand-grey')], ['No committees yet.']),
           onNonEmpty: committees =>
             h.ul(
               [
                 h.AriaLabel('Committees'),
                 h.Class(
-                  'flex flex-col divide-y divide-msf-line border-y border-msf-line',
+                  'flex flex-col divide-y divide-brand-line border-y border-brand-line',
                 ),
               ],
               Array.map(committees, committee =>
@@ -887,7 +887,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
       failure._tag === 'NotAllowed'
         ? [
             h.p(
-              [h.Role('alert'), h.Class('text-lg font-medium text-msf-alert')],
+              [h.Role('alert'), h.Class('text-lg font-medium text-brand-alert')],
               [
                 'You cannot write reports in this unit. Someone with People can give you that.',
               ],
@@ -897,7 +897,7 @@ const dataView = (model: Model, h: HtmlBuilder<Message>) =>
             h.p(
               [
                 h.Role('alert'),
-                h.Class('text-base font-medium text-msf-alert'),
+                h.Class('text-base font-medium text-brand-alert'),
               ],
               [failureText(failure)],
             ),
@@ -924,7 +924,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
       Array.isReadonlyArrayEmpty(model.units)
         ? pageShell(h, 'Reviewers and committees', 'Reviewers and committees', '', [
             h.p(
-              [h.Class('text-lg text-msf-ink')],
+              [h.Class('text-lg text-brand-ink')],
               [
                 'There is no unit yet. Someone with People creates units and gives Reports in a unit.',
               ],
