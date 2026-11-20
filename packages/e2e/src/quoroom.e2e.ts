@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 
 import { extractPages } from '@quoroom/pdf/testing'
-import { type Browser, type Locator, type Page, chromium, firefox } from 'playwright-core'
+import { type Browser, type Page, chromium, firefox } from 'playwright-core'
 
 import {
   PASSWORD,
@@ -33,6 +33,7 @@ import {
   person,
   reportIdOf,
   results,
+  selectPhrase,
   settled,
   shot,
   step,
@@ -70,6 +71,11 @@ const run = (command: string, args: ReadonlyArray<string>, env = {}): string => 
   }
   return result.stdout
 }
+
+// NOTE: `rpc` puts the answer's JSON in its error, so a refusal is checked by
+// its tag and its reason or code, not only by a failed request.
+const refusedAs = (...parts: string[]) => (error: unknown): boolean =>
+  error instanceof Error && parts.every(part => error.message.includes(part))
 
 const waitForHealth = async (base: string): Promise<void> => {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -1229,7 +1235,7 @@ const main = async (): Promise<void> => {
       await second.getByRole('button', { name: 'Reload the saved version' }).click()
       await second.getByRole('heading', { name: 'Edits that were not saved' }).waitFor()
       const kept = await second.getByRole('textbox', { name: 'Background' }).inputValue()
-      assert.ok(kept.includes('Written in the second tab') || kept.includes('Staffing history'), 'the kept edit shows nothing')
+      assert.ok(kept.includes('Written in the second tab'), 'the kept edit shows nothing')
       await shot(second, 'tabs-2-kept')
       await second.getByRole('button', { name: 'Put my version of Background back' }).click()
       // Putting it back replaces what the other tab saved, so it asks first.
@@ -1829,29 +1835,7 @@ const main = async (): Promise<void> => {
       await rhea.getByText(PHRASE, { exact: false }).first().waitFor()
       await shot(rhea, 'review-1-reading-375')
 
-      const selectPhrase = async (page: Page): Promise<void> => {
-        await page.evaluate(phrase => {
-          const root = document.querySelector('[data-comment-item="investigator"]')
-          if (root === null) {
-            throw new Error('no item to select in')
-          }
-          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-          for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-            const at = (node.textContent ?? '').indexOf(phrase)
-            if (at >= 0) {
-              const range = document.createRange()
-              range.setStart(node, at)
-              range.setEnd(node, at + phrase.length)
-              const selection = window.getSelection()
-              selection?.removeAllRanges()
-              selection?.addRange(range)
-              return
-            }
-          }
-          throw new Error('the phrase is not in the item')
-        }, PHRASE)
-      }
-      await selectPhrase(rhea)
+      await selectPhrase(rhea, 'investigator', PHRASE)
       await rhea.locator('[data-selection-bar]').waitFor()
       await rhea.getByRole('button', { name: 'Comment on the selected text' }).click()
       await rhea.getByRole('textbox', { name: 'Your comment' }).fill('Which camp, and how late?')
@@ -2081,7 +2065,10 @@ const main = async (): Promise<void> => {
       await rhea.getByRole('heading', { name: 'Revision 1' }).waitFor()
       await rhea.locator('[data-banner="superseded"]').waitFor()
       assert.equal(await rhea.getByRole('button', { name: 'Send your review' }).count(), 0, 'a review can be started on a superseded revision')
-      await assert.rejects(() => rpc(rhea, 'SendReview', { reportId, revision: 1, decision: 'approve', commentIds: [] }))
+      await assert.rejects(
+        () => rpc(rhea, 'SendReview', { reportId, revision: 1, decision: 'approve', commentIds: [] }),
+        refusedAs('"_tag":"NotAllowedInState"', '"code":"round_not_open"'),
+      )
 
       // Approvals on Revision 2 only: the round is decided by its rule.
       const approve = async (page: Page, revision: number): Promise<void> => {
@@ -2113,13 +2100,15 @@ const main = async (): Promise<void> => {
       await pia.getByText('The report is concluding. Only the conclusion can be edited now.', { exact: false }).first().waitFor()
       await shot(pia, 'closing-3-concluding-375')
       const copy = await rpc(pia, 'GetWorkingCopy', { reportId })
-      await assert.rejects(() =>
-        rpc(pia, 'SaveSection', {
-          reportId,
-          sectionId: 'case-details',
-          saveCounter: copy.saveCounter,
-          content: { values: { investigator: { type: 'text', text: 'No.' } }, sections: {} },
-        }),
+      await assert.rejects(
+        () =>
+          rpc(pia, 'SaveSection', {
+            reportId,
+            sectionId: 'case-details',
+            saveCounter: copy.saveCounter,
+            content: { values: { investigator: { type: 'text', text: 'No.' } }, sections: {} },
+          }),
+        refusedAs('"_tag":"NotAllowedInState"', '"code":"only_conclusion_while_concluding"'),
       )
       await saveSection('committee-conclusion', 'conclusion-decision', 'rich_text', 'The committee closed the case without further action.')
 
@@ -2147,13 +2136,15 @@ const main = async (): Promise<void> => {
       await openIn(pia, /^Case details/)
       await pia.getByText('This report is archived. It can be read, not changed.', { exact: false }).first().waitFor()
       const archivedCopy = await rpc(pia, 'GetWorkingCopy', { reportId })
-      await assert.rejects(() =>
-        rpc(pia, 'SaveSection', {
-          reportId,
-          sectionId: 'committee-conclusion',
-          saveCounter: archivedCopy.saveCounter,
-          content: { values: {}, sections: {} },
-        }),
+      await assert.rejects(
+        () =>
+          rpc(pia, 'SaveSection', {
+            reportId,
+            sectionId: 'committee-conclusion',
+            saveCounter: archivedCopy.saveCounter,
+            content: { values: {}, sections: {} },
+          }),
+        refusedAs('"_tag":"NotPermitted"', '"reason":"read_only"'),
       )
       await rhea.reload()
       await rhea.getByText('This round is decided', { exact: false }).waitFor()
@@ -2391,9 +2382,10 @@ const main = async (): Promise<void> => {
       assert.ok(redactedText.includes('delay in the supply'), 'the reviewer PDF lacks the text')
       await assert.rejects(
         rpc(rhea, 'GetDraftSection', { reportId, draft, sectionId: 'case-details', view: 'original' }),
+        refusedAs('"_tag":"NotFound"'),
         'a reviewer read the original',
       )
-      await assert.rejects(rpc(rhea, 'GetDownloads', { reportId }), 'a reviewer listed the downloads')
+      await assert.rejects(rpc(rhea, 'GetDownloads', { reportId }), refusedAs('"_tag":"NotFound"'), 'a reviewer listed the downloads')
       await rhea.context().close()
 
       // The approval record of a decided round.
@@ -2561,6 +2553,7 @@ const main = async (): Promise<void> => {
       // The server refuses it too, whatever the page does.
       await assert.rejects(
         rpc(pia, 'UpdateTheme', { theme: { ...stored, colors: { ...stored.colors, text: '#cccccc' } } }),
+        refusedAs('"_tag":"Validation"'),
         'the server accepted an unreadable theme',
       )
 
@@ -2651,7 +2644,7 @@ const main = async (): Promise<void> => {
     // drafts, revisions, a decided round, a closing revision and an archive;
     // an inbox; a theme. One more author, in a unit of their own, has nothing
     // at all, to see every screen empty. Then the sweep of every route.
-    if (process.env.E2E_SWEEP !== '0') {
+    if (process.env.E2E_SKIP_SWEEP !== '1') {
       const emptyEmail = 'eve.empty@case-desk.test'
       let emptyReportId = ''
       let templateDraft = { templateId: '', version: 0 }
@@ -2736,25 +2729,23 @@ const main = async (): Promise<void> => {
         engines.push({ name: 'firefox', browser: ff })
       }
       try {
-        if (process.env.E2E_SKIP_SWEEP !== '1') {
-          await runSweep({
-            pilotUrl,
-            password: PASSWORD,
-            emails: {
-              admin: 'pia.pilot@case-desk.test',
-              reviewer: 'ravi.reviewer@case-desk.test',
-              empty: emptyEmail,
-            },
-            reports: {
-              closing: reportsByReference['PIL-0008'] ?? '',
-              empty: emptyReportId,
-            },
-            template: templateDraft,
-            engines,
-            screens: process.env.E2E_SCREENS_INDEXED ?? join(root, 'packages/e2e/.screens'),
-            step,
-          })
-        }
+        await runSweep({
+          pilotUrl,
+          password: PASSWORD,
+          emails: {
+            admin: 'pia.pilot@case-desk.test',
+            reviewer: 'ravi.reviewer@case-desk.test',
+            empty: emptyEmail,
+          },
+          reports: {
+            closing: reportsByReference['PIL-0008'] ?? '',
+            empty: emptyReportId,
+          },
+          template: templateDraft,
+          engines,
+          screens: process.env.E2E_SCREENS_INDEXED ?? join(root, 'packages/e2e/.screens'),
+          step,
+        })
         await runKeyboard({
           pilotUrl,
           password: PASSWORD,

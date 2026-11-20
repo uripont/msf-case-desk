@@ -1,6 +1,6 @@
 // The pilot script (docs/operating.md, section 3, steps 1 to 11) as a
-// real user runs it: only through the web UI, in Chromium, with seven invented
-// people, the reviewers at phone width. Run it against a fresh target whose
+// real user runs it: through the web UI in Chromium (the tick below aside), with
+// seven invented people, most of the reviewers at phone width. Run it against a fresh target whose
 // first administrator was granted with `pnpm grant-admin` (docs/operating.md):
 //
 //   pnpm rehearsal <base> --admin-link-file <file> [--tick-secret-file <file>]

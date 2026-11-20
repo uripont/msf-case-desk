@@ -177,7 +177,7 @@ export const runKeyboard = async (ctx: KeyboardContext): Promise<void> => {
       }
     })
 
-    await ctx.step(tag('names, template and editor dialogs: opened by keyboard, Escape closes, focus returns'), async () => {
+    await ctx.step(tag('a person is added and removed, and a template draft is discarded: the confirmations open from the keyboard, Escape closes them, focus returns'), async () => {
       const eve = await newPage(engine.browser)
       const pia = await newPage(engine.browser)
       try {
