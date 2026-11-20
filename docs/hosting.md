@@ -10,7 +10,7 @@ A Quoroom deployment is always the same three things: **one Worker** that serves
 | Notification pass | Cron Trigger | Cron Trigger, as a Rivet Actor | A host `cron` calling `POST /api/tick` |
 | Command | `pnpm cloudflare:deploy` | `pnpm openorange deploy` | `pnpm workerd --mode pilot` |
 | Defined in | [`infra/cloudflare.run.ts`](../infra/cloudflare.run.ts) (Alchemy) | [`infra/openorange.ts`](../infra/openorange.ts) (writes a Wrangler configuration) | [`infra/workerd.sh`](../infra/workerd.sh) and [`apps/api/workerd/quoroom.capnp`](../apps/api/workerd/quoroom.capnp) |
-| Tested | The MSF pilot runs here; test environments run the rehearsal | `openorange dev` passes the full rehearsal; a deploy to a Rivet cluster has not been tried from this repository | The browser tests (`packages/e2e`) and the rehearsal |
+| Tested | The MSF pilot runs here; test environments run the rehearsal | `openorange dev` and a self-hosted Rivet Engine pass the full rehearsal; Rivet Cloud has not been tried from this repository | The browser tests (`packages/e2e`) and the rehearsal |
 
 Pick Cloudflare when a free, managed host is fine; OpenOrange when the data has to stay in a given cloud or region you choose; your own server for a small or offline installation. Running a deployment day to day (first account, theme, backups, failures) is in [`operating.md`](operating.md).
 

@@ -25,6 +25,7 @@ apps/web/         the web app (Foldkit), served by the same Worker as static ass
 packages/domain/  pure rules: templates, the report flow, approval, redaction, the API contract
 packages/pdf/     the PDF renderer, for the browser and Node
 packages/e2e/     browser tests and the rehearsal
+scripts/          snapshots, migration and compatibility checks, smoke check, logs
 ```
 
 - **One Worker per deployment** serves the web app and the API under `/api`. The API is one Effect RPC group that both the web app and the Worker import ([`api.md`](api.md)), so a change to it fails the typecheck on both sides.
@@ -32,6 +33,19 @@ packages/e2e/     browser tests and the rehearsal
 - **One SQLite database**, behind a narrow SQL seam (text and numbers only) with three adapters: D1 on Cloudflare and OpenOrange, a Durable Object with SQLite storage on `workerd`, and Node's SQLite in tests. Images are stored in it too, in chunks.
 - **The notification pass** runs every minute from a Cron Trigger (or `POST /api/tick` on `workerd`): it sends review requests and reminders to the in-app inbox and decides rounds whose deadline has passed ([`decisions.md`](decisions.md), "The notification pass").
 - **PDFs are made in the browser** from the stored versions, never stored.
+
+### Stack
+
+The project is built on the CAFE stack:
+
+| Layer | Tool | Role here |
+| --- | --- | --- |
+| **C**loudflare | Workers, static assets, D1, Cron Triggers | One Worker per deployment serves the web app and the API; D1 (SQLite) stores everything, images included; a Cron Trigger runs the notification pass |
+| **A**lchemy | Infrastructure as Effects | The Cloudflare deployments as typed stacks in [`infra/`](../infra) |
+| **F**oldkit | Elm Architecture on Effect | The web app: one Model per screen, fact-named Messages, the rich-text editor as a custom element |
+| **E**ffect | Schema, services, layers, RPC | The domain rules, the storage services, and the typed API shared by the web app and the Worker |
+
+Plus Tiptap for rich text, pdfmake for PDFs, Vite 8, Tailwind 4, Vitest 5, fast-check, Playwright, TypeScript 7, oxlint and oxfmt, with pnpm workspaces. Alchemy v2 and Foldkit are both in beta, so versions are pinned exactly. What the tests check is in [`development.md`](development.md#testing).
 
 ### Notifications outside the app
 
