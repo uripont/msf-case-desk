@@ -12,7 +12,6 @@ import {
   NotAllowedInState,
   NotFound,
   Conflict,
-  Validation,
   anchorText,
   applyEvent,
   canSeeComment,
@@ -34,14 +33,13 @@ import {
   jobsFor,
   loadReport,
   loadTemplates,
-  problem,
   requireReviewer,
   roundOf,
   store,
   validation,
 } from './core'
 import { auditOf, member } from './support'
-import { roundSummaryOf, roundViewOf, storedSectionRefsOf, summaryOf } from './views'
+import { roundSummaryOf, storedSectionRefsOf } from './views'
 
 // NOTE: The reviewer side. Reviewer procedures are for participants only: an
 // author of the report gets `NotFound` here, as for any report they are not a
@@ -596,7 +594,7 @@ export const reviewerHandlers: Pick<
 
   AddComment: ({ reportId, revision, anchor, body, visibility }) =>
     Effect.gen(function* () {
-      const { user, loaded, allowed, db } = yield* member(reportId, {
+      const { user, loaded, db } = yield* member(reportId, {
         type: 'write_comment',
         revision,
       })
@@ -644,7 +642,6 @@ export const reviewerHandlers: Pick<
       if (outcome._tag !== 'Added') {
         return yield* Effect.fail(roundClosed(loaded, revision))
       }
-      void allowed
       return {
         id,
         revision,
@@ -890,5 +887,3 @@ export const reviewerHandlers: Pick<
       }
     }),
 }
-
-export { Validation, problem, roundViewOf, summaryOf }

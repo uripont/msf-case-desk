@@ -40,7 +40,6 @@ import {
   MAX_SECTIONS_PER_SAVE,
   MAX_TEMPLATES_PER_IMPORT,
   MAX_TEMPLATES_PER_LOOKUP,
-  QUERY_BUDGET,
   RepositoryError,
   dedupeKey,
   imageChunkProblem,
@@ -125,7 +124,7 @@ const nn = (value: unknown): number | null => (value ?? null) as number | null
 const b = (value: unknown): boolean => value === 1 || value === true
 const flag = (value: boolean): number => (value ? 1 : 0)
 
-const IN = (count: number): string => new Array(count).fill('?').join(', ')
+const IN = (count: number): string => Array.from({ length: count }, () => '?').join(', ')
 
 // NOTE: kinds of notification a superseded, decided or abandoned round must
 // no longer send (revision_replaced and the outcomes are sent regardless).
@@ -547,11 +546,6 @@ const byDue = (a: JobRecord, c: JobRecord): number =>
 
 // ---- Publishing steps, shared by publishRevision and finishShare ------------------------------
 
-// NOTE: the statements of "publish": the revision (guarded on the report's
-// state, on the draft being the latest, on the revision number being the
-// next one and on no participant being an author), the old round superseded
-// with its reminders skipped, the new round and its participants, the report's
-// state and deadline, the jobs and the audit event. 9 queries.
 // NOTE: the steps that decide a round (see `decideRound`).
 const decideSteps = (input: DecideRoundInput): ReadonlyArray<GuardedStep> =>
   compact<GuardedStep>([
@@ -589,6 +583,11 @@ const decideSteps = (input: DecideRoundInput): ReadonlyArray<GuardedStep> =>
     auditStep(input.audit),
   ])
 
+// NOTE: the statements of "publish": the revision (guarded on the report's
+// state, on the draft being the latest, on the revision number being the
+// next one and on no participant being an author), the old round superseded
+// with its reminders skipped, the new round and its participants, the report's
+// state and deadline, the jobs and the audit event. 9 queries.
 const publishSteps = (
   reportId: string,
   draft: Expr,
@@ -830,9 +829,6 @@ const ops: Impl = {
   createAccount: async (db, input) => {
     const email = normaliseEmail(input.email)
     const profile = input.profile
-    const unitGuard = (unitId: string): string =>
-      `EXISTS (SELECT 1 FROM units WHERE id = '${unitId.replace(/'/g, "''")}')`
-    void unitGuard
     const steps = compact<GuardedStep>([
       {
         sql: `INSERT INTO users (id, email, name, password_hash)
@@ -3787,5 +3783,3 @@ export const layerSqlReport = (
   options: QueryCountOptions = {},
 ): Layer.Layer<ReportRepository> =>
   Layer.succeed(ReportRepository, makeSqlReportRepository(store, options))
-
-export { QUERY_BUDGET }

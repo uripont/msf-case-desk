@@ -16,7 +16,7 @@ import { parseArgs } from 'node:util'
 
 import { hashPassword } from '../src/password.ts'
 
-export const USERS_SQL = join(import.meta.dirname, '../../../.local/users.sql')
+const USERS_SQL = join(import.meta.dirname, '../../../.local/users.sql')
 
 const { values } = parseArgs({
   options: {

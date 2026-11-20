@@ -30,7 +30,9 @@ import type { RepositoryError } from './repository'
 //   a guard step must change exactly one row or the whole batch has no effect.
 // - Each operation states its D1 query count in `QUERY_BUDGET` (a guard counts
 //   as 2, as `runBatch` does). Workers Free allows 50 queries per request.
-// - Nothing is deleted, except staging rows and images no draft references.
+// - Nothing is deleted, except abandoned staged shares, images no draft
+//   references, template drafts, pending comments, sessions and old sign-in
+//   attempts.
 
 type Eff<A> = Effect.Effect<A, RepositoryError>
 
@@ -181,8 +183,9 @@ export type StoreCommitteeRecord = Readonly<{
 }>
 
 // NOTE: an entry of a unit's reviewer registry. The name is the unit's own
-// (what its authors typed), never the account's: the account's name is the
-// person's, and an author of a unit neither reads nor changes it (D13).
+// (what its authors typed): the account's name is the person's, and an author
+// of a unit does not change it (D13). Only an entry with no name of its own
+// shows the account's.
 export type UnitReviewerRecord = Readonly<{
   unitId: string
   userId: string

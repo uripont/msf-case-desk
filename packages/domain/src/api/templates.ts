@@ -4,10 +4,10 @@ import { Template, TemplateId } from '../template'
 import { Theme } from '../theme'
 import { ApiId, DisplayName, EpochMs, Problem } from './common'
 
-// NOTE: Templates and the theme. Template procedures need the
-// template editor capability; they give no access to any report. A template
-// version is immutable once published, so a client may cache one by
-// `(templateId, version)`.
+// NOTE: Templates and the theme. Template editors manage the templates. Authors
+// choose from the published ones, and authors and reviewers read a version only
+// through a report that uses it. A template version is immutable once
+// published, so a client may cache one by `(templateId, version)`.
 
 export const TemplateVersionState = Schema.Literals([
   'draft',

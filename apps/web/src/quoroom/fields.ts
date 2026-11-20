@@ -385,7 +385,7 @@ const noPeopleNote = <M>(h: HtmlBuilder<M>): Html =>
   h.p(
     [h.Class('text-base text-brand-grey')],
     [
-      'No people are listed in this report yet. The names list is added in a later step.',
+      'No people are listed in this report yet.',
     ],
   )
 
@@ -508,7 +508,6 @@ const signatureField = <M>(
           h.Autocomplete('off'),
           h.Value(name),
           h.Class(fieldClassName),
-          h.Disabled(context.isDisabled),
           h.Disabled(context.isDisabled),
           h.OnInput(typed =>
             context.onChange(

@@ -44,7 +44,7 @@ type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
 
 // NOTE: the log of a report is read bounded: the newest events. Reads are
 // stored once per person, so only the repeatable kinds
-// (sent, reminded) can grow, and slowly.
+// (notified, reminded) can grow, and slowly.
 const EVENT_LIMIT = 2000
 
 // NOTE: what the grid and the approval record read: the log of the report with

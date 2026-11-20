@@ -20,7 +20,7 @@ import { momentText } from './draftText'
 import { actionButton } from './entryViews'
 import { Failure, failureOf, failureText } from './failure'
 import { removalOf, roleLines } from './roundActions'
-import { decisionText } from './rounds'
+import { decisionText, statusText as revisionStatusText } from './rounds'
 import { PageScope, isCurrentPage, pageScopeOf } from './scope'
 import { alertText, loadingText, panel, selectField, statusText } from './ui'
 import { LoadState } from './unit'
@@ -382,13 +382,7 @@ export const dismissDialog = (model: Model): Update.Return<Model, Message> =>
 // VIEW
 
 const statusLine = (row: RevisionRow): string =>
-  row.status === 'open'
-    ? 'Open for review'
-    : row.status === 'superseded'
-      ? `Superseded by Revision ${row.replacedBy ?? row.revision + 1}`
-      : row.decidedBy === 'deadline'
-        ? 'Decided at the deadline'
-        : 'Decided, the approval rule was met'
+  revisionStatusText({ ...row, number: row.revision })
 
 const th = (h: HtmlBuilder<Message>, label: string): Html =>
   h.th(

@@ -46,4 +46,4 @@ export const makeJpeg = (segments: ReadonlyArray<ReadonlyArray<number>> = []): U
     0xff, 0xd9,
   ])
 
-export const exifSegment = [0xff, 0xe1, 0, 8, ...ascii('Exif'), 0, 0].slice(0, 12)
+export const exifSegment = [0xff, 0xe1, 0, 8, ...ascii('Exif'), 0, 0]

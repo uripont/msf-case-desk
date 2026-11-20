@@ -24,10 +24,10 @@ import { highlightedChildren } from './marked'
 // NOTE: Rich text shown without the editor, for drafts that are shared,
 // revisions, and any report an author may only read. It is a plain Foldkit
 // view of the domain document and never loads Tiptap. Headings 1 to 4 of the
-// text are shown as the fourth to the seventh level of the page, below the
+// text are shown as the fourth to the sixth level of the page, below the
 // section title. A table sits in a box that scrolls sideways, so a wide table
-// never widens the page. An image is fetched and shown by the image element
-//, with its caption and whether it is marked safe to share.
+// never widens the page. An image is fetched and shown by the image element,
+// with its caption and whether it is marked safe to share.
 
 // NOTE: Every text block (paragraph, heading, figure caption) carries this
 // data attribute, in document order. The selection reader (`selection.ts`)

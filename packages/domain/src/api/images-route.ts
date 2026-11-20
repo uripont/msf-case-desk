@@ -10,7 +10,7 @@ import { ImageMeta, ImageMime } from './reports'
 //
 // Upload: `POST /api/images?...` with the raw bytes of one chunk as the
 // body (`content-type: application/octet-stream`), the fields of
-// `ImageChunkQuery` in the query string. A chunk is at most
+// `ImageChunkQueryFromStrings` in the query string. A chunk is at most
 // `IMAGE_CHUNK_BYTES`; the browser has already resized the image to at most
 // `IMAGE_MAX_SIDE` pixels and re-encoded it, which drops its metadata.
 //
@@ -32,34 +32,11 @@ const ChunkIndex = Schema.Int.check(
 
 // ---- Upload ------------------------------------------------------------------------------------
 
-// NOTE: The query string of an upload request. Numbers arrive as text in a
-// query; the route decodes them with `ImageChunkQueryFromStrings`.
-export const ImageChunkQuery = Schema.Struct({
-  // NOTE: Chosen by the browser, the same for every chunk of one image.
-  uploadId: ApiId,
-  // NOTE: A report ID, or `theme` for the logo.
-  owner: Schema.Union([ApiId, Schema.Literal('theme')]),
-  index: ChunkIndex,
-  chunks: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: IMAGE_MAX_CHUNKS }),
-  ),
-  mime: ImageMime,
-  width: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: IMAGE_MAX_SIDE }),
-  ),
-  height: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: IMAGE_MAX_SIDE }),
-  ),
-  // NOTE: Total size of the image in bytes, over all chunks.
-  size: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: IMAGE_MAX_BYTES }),
-  ),
-})
-export type ImageChunkQuery = typeof ImageChunkQuery.Type
-
 const intFromString = (minimum: number, maximum: number) =>
   Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }))
 
+// NOTE: The query string of an upload request. Numbers arrive as text in a
+// query; the route decodes them with `ImageChunkQueryFromStrings`.
 export const ImageChunkQueryFromStrings = Schema.Struct({
   uploadId: ApiId,
   owner: Schema.Union([ApiId, Schema.Literal('theme')]),

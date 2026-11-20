@@ -3,8 +3,8 @@
 // `withSink` gives each request a private slot, named by an internal header
 // that the app writes (and any copy sent by the client is overwritten); the
 // handler puts the cookie in the slot, and the app appends it to the response.
-// One isolate handles one request at a time per app, and the slot is removed
-// when the response is made.
+// Each request has its own slot, even when requests overlap in one isolate, and
+// the slot is removed when the response is made.
 
 export const SINK_HEADER = 'x-quoroom-sink'
 

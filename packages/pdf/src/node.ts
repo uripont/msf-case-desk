@@ -14,8 +14,8 @@ import { FONT_PACKAGES, familyOfFile } from './fonts'
 
 // NOTE: The Node adapter (D4): the same pure definition as the browser's,
 // rendered with pdfmake's server build and the font files of the
-// `@fontsource` packages read from disk. Used by the tests and by scripts (the
-// pilot script); no network or file access is allowed to pdfmake itself.
+// `@fontsource` packages read from disk. Used by the tests and by the Node
+// runner (`runner.ts`); no network or file access is allowed to pdfmake itself.
 
 const require = createRequire(import.meta.url)
 

@@ -190,7 +190,7 @@ export const routeErrorText = (code: string, status: number): string => {
     case 'has_metadata':
       return 'The picture still carries hidden information (such as where it was taken), so it was not added. Try another picture or save it again as a new file.'
     case 'read_only':
-      return 'This report is archived and cannot be changed.'
+      return 'This report is archived. It can be read, not changed.'
     case 'not_found':
       return 'The picture could not be added. You may no longer have access to this report.'
     default:

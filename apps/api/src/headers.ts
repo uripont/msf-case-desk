@@ -2,7 +2,7 @@
 // `Referrer-Policy: no-referrer` (D13), so a page that was opened from a link
 // never tells another site where the person came from. Response headers can be
 // immutable (assets), so the response is copied.
-export const REFERRER_POLICY = 'no-referrer'
+const REFERRER_POLICY = 'no-referrer'
 
 export const withReferrerPolicy = (response: Response): Response => {
   if (response.headers.get('referrer-policy') === REFERRER_POLICY) {

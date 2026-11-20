@@ -21,6 +21,7 @@ import {
   RoundView,
   Template,
   draftLabel,
+  nextRevisionNumber,
 } from '@quoroom/domain'
 
 import { AppRoute, pathOf } from '../route'
@@ -235,12 +236,6 @@ export const contextOf = (
     }),
   )
 
-const nextRevisionNumber = (model: Model): number =>
-  Option.match(Array.last(model.revisions), {
-    onNone: () => 1,
-    onSome: revision => revision.number + 1,
-  })
-
 const PREVIEW_NEEDED =
   'This draft was shared without the redacted version being checked. Reviewers of a redacted role only ever read that version, so it has to be checked first: share the draft from the share screen, which shows it and asks you to confirm it.'
 
@@ -437,7 +432,9 @@ const publishPanel = (
   detail: typeof ReportDetail.Type,
 ): Html => {
   const choices = context.choices
-  const next = nextRevisionNumber(model)
+  const next = nextRevisionNumber(
+    model.revisions.map(revision => revision.number),
+  )
   const hasOpen = Option.isSome(currentRoundOf(model.revisions))
   const archived = detail.summary.state === 'archived'
   const needsPreview =
@@ -447,7 +444,12 @@ const publishPanel = (
     h,
     `Publish Revision ${next}`,
     archived
-      ? [h.p([h.Class('text-lg text-brand-ink')], ['This report is archived.'])]
+      ? [
+          h.p(
+            [h.Class('text-lg text-brand-ink')],
+            ['This report is archived. It can be read, not changed.'],
+          ),
+        ]
       : choices.latestDraft < 1
         ? [
             h.p(

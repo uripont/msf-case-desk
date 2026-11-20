@@ -49,7 +49,7 @@ import {
 // original text, and a trailing marker is replaced with the name. A match must sit on
 // whole words: the character before and after is not a letter or a number (so
 // "Ana's" matches "Ana" and "Banana" does not). Scripts written without
-// spaces (Han, Hiragana, Katakana, Thai, Khmer, Lao, Myanmar, Tibetan) have no
+// spaces (Han, Hiragana, Katakana, Thai, Khmer, Lao, Myanmar, Tibetan, Bopomofo) have no
 // word boundaries: a name in them matches wherever it occurs, and their
 // characters never count as a word next to a name in another script.
 // Every occurrence of every alias is found, the longest alias first. A match

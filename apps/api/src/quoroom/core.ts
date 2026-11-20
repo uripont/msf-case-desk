@@ -34,7 +34,6 @@ import {
   Template,
   Validation,
   authorize,
-  decidedAtOf,
   draftingRoleOf,
   notificationJobs,
   refusalToError,
@@ -837,5 +836,3 @@ export const roundOf = (
   revision: number,
 ): RoundWithParticipants | undefined =>
   loaded.rounds.find(entry => entry.round.revision === revision)
-
-export { decidedAtOf }

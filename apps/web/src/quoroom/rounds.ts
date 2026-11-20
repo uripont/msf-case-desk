@@ -10,7 +10,12 @@ import { countdownText, deadlineText } from './zoned'
 // for the open round, a countdown. Pure: the time now is a parameter, read by
 // the screen's clock Command.
 
-export const statusText = (revision: RevisionHeader): string =>
+export const statusText = (revision: {
+  number: number
+  status: RevisionHeader['status']
+  decidedBy?: RevisionHeader['decidedBy'] | undefined
+  replacedBy?: number | undefined
+}): string =>
   revision.status === 'open'
     ? 'Open for review'
     : revision.status === 'superseded'

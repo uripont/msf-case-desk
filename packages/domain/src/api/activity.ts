@@ -60,6 +60,8 @@ export const AuditPage = Schema.Struct({
 
 // ---- Notifications ---------------------------------------------------------------------------
 
+// NOTE: The kinds are listed once, here. `NotificationKind` in notifications.ts
+// is derived from this list.
 export const NOTIFICATION_KINDS = [
   'review_request',
   'reminder_first',
@@ -69,6 +71,7 @@ export const NOTIFICATION_KINDS = [
   'review_received',
   'approval_received',
   'round_decided',
+  // NOTE: D6: told to a reviewer an author removed from the open round.
   'removed_from_round',
 ] as const
 

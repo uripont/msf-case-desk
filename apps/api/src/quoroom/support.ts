@@ -65,8 +65,13 @@ export const member = (reportId: string, action: Action) =>
     return { user, loaded, allowed, db }
   })
 
-export const peopleOf = (text: string): ReadonlyArray<Person> =>
-  JSON.parse(text) as ReadonlyArray<Person>
+// NOTE: a stored people list that is not a list is a fault, never an empty list
+// (the check of `readPeople` in reviewer.ts).
+export const peopleOf = (text: string): ReadonlyArray<Person> => {
+  const parsed: unknown = JSON.parse(text)
+  if (!Array.isArray(parsed)) throw new Error('people list is not a list')
+  return parsed as ReadonlyArray<Person>
+}
 
 export const dataOf = (
   template: Template,

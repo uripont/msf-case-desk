@@ -249,11 +249,14 @@ export const buildPdf = (
     return { text: runInlines(runs, body), margin: [0, 0, 0, 6] }
   }
 
-  const imageNode = (imageId: string, width: number): PdfNode | undefined => {
+  const imageNode = (
+    imageId: string,
+    fit: [number, number],
+  ): PdfNode | undefined => {
     const data = images.get(imageId)
     return data === undefined
       ? undefined
-      : { image: data, fit: [width, 300], alignment: 'center' }
+      : { image: data, fit, alignment: 'center' }
   }
 
   const tableNode = (
@@ -368,13 +371,12 @@ export const buildPdf = (
   const blockNodes = (block: Block, width: number): ReadonlyArray<PdfNode> => {
     switch (block.type) {
       case 'logo': {
-        const node = imageNode(block.imageId, 120)
+        const node = imageNode(block.imageId, [140, 70])
         return node === undefined
           ? []
           : [
               {
                 ...node,
-                fit: [140, 70],
                 alignment: 'left',
                 margin: [0, 0, 0, 24],
               },
@@ -479,7 +481,7 @@ export const buildPdf = (
         return node === undefined ? [] : [node]
       }
       case 'figure': {
-        const node = imageNode(block.imageId, width)
+        const node = imageNode(block.imageId, [width, 300])
         const caption = block.caption.some(run => run.text !== '')
           ? [
               {

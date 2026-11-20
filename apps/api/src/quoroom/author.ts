@@ -17,6 +17,7 @@ import {
   contentProblems,
   draftLabel,
   draftingRoleOf,
+  nextDraftNumber,
   peopleListProblems,
   redactedSectionOf,
   redactedCaseOf,
@@ -39,7 +40,6 @@ import {
   loadTemplate,
   flowFailure,
   idOf,
-  jobsFor,
   loadReport,
   loadTemplates,
   problem,
@@ -61,7 +61,6 @@ import {
   revisionHeaderFor,
 } from './support'
 import {
-  hashOfSections,
   revisionHeaderOf,
   sectionRefsOf,
   storedSectionRefsOf,
@@ -70,11 +69,12 @@ import {
 } from './views'
 
 // NOTE: The author side of the report: reading, working copies, sharing,
-// history. Every handler calls `member` first (loading the report, settling
-// the round and asking `authorize`), so a caller with no role in the report
-// gets the same `NotFound` as for a report that does not exist, before
-// anything else is looked at. Authors read their own content as written;
-// reviewers never come through here.
+// history. Every handler for one report calls `member` first (loading the
+// report, settling the round and asking `authorize`), so a caller with no role
+// in the report gets the same `NotFound` as for a report that does not exist,
+// before anything else is looked at. Case files and new reports are checked by
+// unit instead, and the report list shows only the caller's own reports.
+// Authors read their own content as written; reviewers never come through here.
 
 type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
 
@@ -687,7 +687,7 @@ export const authorHandlers: Pick<
       if (Result.isFailure(shared)) {
         return yield* Effect.fail(flowFailure(shared.failure, undefined))
       }
-      const newNumber = loaded.record.latestDraft + 1
+      const newNumber = nextDraftNumber([loaded.record.latestDraft])
       // NOTE: the confirmation is the hash of the redacted content the author
       // saw, checked against what is staged now; the batch re-checks it and
       // writes it together with the draft and the publish (D14).
@@ -981,7 +981,7 @@ export const authorHandlers: Pick<
 
   GetDraftOutline: ({ reportId, draft }) =>
     Effect.gen(function* () {
-      const { loaded, db } = yield* member(reportId, {
+      const { db } = yield* member(reportId, {
         type: 'read_draft',
         number: draft,
       })
@@ -991,7 +991,6 @@ export const authorHandlers: Pick<
       if (header === undefined || found === null) {
         return yield* Effect.fail(new NotFound())
       }
-      void loaded
       // NOTE: the grid's "read" fact for a draft: another author opened it.
       // Whoever shared a draft has not "read" it by opening it again.
       const reader = yield* CurrentUser
@@ -1235,5 +1234,3 @@ const diffSections = (
   }
   return changes
 }
-
-export { hashOfSections, idOf, jobsFor }

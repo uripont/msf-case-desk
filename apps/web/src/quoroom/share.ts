@@ -31,6 +31,7 @@ import {
   Template,
   canonicalJson,
   draftLabel,
+  nextDraftNumber,
   peopleListProblems,
   redactedCaseOf,
   redactedSectionOf,
@@ -1677,7 +1678,7 @@ const comparisonView = (
         [
           isBusy
             ? 'Combining…'
-            : `Resolve and review ${draftLabel(copy.latestDraft + 1)}`,
+            : `Resolve and review ${draftLabel(nextDraftNumber([copy.latestDraft]))}`,
         ],
       ),
     ],
@@ -1926,7 +1927,7 @@ const loadedView = (
     reportId: model.reportId,
     titles: comparison === undefined ? {} : entryTitles(comparison),
   }
-  const next = draftLabel(copy.latestDraft + 1)
+  const next = draftLabel(nextDraftNumber([copy.latestDraft]))
   return Phase.match(model.phase, {
     Shared: ({ draft, maybeRevision }) =>
       shell(

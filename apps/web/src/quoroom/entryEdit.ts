@@ -294,7 +294,8 @@ export const retitleEntryIn = (
 
 // NOTE: Marks the target not applicable with a reason. For a section, the mark
 // is stored beside what it holds. For an item it replaces the value, so the
-// replaced value is returned to be kept on screen and put back on restore.
+// caller keeps the replaced value (`naStash` in `report.ts`) and passes it back
+// to `clearNotApplicable` on restore.
 export const markNotApplicable = (
   contents: SectionContents,
   target: Target,

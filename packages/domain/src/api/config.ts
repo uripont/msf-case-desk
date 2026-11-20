@@ -21,8 +21,8 @@ export type ConfigLogo = typeof ConfigLogo.Type
 
 // NOTE: Only what the signed-out app needs to look right (D24): the
 // organisation's name, the colours and the fonts. The PDF header and footer
-// text, and the stored logo ID, are not public: a signed-in account reads the
-// whole theme with `GetTheme`, and the logo is named in `AppConfig.logo`.
+// text are not public: a signed-in account reads the whole theme with
+// `GetTheme`. The logo is named in `AppConfig.logo`, so its ID is public too.
 export const PublicTheme = Schema.Struct({
   schemaVersion: Theme.fields.schemaVersion,
   organisationName: Theme.fields.organisationName,

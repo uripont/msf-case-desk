@@ -582,10 +582,13 @@ describe('redactContent', () => {
       nick: { type: 'not_applicable', reason: 'X '.repeat(240).trim() },
     })
     const out = redactContent(people, content)
-    const reason = (out.sections.details?.values.nick as { reason: string })
-      .reason
-    expect(reason.length).toBeLessThanOrEqual(500)
-    expect(reason).toBe(reason.trim())
+    const nick = out.sections.details?.values.nick as
+      | { reason: string }
+      | undefined
+    const reason = nick?.reason
+    expect(reason).toBeDefined()
+    expect(reason?.length).toBeLessThanOrEqual(500)
+    expect(reason).toBe(reason?.trim())
     const titled = {
       ...content,
       sections: {

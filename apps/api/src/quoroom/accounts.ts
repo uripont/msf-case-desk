@@ -40,13 +40,10 @@ import {
 // registry and committees.
 //
 // D13. A person invited with an email that already has an account is never
-// told so: the response has the same shape as for a new one, built from what
-// the caller typed, and carries no link. The grant, link or membership is
-// still made, and logged.
+// told so: the response has the same shape as for a new one, and carries no
+// link. The grant, link or membership is still made, and logged.
 
 type AllHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof QuoroomRpcs>>
-
-export { LINK_TTL_MS, UNUSABLE_PASSWORD_HASH }
 
 const MAX_ACCOUNTS_LISTED = 2000
 
@@ -113,8 +110,9 @@ const rowFor = (db: Store, accountId: string) =>
     )
   })
 
-// NOTE: an entry of the unit's registry: the unit's own name for the person.
-// Nothing of the account behind it (D13).
+// NOTE: an entry of the unit's registry: the unit's own name for the person
+// (the account's name only if the unit has none), with the account's email and
+// active flag. Nothing else of the account (D13).
 const reviewerOf = (entry: UnitReviewerRecord) => ({
   accountId: entry.userId,
   unit: entry.unitId,

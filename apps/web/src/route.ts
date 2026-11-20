@@ -5,7 +5,7 @@ import { type Url } from 'foldkit/url'
 
 // NOTE: One route per screen. The URL is the address of the screen, so a link
 // opens the right one and the address bar follows the app. A route is a
-// variant, a router and a line in `urlToAppRoute`, `pathOf` and `needsSession`.
+// variant, a router and a line in `urlToAppRoute` and `pathOf`.
 // Nothing in a URL is secret. A link token travels in the fragment of `/link`
 // only, which the app removes once it has read it.
 
@@ -198,36 +198,6 @@ export const pathOf = (route: AppRoute): string =>
     Revision: ({ reportId, revision }) =>
       revisionRouter({ reportId, revision }),
     NotFound: ({ path }) => path,
-  })
-
-// NOTE: Every screen but the link page and the not-found page needs a signed-in
-// account. A visitor who opens one of them signed out keeps the address, is
-// shown the sign-in form, and is on that screen once signed in.
-export const needsSession = (route: AppRoute): boolean =>
-  AppRoute.match(route, {
-    Home: () => true,
-    Account: () => true,
-    Unit: () => true,
-    Reports: () => true,
-    People: () => true,
-    Theme: () => true,
-    Templates: () => true,
-    TemplateEditor: () => true,
-    Inbox: () => true,
-    Notifications: () => true,
-    Link: () => false,
-    Report: () => true,
-    Share: () => true,
-    Names: () => true,
-    Publish: () => true,
-    Drafts: () => true,
-    Draft: () => true,
-    Comments: () => true,
-    Grid: () => true,
-    Audit: () => true,
-    Downloads: () => true,
-    Revision: () => true,
-    NotFound: () => false,
   })
 
 export const originOf = (url: Url): string =>

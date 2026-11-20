@@ -71,7 +71,9 @@ test('the time stamp is the one given, so the same files make the same bytes on 
 
 test('a zip that would be too large is refused with a clear error, never wrapped', () => {
   expect(() => checkZipSize([MAX_ZIP_BYTES, 1])).toThrow(ZipTooLarge)
-  expect(() => checkZipSize(new Array(MAX_ZIP_ENTRIES + 1).fill(1))).toThrow(ZipTooLarge)
+  expect(() =>
+    checkZipSize(Array.from({ length: MAX_ZIP_ENTRIES + 1 }, () => 1)),
+  ).toThrow(ZipTooLarge)
   expect(() => checkZipSize([MAX_ZIP_BYTES])).not.toThrow()
   const refused = (() => {
     try {

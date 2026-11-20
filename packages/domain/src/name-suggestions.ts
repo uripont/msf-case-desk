@@ -14,11 +14,12 @@ import type { Template } from './template'
 // list yet. It is shown only to authors and never decides anything. It is
 // deterministic and does no I/O.
 //
-// A candidate is a run of capitalised words (Latin letters with accents, with
-// inner apostrophes and hyphens, so "O'Brien" and "Jean-Pierre" are one word),
-// joined by single spaces, and optionally by a lower-case particle between two
-// capitalised words ("Maria de la Cruz", "van Dijk" is not one: it needs a
-// capital on both sides). A word does not count if
+// A candidate is a run of capitalised words (letters of any script, with
+// accents, and with inner apostrophes and hyphens, so "O'Brien" and
+// "Jean-Pierre" are one word), joined by spaces on one line, and optionally by
+// one or two lower-case particles between two capitalised words ("Maria de la
+// Cruz", "van Dijk" is not one: it needs a capital on both sides). A word does
+// not count if
 //
 // - it is in a small stopword list (articles, pronouns, titles, months, days,
 //   in English, French, Spanish and Catalan);
@@ -243,7 +244,7 @@ const candidatesIn = (
       lastWord = key(token.text)
     } else if (SENTENCE_END.has(token.text)) {
       atStart = !(token.text === '.' && TITLES.has(lastWord))
-    } else if (!/^["'“”‘’«»(\[¿¡—–-]$/u.test(token.text)) {
+    } else if (!/^["'“”‘’«»([¿¡—–-]$/u.test(token.text)) {
       atStart = false
     }
   })

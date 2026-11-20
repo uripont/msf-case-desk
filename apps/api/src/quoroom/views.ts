@@ -1,5 +1,3 @@
-import { Effect } from 'effect'
-
 import {
   type ReportSummary,
   type RevisionHeader,
@@ -12,7 +10,7 @@ import {
   tallyRound,
 } from '@quoroom/domain'
 
-import { type Loaded, flowOf } from './core'
+import { type Loaded } from './core'
 import { parseSection, sha256Hex, utf8Length } from './content'
 
 // NOTE: builders for the views the handlers return. Authors' views only:
@@ -188,5 +186,3 @@ export const roundViewOf = (
     tally: tallyRound(loaded.template, flowRound),
   }
 }
-
-export { flowOf, Effect }

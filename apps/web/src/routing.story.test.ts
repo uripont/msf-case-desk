@@ -28,7 +28,6 @@ import * as Link from './quoroom/link'
 import * as Review from './quoroom/review'
 import {
   AppRoute,
-  needsSession,
   pathOf,
   redactedFragmentOf,
   urlToAppRoute,
@@ -86,14 +85,6 @@ describe('routes', () => {
     routes.forEach(route => {
       expect(routeOf(pathOf(route))).toEqual(route)
     })
-  })
-
-  test('only the link page and the not-found page are open to a visitor', () => {
-    expect(needsSession(AppRoute.Link())).toBe(false)
-    expect(needsSession(AppRoute.NotFound({ path: '/x' }))).toBe(false)
-    expect(
-      needsSession(AppRoute.Revision({ reportId: 'r', revision: 1 })),
-    ).toBe(true)
   })
 })
 

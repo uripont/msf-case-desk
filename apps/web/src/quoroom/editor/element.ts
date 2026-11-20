@@ -41,10 +41,10 @@ import {
 // NOTE: The rich-text editor as a custom element. It is plain DOM
 // code that owns everything inside it: Tiptap, the toolbar and the link box.
 // Foldkit sets the properties `content` (canonical JSON text), `version`,
-// `disabled`, `label`, `report` (the report whose images are shown and
-// uploaded) and `remaining` (bytes of image space left in the report, -1 when
-// unknown), and listens to the events `change`, `selection` and `image`. It
-// never reaches inside.
+// `generation`, `owner` (whose text this is), `disabled`, `label`, `report`
+// (the report whose images are shown and uploaded) and `remaining` (bytes of
+// image space left in the report, -1 when unknown), and listens to the events
+// `change`, `selection` and `image`. It never reaches inside.
 //
 // Images are handled here, as plain DOM code: a picture chosen,
 // pasted or dropped is prepared in the browser (`images/encode.ts`), uploaded
@@ -972,5 +972,3 @@ class QuoroomEditor extends HTMLElement {
 if (customElements.get(EDITOR_TAG) === undefined) {
   customElements.define(EDITOR_TAG, QuoroomEditor)
 }
-
-export { QuoroomEditor }

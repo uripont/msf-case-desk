@@ -1,3 +1,4 @@
+import type { NOTIFICATION_KINDS } from './api/activity'
 import { standingDecisions } from './approval'
 import { type ReportFlow, type Round, openRound } from './report-flow'
 import {
@@ -82,17 +83,7 @@ export const notificationConfigInMinutes = (
   finalReminderBefore: finalReminderBefore * MINUTE,
 })
 
-export type NotificationKind =
-  | 'review_request'
-  | 'reminder_first'
-  | 'reminder_final'
-  | 'deadline'
-  | 'revision_replaced'
-  | 'review_received'
-  | 'approval_received'
-  | 'round_decided'
-  // NOTE: D6: told to a reviewer an author removed from the open round.
-  | 'removed_from_round'
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 
 // NOTE: The kinds scheduled for the open round, none of which may exist for a
 // superseded or decided round.

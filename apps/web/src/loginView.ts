@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import { Option, Redacted } from 'effect'
 import { Html, HtmlBuilder } from 'foldkit/html'
 
+import { PRODUCT_NAME } from './brand'
 import { LoginSubmission, Message, type Model } from './main'
 import { failureText } from './quoroom/failure'
 import { PAGE_HEADING_ID } from './quoroom/ui'
@@ -34,7 +35,7 @@ export const loginPage = (model: Model, h: HtmlBuilder<Message>): Html => {
               h.p(
                 [h.Class('text-pretty text-lg font-light text-brand-ink')],
                 [
-                  'Quoroom is where reports are written, reviewed and approved. Use the account you were given.',
+                  `${PRODUCT_NAME} is where reports are written, reviewed and approved. Use the account you were given.`,
                 ],
               ),
             onSome: () =>

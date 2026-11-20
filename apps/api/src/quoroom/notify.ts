@@ -248,7 +248,6 @@ const processReport = (
     let profilesFailed = false
     if (jobs.some(job => job.kind === 'approval_received')) {
       const profiles = yield* db.listProfiles(loaded.authors).pipe(
-        Effect.map(list => list),
         Effect.orElseSucceed(() => undefined),
       )
       if (profiles === undefined) profilesFailed = true
