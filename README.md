@@ -4,7 +4,9 @@ A template-based reporting tool where a group reaches a *quorum* on a report wit
 
 It was built at Universitat Pompeu Fabra for Médecins Sans Frontières (MSF), together with MSF's Ethics & Behaviour Unit, its first user, and fits any MSF department or humanitarian organisation with the same kind of reporting. It is open source and runs on Cloudflare, on any major cloud through OpenOrange, or on your own server.
 
-[![The Quoroom demo video: authors, reviewers and the hosting options, in seven minutes](docs/media/quoroom-demo.jpg)](docs/media/quoroom-demo.mp4)
+https://github.com/user-attachments/assets/2739ed8a-c315-4f4a-9c1b-58249dd2d223
+
+The demo video (seven minutes: authors, reviewers and the hosting options) is also in the repository, as [`docs/media/quoroom-demo.mp4`](docs/media/quoroom-demo.mp4).
 
 <p>
 <img src="docs/media/desktop-grid.png" alt="The status grid of a report on a computer" width="58.5%"> <img src="docs/media/phone-review.png" alt="A reviewer reading a revision on a phone" width="19%"> <img src="docs/media/phone-compare.png" alt="An author comparing two drafts on a phone" width="19%">
