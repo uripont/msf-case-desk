@@ -37,7 +37,7 @@ pnpm workerd --mode pilot   # http://127.0.0.1:8787, then open the link
 - **Repository contract tests**, one suite run in memory, on SQLite with every migration, on a fake D1 and on `workerd`, with the number of queries each operation may make.
 - **API tests** with several accounts against the Worker's routes, above all what each one must not see.
 - **Story and scene tests** (Foldkit) for every screen, without a browser.
-- **Browser tests** (`packages/e2e`) on `workerd` in Chromium and Firefox: the pilot path, every route at 375 and 1280 px in its loaded, empty, loading and error states, keyboard use. The rehearsal runs the pilot script end to end on any host.
+- **Browser tests** (`packages/e2e`) on `workerd`: the pilot path runs in Chromium only. The route sweep (every route at 375 and 1280 px in its loaded, empty, loading and error states) and the keyboard steps run in Chromium and Firefox. The rehearsal runs the pilot script end to end in Chromium, against a local host (`127.0.0.1` or `localhost`) or a Cloudflare test environment.
 - **Compatibility**: `pnpm migrations:check` rejects migrations that would break an older version, and `pnpm compat:check` runs the storage tests of every frozen version on the latest schema ([`architecture.md`](architecture.md#how-versions-share-one-database)).
 
 All data in the tests is synthetic.

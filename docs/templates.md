@@ -106,21 +106,20 @@ Both forms are blank. No names, cases or personal data are described here.
 - *Required*, *optional* and *optional with a reason* are D23's three states.
 - *Instruction* means guidance text on the template, shown while writing and never stored in the content.
 - Roles are the two built-in ones: **Authors** (drafting role) and **Committee** (reviewing role, `redacted` view, comments, votes, rule *all voters*).
-- Items marked **(gap n)** needed a change to D23. Section "Gaps found" lists them.
 
 ## Elements common to both templates
 
 | Element | In the source | D23 mapping |
 | --- | --- | --- |
-| Confidential marking | A "strictly confidential" legend on every page, in the header, or the footer next to the page number | Header and footer text of the template, with the theme's text as default (D24). Both templates set it. Gap 8 |
-| Page number | Centred in the intake footer; in the investigation report in a header, as "- n -", beside the confidentiality legend | `{page}` token in the header or footer text. Gap 8 |
+| Confidential marking | A "strictly confidential" legend on every page, in the header, or the footer next to the page number | Header and footer text of the template, with the theme's text as default (D24). Both templates set it. |
+| Page number | Centred in the intake footer; in the investigation report in a header, as "- n -", beside the confidentiality legend | `{page}` token in the header or footer text. |
 | Logo | The intake carries an image in its header | The theme's logo (D24), placed in the PDF header. Nothing is stored in the template |
 | Document name in the header | The intake header names the form and the unit | Header text of the intake template. The unit's own name comes from the theme |
-| Case reference | A case number field on the intake; a case number on the investigation cover, and in one footer | The case file's reference (D15), shown as a read-only case-file value and as the `{case}` token. The label of the reference is part of the template. Gaps 4, 8 |
+| Case reference | A case number field on the intake; a case number on the investigation cover, and in one footer | The case file's reference (D15), shown as a read-only case-file value and as the `{case}` token. The label of the reference is part of the template. |
 | Placeholders in square brackets | Every blank has a bracketed hint, often with an example sentence | Instruction text, never stored. Stock sentences are shown as examples in the instruction; the author writes the text. No pre-filled content in Draft 0, which stays the empty template |
 | Rich text bodies | Free text, sometimes with bullet and numbered lists two levels deep, and tables (chronology as a list or table) | Rich text items (D3). Nested lists are in Tiptap's standard lists. Lists inside rich text are numbered with arabic numbers only; the source's letter and roman list styles are not reproduced. This is accepted: the section numbering, which matters, is a template feature |
-| Authors and review | Not in the forms | Authors and Committee roles (D23, section 1). The "prepared by" lines stay content (D6) |
-| Date format | Day, abbreviated month and year; month and year only on the investigation cover | Date items with precision `day` or `month`. Display format follows the reader's locale. Gap 5 |
+| Authors and review | Not in the forms | Authors and Committee roles (D23, roles). The "prepared by" lines stay content (D6) |
+| Date format | Day, abbreviated month and year; month and year only on the investigation cover | Date items with precision `day` or `month`. Display format follows the reader's locale. |
 
 ## 1. Intake / initial assessment
 
@@ -141,7 +140,7 @@ Presented in the form as a grid of labelled cells, two pairs per row. In Quoroom
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Case number, with a year and sequence pattern | Case-file value (reference) | Read-only; comes from the case file. Gap 4 |
+| Case number, with a year and sequence pattern | Case-file value (reference) | Read-only; comes from the case file. |
 | Date the case was received by the project | Date, day | Required |
 | Investigator | Text | Required. Not a people reference, because it is the author, not a person to redact |
 | Date of the intake | Date, day | Required |
@@ -149,7 +148,7 @@ Presented in the form as a grid of labelled cells, two pairs per row. In Quoroom
 | Reason for linking cases | Text | Optional, with the same default |
 | Complainant, a choice | Select, one or several | Required. The form shows only one option, "known"; the full list of options is open (see Decisions) |
 | Complainant, if known | People reference, one | Optional. Redacted by the people list (D14) |
-| Subject or subjects, if known | People reference, several | Optional. Gap 6 |
+| Subject or subjects, if known | People reference, several | Optional. |
 | Reporting mechanism | Text | Required |
 
 ### A. Summary of the complaint
@@ -158,7 +157,7 @@ Section, required. One rich text item. Instruction: a short account of the compl
 
 ### B. Allegations and regulatory framework
 
-Section, required. One repeatable entry, labelled "Allegation n" (gap 3), with items:
+Section, required. One repeatable entry, labelled "Allegation n", with items:
 
 | Item | Type |
 | --- | --- |
@@ -180,7 +179,7 @@ Section, required, with two questions as numbered subsections (arabic):
 
 A rule under the questions says that if the answer to either is no, the investigator documents it, refers the matter to the behaviour lead and the case manager, and does not complete the remaining parts.
 
-D23 mapping: two select items, each carrying an **end answer**. If either is chosen, the report ends early (gap 7):
+D23 mapping: two select items, each carrying an **end answer**. If either is chosen, the report ends early:
 
 - The later required sections become *not applicable (ended)*, so lettering stays stable.
 - A fixed read-only outcome text appears in their place: the matter is referred to the behaviour lead and the case manager. The wording is ours.
@@ -193,7 +192,7 @@ Section, optional. Instruction: witnesses, if needed under the final case strate
 
 | Item | Type |
 | --- | --- |
-| Witness entries, labelled "Witness n" | Repeatable entry (gap 3) with a people reference (one) and a text item for the role or connection, optional |
+| Witness entries, labelled "Witness n" | Repeatable entry with a people reference (one) and a text item for the role or connection, optional |
 
 ### E. Result of research and further inquiries
 
@@ -242,11 +241,11 @@ Section, required. A table of allegations and recommendations, with six options:
 | E | Refer and ask for more information or an assessment |
 | F | Merge with an ongoing case |
 
-Mapping: a repeatable entry, labelled "Allegation n", with a select item (one, six options with a code and a label, A to F) and an optional text item for a comment. Gap 6 (option codes).
+Mapping: a repeatable entry, labelled "Allegation n", with a select item (one, six options with a code and a label, A to F) and an optional text item for a comment. Option codes are part of the select item (D23).
 
 ### Sign-off
 
-Unnumbered section, required, stays in force after an early end. Two signature blocks (gap 10): the investigator, and the case manager, each a name and a date, printed with a signature line. These stay content; an in-app approval does not replace them (D6).
+Unnumbered section, required, stays in force after an early end. Two signature blocks: the investigator, and the case manager, each a name and a date, printed with a signature line. These stay content; an in-app approval does not replace them (D6).
 
 ### Behaviour committee conclusion
 
@@ -263,7 +262,7 @@ Quoroom's own vote record is kept in the grid and the approval record (D4); the 
 
 ## 2. Investigation report
 
-A structured long-form report. Main parts are roman-numbered (I, II, III …), subparts lettered (A, B …), their parts arabic (1, 2 …), and a fourth level lower-case letters with a closing bracket (`a)`). Numbering is set per level (gap 1). Front matter (cover, contents, executive summary) is unnumbered.
+A structured long-form report. Main parts are roman-numbered (I, II, III …), subparts lettered (A, B …), their parts arabic (1, 2 …), and a fourth level lower-case letters with a closing bracket (`a)`). Numbering is set per level. Front matter (cover, contents, executive summary) is unnumbered.
 
 ### Cover (front matter)
 
@@ -272,15 +271,15 @@ One cover, with a different header from the following pages. Lines, in order:
 | Line | Source |
 | --- | --- |
 | Title "Investigation report" | Fixed text |
-| Case number | Case-file value (reference), gap 4 |
-| Date of issue, month and year | Date item, month precision. Gap 5 |
-| Subtitle: the allegations in brief (using the organisation's official categories) and where they happened | Text item, required, and a second text item for the place. Together a subtitle line made from two items (gap 8) |
+| Case number | Case-file value (reference) |
+| Date of issue, month and year | Date item, month precision |
+| Subtitle: the allegations in brief (using the organisation's official categories) and where they happened | Text item, required, and a second text item for the place. Together a subtitle line made from two items |
 
 The cover is generated from those lines; the author fills the items in a first, unnumbered "Report details" section (front matter, required).
 
 ### Table of contents (front matter)
 
-Generated automatically in PDFs, to three levels (parts, subparts, their parts), with page numbers. It is not an item. D23: contents depth 3 (gap 9). Page numbering restarts at 1 after the front matter, so the Introduction is page 1 (gap 9).
+Generated automatically in PDFs, to three levels (parts, subparts, their parts), with page numbers. It is not an item. D23: contents depth 3. Page numbering restarts at 1 after the front matter, so the Introduction is page 1.
 
 ### Executive summary (front matter, optional)
 
@@ -312,7 +311,7 @@ Required. Items:
 
 ### III. Background
 
-Required. Subsections with titles written by the author, "as necessary": a **repeatable subsection** (gap 2) with a title and a rich text body, zero or more entries, lettered (A, B …).
+Required. Subsections with titles written by the author, "as necessary": a **repeatable subsection** with a title and a rich text body, zero or more entries, lettered (A, B …).
 
 ### IV. Facts and findings
 
@@ -323,7 +322,7 @@ Required. The core of the report, and the main nested repeatable. One **repeatab
 | 1. Facts | Rich text, required |
 | 2. Findings | Rich text, required. Instruction: starts from the facts, states what the investigator found, as one paragraph or a list |
 
-For short reports the two subsections may be merged into one titled "Facts" or "Findings". D23: each is *optional* in a repeat, so a short report can use only one; at least one must be filled. A repeat can itself contain repeatable subsections for its elements (nested repeatable, gap 2).
+For short reports the two subsections may be merged into one titled "Facts" or "Findings". D23: each is *optional* in a repeat, so a short report can use only one; at least one must be filled. A repeat can itself contain repeatable subsections for its elements (nested repeatable).
 
 ### V. Overall findings (optional)
 
@@ -352,7 +351,7 @@ Unnumbered section after the body, required. "Prepared by":
 | --- | --- |
 | Place | Text |
 | Date, day | Date |
-| Investigators, name and signature | Signature blocks, one or several (gap 10) |
+| Investigators, name and signature | Signature blocks, one or several |
 
 ### Back matter (unnumbered, after the signature)
 
@@ -360,7 +359,7 @@ Unnumbered section after the body, required. "Prepared by":
 | --- | --- |
 | **People interviewed and their codes** | Optional section. Repeatable entry "Interviewee n": a people reference (one) and a text item for the position, optional. The *code* the source mentions is the person's replacement label (D14): the redacted view shows the code, the full view shows the name and the code. Authors set it in the people list |
 | **Abbreviations and acronyms** | Optional section, "to be used only in complex reports". Repeatable entry "Abbreviation n" with two text items: the short form and its meaning. Alphabetical order is up to the author |
-| **List of exhibits** | Optional section, repeatable entry "Exhibit n" with items: type (select: document, record of an interview, transcript of an interview; the source gives these three examples, so the list is open), from (text), to (text, optional), people reference (one, optional, for interview records), date (day) and subject (text). The source gives the line pattern "type from sender to addressee, dated …, about …", which the PDF renders from the items. Exhibits are references; no files are attached (plan, section 1) |
+| **List of exhibits** | Optional section, repeatable entry "Exhibit n" with items: type (select: document, record of an interview, transcript of an interview; the source gives these three examples, so the list is open), from (text), to (text, optional), people reference (one, optional, for interview records), date (day) and subject (text). The source gives the line pattern "type from sender to addressee, dated …, about …", which the PDF renders from the items. Exhibits are references; no files are attached |
 
 ## How the model covers both forms
 

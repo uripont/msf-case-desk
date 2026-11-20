@@ -90,7 +90,7 @@ Each **stage** is a separate deployment with its own Worker and database: `pnpm 
 What the commands hold fixed:
 
 - **Stages.** A stage is letters and digits, or `test_<name>` through `pnpm test-env:*`. The stack refuses anything else, so a stray `ALCHEMY_STAGE` (the demo stack's `live_<user>`) can never deploy it.
-- **Account.** Every command runs Alchemy with the profile `default`, and refuses to run when an account-selecting variable (`ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and the others in [`infra/guards.mjs`](../infra/guards.mjs)) is set in the environment or in `.env`. Only `--yes`, `-y`, `--dry-run` and `--detailed` are passed on to Alchemy.
+- **Account.** The `cloudflare:*` and `test-env:*` commands run Alchemy with the profile `default`, and refuse to run when an account-selecting variable (`ALCHEMY_PROFILE`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and the others in [`infra/guards.mjs`](../infra/guards.mjs)) is set in the environment or in `.env`. Only `--yes`, `-y`, `--dry-run` and `--detailed` are passed on to Alchemy. The `alerts:*` and `demo:*` scripts call `alchemy` directly, without these checks.
 - **EU jurisdiction.** Set before the first deploy and never changed: changing it replaces the database.
 - **Logs.** Workers Logs keep what the code writes (errors, and the counts of each notification pass). Invocation logs, which record URLs, and traces are off; no request body is logged. Workers Issues is on, for the alert below.
 
@@ -103,7 +103,7 @@ pnpm test-env:up test_<name> --fast   # Worker quoroom-test-<name>, reminders af
 pnpm test-env:down test_<name>        # deletes it, and .local/grants-test-<name>.sql
 ```
 
-`pnpm grant-admin --env test-<name>` grants its first account. `--invocation-logs` turns on invocation logs, for CPU measurements ([`decisions.md`](decisions.md), "Logs and CPU"); no other stage has them.
+`pnpm grant-admin --env test-<name>` grants its first account. `pnpm test-env:up test_<name> --invocation-logs` turns on that Worker's invocation logs, for CPU measurements ([`decisions.md`](decisions.md), "Logs and CPU"). No other Cloudflare stage has them, except the course's demo stack, which has them on.
 
 ### Alerts
 

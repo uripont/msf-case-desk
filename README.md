@@ -2,7 +2,7 @@
 
 A template-based reporting tool where a group reaches a *quorum* on a report without having to meet in a *room*. Authors draft privately and share drafts, a committee reviews each revision in its own time before a deadline, and the report is approved, concluded and archived with its whole history. Think of it as an asynchronous meeting room for any report that needs a committee's sign-off.
 
-It was built at Universitat Pompeu Fabra for Médecins Sans Frontières (MSF), together with MSF's Ethics & Behaviour Unit, its first user, and fits any MSF department or humanitarian organisation with the same kind of reporting. It is open source and runs on Cloudflare, on any major cloud through OpenOrange, or on your own server.
+It was built at Universitat Pompeu Fabra for Médecins Sans Frontières (MSF), together with MSF's Ethics & Behaviour Unit, its first user, and fits any MSF department or humanitarian organisation with the same kind of reporting. It is open source and runs on Cloudflare, on your own server, or through OpenOrange on a Rivet Engine you run.
 
 https://github.com/user-attachments/assets/44f4dc7b-ae2e-430b-b52f-62d26eb697aa
 
