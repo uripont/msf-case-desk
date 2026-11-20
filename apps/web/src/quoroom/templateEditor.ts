@@ -1296,7 +1296,7 @@ const roleCard = (h: H, context: Context, role: FormRole): Html => {
                           _tag: 'SetApproval',
                           id: role.id,
                           kind,
-                          count: role.approvalCount,
+                          count: role.approvalCount ?? 1,
                         }),
                     },
                   ),

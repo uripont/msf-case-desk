@@ -175,6 +175,26 @@ describe('applyEdit', () => {
     const added = apply(base, { _tag: 'AddSection', id: 'section-1', parentId: null, isConclusion: false })
     expect(freshId(added, 'section', 1)).toBe('section-2')
   })
+
+  test('a new section never takes an ID that another row of the form uses', () => {
+    const base = PANEL_EDITS.reduce(applyEdit, PANEL_START)
+    const nested = apply(base, { _tag: 'AddSection', id: 'remarks', parentId: null, isConclusion: false })
+    expect(nested.sections).toEqual(base.sections)
+    const item = apply(base, { _tag: 'AddSection', id: 'finding-list', parentId: null, isConclusion: false })
+    expect(item.sections).toEqual(base.sections)
+    const role = apply(base, { _tag: 'AddSection', id: 'members', parentId: null, isConclusion: false })
+    expect(role.sections).toEqual(base.sections)
+  })
+
+  test('the approval count is kept as given, and an at-least rule can wait for its number', () => {
+    const base = PANEL_EDITS.reduce(applyEdit, PANEL_START)
+    const empty = apply(base, { _tag: 'SetApproval', id: 'members', kind: 'at_least', count: null })
+    expect(empty.roles.find(role => role.id === 'members')?.approvalCount).toBeNull()
+    const typed = apply(empty, { _tag: 'SetApproval', id: 'members', kind: 'at_least', count: 0 })
+    expect(typed.roles.find(role => role.id === 'members')?.approvalCount).toBe(0)
+    const all = apply(typed, { _tag: 'SetApproval', id: 'members', kind: 'all', count: 3 })
+    expect(all.roles.find(role => role.id === 'members')?.approvalCount).toBeNull()
+  })
 })
 
 describe('where a problem belongs', () => {

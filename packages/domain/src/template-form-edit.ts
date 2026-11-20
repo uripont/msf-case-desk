@@ -595,12 +595,11 @@ export const applyEdit = (form: TemplateForm, edit: FormEdit): TemplateForm => {
           : {
               ...role,
               approvalKind: edit.kind,
-              approvalCount:
-                edit.kind === 'at_least' ? (edit.count ?? 1) : null,
+              approvalCount: edit.kind === 'at_least' ? edit.count : null,
             },
       )
     case 'AddSection':
-      return form.sections.some(row => row.id === edit.id) ||
+      return usedIds(form).has(edit.id) ||
         (edit.isConclusion && form.sections.some(row => row.isConclusion))
         ? form
         : {
