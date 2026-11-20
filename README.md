@@ -6,13 +6,11 @@ It was built at Universitat Pompeu Fabra for Médecins Sans Frontières (MSF), t
 
 https://github.com/user-attachments/assets/44f4dc7b-ae2e-430b-b52f-62d26eb697aa
 
-The demo video (seven minutes: authors, reviewers and the hosting options) is also in the repository, as [`docs/media/quoroom-demo.mp4`](docs/media/quoroom-demo.mp4).
-
 <p>
 <img src="docs/media/desktop-grid.png" alt="The status grid of a report on a computer" width="58.5%"> <img src="docs/media/phone-review.png" alt="A reviewer reading a revision on a phone" width="19%"> <img src="docs/media/phone-compare.png" alt="An author comparing two drafts on a phone" width="19%">
 </p>
 
-> All data in this repository, its tests, its screenshots and its video is synthetic. No real report, case or person is stored here.
+> All data in this repository, its tests, its screenshots and the demo video is synthetic. No real report, case or person is stored here.
 
 ## What it does
 
