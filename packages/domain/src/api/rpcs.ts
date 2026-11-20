@@ -566,11 +566,6 @@ export class QuoroomRpcs extends RpcGroup.make(
     success: ReportSummary,
     error: StateError,
   }),
-  Rpc.make('ArchiveReport', {
-    payload: ReportId,
-    success: ReportSummary,
-    error: StateError,
-  }),
 
   // -- Reviewer: inbox, reading, comments, review
   Rpc.make('ListInbox', {

@@ -136,7 +136,6 @@ export const PROCEDURES = {
   ExtendDeadline: p('publishing', 'report_author', ['extend_deadline']),
   RemoveReviewer: p('publishing', 'report_author', ['remove_reviewer']),
   StartConclusion: p('publishing', 'report_author', ['start_conclusion']),
-  ArchiveReport: p('publishing', 'report_author', ['publish_revision'], 'The `archive` event of report-flow.ts.'),
   // -- reviewer
   ListInbox: p('reviewer', 'reviewer', [], 'Rounds the caller participates in.'),
   ListPendingReviews: p('reviewer', 'reviewer', ['write_comment']),

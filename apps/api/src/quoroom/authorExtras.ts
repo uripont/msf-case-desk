@@ -15,7 +15,7 @@ import {
   redactorFor,
 } from '@quoroom/domain'
 
-import { mapSectionDocs, parseSection, sectionFigures } from './content'
+import { parseSection, sectionFigures } from './content'
 import {
   type Loaded,
   type Store,
@@ -149,7 +149,6 @@ export const authorExtraHandlers: Pick<
   AllHandlers,
   | 'GetRound'
   | 'StartConclusion'
-  | 'ArchiveReport'
   | 'ListImages'
   | 'MarkImageSafe'
   | 'ListDraftComments'
@@ -185,35 +184,6 @@ export const authorExtraHandlers: Pick<
         to: applied.success.state,
         now: loaded.now,
         audit: auditOf(loaded.now, user.id, 'report.conclusion_started', reportId),
-      })
-      if (moved._tag !== 'Moved') {
-        return yield* Effect.fail(new Conflict({ reason: 'changed_meanwhile' }))
-      }
-      return summaryOf({
-        ...loaded,
-        record: { ...loaded.record, state: applied.success.state },
-      })
-    }),
-
-  ArchiveReport: ({ reportId }) =>
-    Effect.gen(function* () {
-      const { user, loaded, db } = yield* member(reportId, {
-        type: 'publish_revision',
-      })
-      const applied = applyEvent(
-        { template: loaded.template, authors: loaded.authors, now: loaded.now },
-        loaded.flow,
-        { type: 'archive' },
-      )
-      if (Result.isFailure(applied)) {
-        return yield* Effect.fail(stateFailure(applied.failure, loaded.record.state))
-      }
-      const moved = yield* db.moveReport({
-        reportId,
-        from: loaded.record.state,
-        to: applied.success.state,
-        now: loaded.now,
-        audit: auditOf(loaded.now, user.id, 'report.archived', reportId),
       })
       if (moved._tag !== 'Moved') {
         return yield* Effect.fail(new Conflict({ reason: 'changed_meanwhile' }))
@@ -484,4 +454,4 @@ export const authorExtraHandlers: Pick<
     }),
 }
 
-export { NotAllowedInState, mapSectionDocs }
+export { NotAllowedInState }

@@ -89,10 +89,6 @@ const stateText = (code: string): string =>
       'conclusion_not_in_template',
       () => 'This report has no conclusion to write.',
     ),
-    Match.when(
-      'cannot_archive',
-      () => 'The report can only be archived once the approval rule was met.',
-    ),
     Match.orElse(
       () => 'The report is not in a state that allows that now. Reload the page.',
     ),

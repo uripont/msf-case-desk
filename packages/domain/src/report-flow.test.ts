@@ -54,7 +54,7 @@ const D18_ALLOWED: Readonly<Record<ReportState, ReadonlyArray<EventKind>>> = {
     'extend_deadline',
     'remove_reviewer',
   ],
-  decided: ['share_draft', 'publish_revision', 'start_conclusion', 'archive'],
+  decided: ['share_draft', 'publish_revision', 'start_conclusion'],
   concluding: [
     'share_draft',
     'publish_closing_revision',
@@ -73,7 +73,6 @@ const D18_PAIRS: ReadonlyArray<readonly [ReportState, ReportState]> = [
   ['in_review', 'decided'],
   ['in_review', 'archived'],
   ['decided', 'in_review'],
-  ['decided', 'archived'],
   ['decided', 'concluding'],
   ['concluding', 'concluding'],
   ['concluding', 'archived'],
@@ -161,7 +160,6 @@ const eventsOfEveryKind = (_flow: ReportFlow): ReadonlyArray<FlowEvent> => [
   { type: 'extend_deadline', deadline: 900 },
   { type: 'remove_reviewer', accountId: 'r1' },
   { type: 'start_conclusion' },
-  { type: 'archive' },
 ]
 
 // ---- The table --------------------------------------------------------------
@@ -331,9 +329,6 @@ describe('the pipeline of a template with a conclusion', () => {
     expect(
       code(applyEvent(ctx(t, 101), flow, { type: 'start_conclusion' })),
     ).toBe('conclusion_not_in_template')
-    expect(code(applyEvent(ctx(t, 101), flow, { type: 'archive' }))).toBe(
-      'cannot_archive',
-    )
   })
 
   test('a template without a conclusion is archived when the rule is met', () => {
@@ -1231,6 +1226,8 @@ describe('generated event sequences', () => {
   test('the generators reach every state, with a fixed seed', () => {
     const reached = new Set<string>()
     const outcomes = new Set<string>()
+    // NOTE: a closing round met by its rule is rare in these walks, so this
+    // runs many more cases than the others.
     fc.assert(
       fc.property(
         fc
@@ -1250,7 +1247,7 @@ describe('generated event sequences', () => {
           }
         },
       ),
-      { numRuns: 1500, seed: 20261112 },
+      { numRuns: 10000, seed: 1 },
     )
     expect([...reached].sort()).toEqual([...REPORT_STATES].sort())
     expect(outcomes.has('rule_met')).toBe(true)
@@ -1259,6 +1256,6 @@ describe('generated event sequences', () => {
   })
 
   test('every event kind is generated', () => {
-    expect(EVENT_KINDS.length).toBe(8)
+    expect(EVENT_KINDS.length).toBe(7)
   })
 })

@@ -397,7 +397,6 @@ const REQUESTS: Readonly<Record<string, (c: Context) => unknown>> = {
   ExtendDeadline: c => ({ ...REVISION(c), deadline: DEADLINE }),
   RemoveReviewer: c => ({ ...REVISION(c), accountId: 'dan' }),
   StartConclusion: R,
-  ArchiveReport: R,
   ListInbox: () => ({}),
   GetRevisionOutline: REVISION,
   GetRevisionSection: SECTION,
@@ -433,7 +432,7 @@ const REQUESTS: Readonly<Record<string, (c: Context) => unknown>> = {
 }
 // NOTE: the group of the public procedures is served somewhere else, with no
 // session, and carries no report: it is left out here on purpose.
-const PUBLIC = new Set<string>([...QuoroomPublicRpcs.requests.keys()])
+const PUBLIC = new Set<string>(QuoroomPublicRpcs.requests.keys())
 const SIGNED_IN = Object.keys(PROCEDURES).filter(name => !PUBLIC.has(name))
 
 const LEAK_SCENARIOS: ReadonlyArray<Scenario> = [

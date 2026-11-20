@@ -102,7 +102,6 @@ export type FlowEvent =
   | Readonly<{ type: 'extend_deadline'; deadline: number }>
   | Readonly<{ type: 'remove_reviewer'; accountId: string }>
   | Readonly<{ type: 'start_conclusion' }>
-  | Readonly<{ type: 'archive' }>
 
 export type EventKind = FlowEvent['type']
 
@@ -114,7 +113,6 @@ export const EVENT_KINDS: ReadonlyArray<EventKind> = [
   'extend_deadline',
   'remove_reviewer',
   'start_conclusion',
-  'archive',
 ]
 
 // NOTE: The events each state accepts. Everything else is refused with
@@ -131,7 +129,7 @@ export const ALLOWED_EVENTS: Readonly<
     'extend_deadline',
     'remove_reviewer',
   ],
-  decided: ['share_draft', 'publish_revision', 'start_conclusion', 'archive'],
+  decided: ['share_draft', 'publish_revision', 'start_conclusion'],
   concluding: [
     'share_draft',
     'publish_closing_revision',
@@ -159,7 +157,6 @@ export const TRANSITIONS: ReadonlyArray<Transition> = [
   { from: 'in_review', to: 'decided', on: 'rule_met' },
   { from: 'in_review', to: 'decided', on: 'deadline' },
   { from: 'decided', to: 'in_review', on: 'publish_revision' },
-  { from: 'decided', to: 'archived', on: 'archive' },
   { from: 'decided', to: 'concluding', on: 'start_conclusion' },
   { from: 'concluding', to: 'concluding', on: 'publish_closing_revision' },
   { from: 'concluding', to: 'archived', on: 'rule_met' },
@@ -183,7 +180,6 @@ export type FlowErrorCode =
   // NOTE: D6: a reviewer with a standing decision (approve or request
   // changes) on the open round cannot be removed; silent ones can.
   | 'reviewer_has_decision'
-  | 'cannot_archive'
 
 export type FlowError = Readonly<{
   code: FlowErrorCode
@@ -341,17 +337,6 @@ const handle = (
             event,
             'The template has no conclusion.',
           )
-    case 'archive': {
-      const round = latestRound(flow)
-      return round?.decidedBy === 'rule_met' && !hasConclusion(template)
-        ? Result.succeed({ ...flow, state: 'archived' })
-        : fail(
-            'cannot_archive',
-            flow,
-            event,
-            'Only a round that met its rule, in a template without a conclusion, archives directly.',
-          )
-    }
     case 'submit_review': {
       const round = openRound(flow)
       if (round === undefined || round.revision !== event.revision) {

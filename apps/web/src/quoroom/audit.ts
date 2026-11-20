@@ -37,7 +37,6 @@ const ACTION_TEXT: Readonly<Record<string, string>> = {
   'report.created': 'The report was created',
   'report.co_author_added': 'A co-author was added',
   'report.conclusion_started': 'The conclusion was started',
-  'report.archived': 'The report was archived',
   'draft.shared': 'A draft was shared',
   'redaction.confirmed': 'The redacted version was confirmed',
   'revision.published': 'A revision was published for review',

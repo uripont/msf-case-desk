@@ -148,12 +148,11 @@ describe.each([intake, intakeOnSqlite])('the closing path, $name', scenario => {
     await w.call('dan', c => c.SendReview({ commentIds: [], reportId, revision: 2, decision: 'approve' }))
 
     // The round is decided by its rule; the intake template has a conclusion,
-    // so it waits for the authors, who cannot archive it directly.
+    // so it waits for the authors.
     const round = await w.call('alice', c => c.GetRound({ reportId, revision: 2 }))
     expect(round).toMatchObject({ status: 'decided', decidedBy: 'rule_met' })
     expect(round.tally.met).toBe(true)
     expect((await w.call('alice', c => c.GetReport({ reportId }))).summary.state).toBe('decided')
-    expect(tagOf(await w.refused('alice', c => c.ArchiveReport({ reportId })))).toBe('NotAllowedInState')
     expect(
       await w.refused('carol', c => c.SendReview({ commentIds: [], reportId, revision: 2, decision: 'request_changes' })),
     ).toMatchObject({ _tag: 'NotAllowedInState' })
@@ -244,7 +243,7 @@ describe.each([intake, intakeOnSqlite])('the closing path, $name', scenario => {
       ]),
     )
     expect(actions.filter(action => action === 'revision.published')).toHaveLength(3)
-    expect(log.events.map(event => event.at)).toEqual([...log.events.map(event => event.at)].sort((a, b) => b - a))
+    expect(log.events.map(event => event.at)).toEqual(log.events.map(event => event.at).sort((a, b) => b - a))
 
     // The grid has each fact with its time.
     const view = await w.call('alice', c => c.GetGrid({ reportId }))
@@ -383,13 +382,12 @@ describe('a template without a conclusion', () => {
     expect(log.events.map(event => event.action)).toContain('round.decided')
   })
 
-  test('a deadline without the rule met leaves it decided and it cannot be archived or concluded', async () => {
+  test('a deadline without the rule met leaves it decided and it cannot be concluded', async () => {
     const w = await make(investigation)
     const { reportId } = await w.published()
     await w.call('carol', c => c.SendReview({ commentIds: [], reportId, revision: 1, decision: 'approve' }))
     w.clock.advance(8 * DAY)
     expect((await w.call('alice', c => c.GetReport({ reportId }))).summary.state).toBe('decided')
-    expect(tagOf(await w.refused('alice', c => c.ArchiveReport({ reportId })))).toBe('NotAllowedInState')
     expect(await w.refused('alice', c => c.StartConclusion({ reportId }))).toMatchObject({
       _tag: 'NotAllowedInState',
       code: 'conclusion_not_in_template',

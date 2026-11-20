@@ -137,7 +137,6 @@ const kindArbitrary: fc.Arbitrary<EventKind> = fc.constantFrom<EventKind>(
   'remove_reviewer',
   'start_conclusion',
   'start_conclusion',
-  'archive',
 )
 
 const decisionArbitrary: fc.Arbitrary<ReviewDecision> =
@@ -237,8 +236,6 @@ export const resolveIntent = (
     }
     case 'start_conclusion':
       return { type: 'start_conclusion' }
-    case 'archive':
-      return { type: 'archive' }
   }
 }
 
