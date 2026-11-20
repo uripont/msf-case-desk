@@ -33,6 +33,7 @@ import { deadlineText } from './zoned'
 // a case title or hold report text (D17).
 
 const PAGE_SIZE = 25
+const MAX_PAGE = 100
 const MAX_MARK = 100
 
 export const Model = Schema.Struct({
@@ -84,10 +85,45 @@ export const Message = defineMessageUnion({
     unread: Schema.Int,
     nowMs: Schema.Int,
   },
+  SucceededMarkAllRead: {
+    scope: PageScope,
+    unread: Schema.Int,
+    nowMs: Schema.Int,
+  },
   FailedMarkRead: { scope: PageScope, failure: Failure },
   PolledUnread: { unread: Schema.Int },
 })
 export type Message = typeof Message.Type
+
+// NOTE: Every unread notification, not only the loaded ones. Each page is read
+// through its `next` cursor, and the ids go to the server in batches of at most
+// MAX_MARK. The count is the one the last page gave, until a batch answers.
+type Listed = { readonly ids: ReadonlyArray<string>; readonly unread: number }
+
+export const listUnread = <E>(
+  listPage: (
+    before: Option.Option<number>,
+  ) => Effect.Effect<typeof NotificationPage.Type, E>,
+  before: Option.Option<number>,
+  found: Listed,
+): Effect.Effect<Listed, E> =>
+  listPage(before).pipe(
+    Effect.flatMap(page => {
+      const next: Listed = {
+        ids: [
+          ...found.ids,
+          ...page.items
+            .filter(item => item.readAt === undefined)
+            .map(item => item.id),
+        ],
+        unread: page.unread,
+      }
+      return Option.match(Option.fromNullishOr(page.next), {
+        onNone: () => Effect.succeed(next),
+        onSome: cursor => listUnread(listPage, Option.some(cursor), next),
+      })
+    }),
+  )
 
 // COMMAND
 
@@ -145,6 +181,44 @@ export const MarkRead = Command.define('MarkRead', {
       )
       const nowMs = yield* Clock.currentTimeMillis
       return Message.SucceededMarkRead({ scope, ids, unread, nowMs })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedMarkRead({ scope, failure: failureOf(error) }),
+        ),
+      ),
+    ),
+})
+
+export const MarkAllRead = Command.define('MarkAllRead', {
+  args: { scope: PageScope },
+  messages: [Message.SucceededMarkAllRead, Message.FailedMarkRead],
+  execute: ({ scope }) =>
+    Effect.gen(function* () {
+      const listed = yield* listUnread(
+        before =>
+          withQuoroom(client =>
+            client.ListNotifications({
+              ...Option.match(before, {
+                onNone: () => ({}),
+                onSome: cursor => ({ before: cursor }),
+              }),
+              limit: MAX_PAGE,
+            }),
+          ),
+        Option.none(),
+        { ids: [], unread: 0 },
+      )
+      const unread = yield* Effect.reduce(
+        Array.chunksOf(listed.ids, MAX_MARK),
+        () => listed.unread,
+        (_, ids) =>
+          withQuoroom(client => client.MarkNotificationsRead({ ids })).pipe(
+            Effect.map(result => result.unread),
+          ),
+      )
+      const nowMs = yield* Clock.currentTimeMillis
+      return Message.SucceededMarkAllRead({ scope, unread, nowMs })
     }).pipe(
       Effect.catch(error =>
         Effect.succeed(
@@ -245,28 +319,30 @@ const updateCurrent = (model: Model, message: Message) =>
             }),
             commands: [MarkRead({ scope: pageScopeOf(model), ids: [id] })],
           },
-    ClickedMarkAllRead: () => {
-      const ids = Array.map(
-        Array.take(
-          Array.filter(model.items, item => item.readAt === undefined),
-          MAX_MARK,
-        ),
-        item => item.id,
-      )
-      return model.isMarking || Array.isReadonlyArrayEmpty(ids)
+    ClickedMarkAllRead: () =>
+      model.isMarking
         ? { model }
         : {
             model: modifyFields(model, {
               isMarking: () => true,
               maybeNotice: () => Option.none(),
             }),
-            commands: [MarkRead({ scope: pageScopeOf(model), ids })],
-          }
-    },
+            commands: [MarkAllRead({ scope: pageScopeOf(model) })],
+          },
     SucceededMarkRead: ({ ids, unread, nowMs }) => ({
       model: modifyFields(model, {
         isMarking: () => false,
         items: items => markedRead(items, ids, nowMs),
+        unread: () => unread,
+      }),
+    }),
+    SucceededMarkAllRead: ({ unread, nowMs }) => ({
+      model: modifyFields(model, {
+        isMarking: () => false,
+        items: items =>
+          Array.map(items, item =>
+            item.readAt === undefined ? { ...item, readAt: nowMs } : item,
+          ),
         unread: () => unread,
       }),
     }),
@@ -445,8 +521,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
                     : `${model.unread} not read yet.`,
                 ],
               ),
-              // NOTE: It marks only the loaded items, so it needs one to show.
-              Array.some(model.items, isUnread)
+              model.unread > 0
                 ? actionButton(
                     h,
                     'Mark all as read',

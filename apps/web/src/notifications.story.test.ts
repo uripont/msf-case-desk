@@ -1,4 +1,7 @@
+import { Effect, Option } from 'effect'
 import { describe, expect, test } from 'vitest'
+
+import type { NotificationPage } from '@quoroom/domain'
 
 import { clickedLinkTo } from './fixtures'
 import { Message, subscriptions, update } from './main'
@@ -58,12 +61,66 @@ describe('notifications', () => {
     expect(names(second)).toEqual([])
   })
 
-  test('mark all sends only the ones not read', () => {
-    const step = update(
+  test('mark all asks the server for every unread one and ignores a second click meanwhile', () => {
+    const first = update(
       screen(),
       got(Notifications.Message.ClickedMarkAllRead()),
     )
-    expect(JSON.stringify(step.commands)).toContain('"ids":["a","b"]')
+    expect(names(first)).toEqual(['MarkAllRead'])
+    expect(first.model.notifications.isMarking).toBe(true)
+    const second = update(
+      first.model,
+      got(Notifications.Message.ClickedMarkAllRead()),
+    )
+    expect(names(second)).toEqual([])
+  })
+
+  test('the answer marks every loaded one read and takes the unread count from the server', () => {
+    const step = update(
+      screen(),
+      got(
+        Notifications.Message.SucceededMarkAllRead({
+          scope: SCOPE,
+          unread: 5,
+          nowMs: NOW + 5,
+        }),
+      ),
+    )
+    const { notifications } = step.model
+    expect(notifications.isMarking).toBe(false)
+    expect(notifications.unread).toBe(5)
+    expect(notifications.items.map(i => i.readAt)).toEqual([
+      NOW + 5,
+      NOW + 5,
+      NOW,
+    ])
+  })
+
+  test('the listing follows the cursor to the last page and collects every unread id', () => {
+    const first: typeof NotificationPage.Type = {
+      items: [item('a'), item('b', NOW)],
+      unread: 4,
+      next: 50,
+    }
+    const second: typeof NotificationPage.Type = {
+      items: [item('c'), item('d')],
+      unread: 4,
+      next: 20,
+    }
+    const last: typeof NotificationPage.Type = { items: [item('e')], unread: 4 }
+    const pageBefore = (before: Option.Option<number>) =>
+      Option.match(before, {
+        onNone: () => first,
+        onSome: cursor => (cursor === 50 ? second : last),
+      })
+    const listed = Effect.runSync(
+      Notifications.listUnread(
+        before => Effect.succeed(pageBefore(before)),
+        Option.none(),
+        { ids: [], unread: 0 },
+      ),
+    )
+    expect(listed).toEqual({ ids: ['a', 'c', 'd', 'e'], unread: 4 })
   })
 
   test('the answer marks them read and takes the unread count from the server', () => {

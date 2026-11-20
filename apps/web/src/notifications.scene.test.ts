@@ -108,6 +108,30 @@ describe('the notifications screen', () => {
     )
   })
 
+  test('mark all shows while any are unread, even when none of the loaded ones are', () => {
+    scene(
+      { update, view },
+      given(
+        notificationsScreen([entry('n1', 'round_decided', { readAt: NOW })], 2),
+      ),
+      expect(
+        role('button', { name: 'Mark all notifications as read' }),
+      ).toExist(),
+    )
+  })
+
+  test('mark all is hidden when nothing is unread', () => {
+    scene(
+      { update, view },
+      given(
+        notificationsScreen([entry('n1', 'round_decided', { readAt: NOW })], 0),
+      ),
+      expect(
+        role('button', { name: 'Mark all notifications as read' }),
+      ).toBeAbsent(),
+    )
+  })
+
   test('an empty list says what will appear', () => {
     scene(
       { update, view },
