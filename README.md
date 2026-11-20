@@ -111,12 +111,6 @@ Plus Tiptap for rich text, pdfmake for PDFs, Vite 8, Tailwind 4, Vitest 5, fast-
 
 Quoroom was the third and final iteration of a Project Management course project at Universitat Pompeu Fabra (team 101_E), from October to November 2026. Iterations 1 and 2 were **Case Desk**, a triage desk for incoming cases; the git tags `iter1`, `iter2` and `iter3` mark each delivery.
 
-| Address | What it serves |
-| --- | --- |
-| `app.msf-case-desk.workers.dev` | The demo: the latest version, with synthetic data |
-| `iter1.msf-case-desk.workers.dev`, `iter2.msf-case-desk.workers.dev` | Iterations 1 and 2, frozen at their git tags |
-| `pilot.msf-case-desk.workers.dev` | The MSF pilot with real reports: its own EU database, no demo data. Nobody reads or copies its data ([`docs/operating.md`](docs/operating.md)) |
-
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
