@@ -22,6 +22,7 @@ import type { QuoroomClient } from '../api'
 import { topLevelSections } from '../draftText'
 import { base64ToBytes, loadImage } from '../images/read'
 import type { ImageContext } from '../images/spec'
+import { dateTextIn } from '../zoned'
 
 // NOTE: What a PDF is made from: the same requests the reading
 // screens make, never a new one. An author reads a draft or a revision
@@ -46,8 +47,14 @@ export type Built = Readonly<{
   logoImageId: string | undefined
 }>
 
-export const isoDate = (at: number): string =>
-  new Date(at).toISOString().slice(0, 10)
+// NOTE: The date of a moment on the wall clock of the zone the screens show
+// it in, so the PDF and the screen give the same day.
+export const isoDate = (at: number, timeZone: string): string =>
+  dateTextIn(at, timeZone)
+
+const viewerZone = Effect.sync(
+  () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+)
 
 export const loadBasics = (client: QuoroomClient, reportId: string) =>
   Effect.gen(function* () {
@@ -147,6 +154,7 @@ export const authorVersion = (
 ) =>
   Effect.gen(function* () {
     const { reportId, template, summary } = basics
+    const timeZone = yield* viewerZone
     const draft = yield* Option.match(draftOfVersion(basics, version), {
       onNone: () => Effect.fail({ _tag: 'NotFound' }),
       onSome: Effect.succeed,
@@ -180,7 +188,7 @@ export const authorVersion = (
       version: {
         reportName: summary.templateName,
         versionLabel: version.label,
-        date: isoDate(version.at),
+        date: isoDate(version.at, timeZone),
       },
       ...conclusionChoice(isConcluding(summary.state)),
     })
@@ -208,6 +216,7 @@ export const reviewerVersion = (
 ) =>
   Effect.gen(function* () {
     const outline = yield* client.GetRevisionOutline({ reportId, revision })
+    const timeZone = yield* viewerZone
     const record = yield* client.GetTemplateVersion({
       templateId: outline.templateId,
       version: outline.templateVersion,
@@ -248,7 +257,7 @@ export const reviewerVersion = (
       version: {
         reportName: template.name,
         versionLabel: outline.label,
-        date: isoDate(outline.publishedAt),
+        date: isoDate(outline.publishedAt, timeZone),
       },
       ...conclusionChoice(outline.closing),
     })
@@ -272,6 +281,7 @@ export const approvalRecord = (client: QuoroomClient, basics: Basics) =>
       reportId: basics.reportId,
     })
     const now = yield* Effect.sync(() => Date.now())
+    const timeZone = yield* viewerZone
     return {
       description: approvalRecordDescription({
         template: basics.template,
@@ -282,7 +292,7 @@ export const approvalRecord = (client: QuoroomClient, basics: Basics) =>
         caseFile: data.caseFile,
         theme: basics.theme,
         reportName: data.reportName,
-        date: isoDate(now),
+        date: isoDate(now, timeZone),
       }),
       fileName: approvalRecordFileName({
         caseReference: data.caseFile.reference,

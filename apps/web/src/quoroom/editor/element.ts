@@ -723,7 +723,16 @@ class QuoroomEditor extends HTMLElement {
   }
 
   async #addImage(file: Blob): Promise<void> {
-    if (this.#isBusy || this.#disabled || this.#report === '') {
+    if (this.#isBusy) {
+      // NOTE: Only the alert is set, so the progress of the picture still
+      // being sent stays in the status line.
+      if (this.#imageAlert !== undefined) {
+        this.#imageAlert.textContent =
+          'Another picture is still being added, so try again when it is done.'
+      }
+      return
+    }
+    if (this.#disabled || this.#report === '') {
       return
     }
     this.#setBusy(true)

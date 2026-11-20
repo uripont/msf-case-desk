@@ -355,11 +355,11 @@ const LEAVE_REASONS: Readonly<
   saving: 'The last changes are being saved.',
 }
 
-// NOTE: Asks before the report is left with edits that are not saved: stay,
-// wait for the save and then go, or go without it.
+// NOTE: Wording for the template editor's leave dialog. It offers the same
+// choices as the report: stay, wait for the save and then go, or go without it.
 const TEMPLATE_LEAVE_REASONS = {
   stale:
-    'The draft was changed by someone else, so what you typed here is not saved.',
+    'The draft was changed in another tab or by someone else, so what you typed here is not saved.',
   unsaved: 'The draft has changes that are not saved.',
 } as const
 
@@ -518,6 +518,7 @@ const pageView = (
           }),
         ],
         TemplateEditor: ({ templateId, version }) => [
+          leaveDialog(model, h),
           h.submodel({
             slotId: `template-${templateId}-${version}`,
             model: model.templateEditor,

@@ -1,5 +1,5 @@
 import { Effect } from 'effect'
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import {
   DEFAULT_THEME,
@@ -27,6 +27,8 @@ import {
 
 const EMPTY_SECTION: SectionContent = { values: {}, sections: {} }
 const DATE = Date.UTC(2026, 2, 4)
+// NOTE: 00:30 on 21 November in Madrid, still 20 November in UTC.
+const LATE = Date.UTC(2026, 10, 20, 23, 30)
 const PERSON_ID = 'person-0123456789'
 
 const withPerson: SectionContent = {
@@ -91,8 +93,48 @@ describe('reviewer PDFs', () => {
     const built = await Effect.runPromise(
       reviewerVersion(reviewerClient('redacted'), 'report-1', 1),
     )
-    expect(built.description.version.date).toBe(isoDate(DATE))
+    expect(built.description.version.date).toBe(isoDate(DATE, 'UTC'))
     expect(textOf(built)).not.toContain('1970')
+  })
+})
+
+describe('the date of a PDF is the day in the viewer zone', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  test('the same moment is the next day in Madrid and the day before in UTC', () => {
+    expect(isoDate(LATE, 'Europe/Madrid')).toBe('2026-11-21')
+    expect(isoDate(LATE, 'UTC')).toBe('2026-11-20')
+  })
+
+  test('a revision is dated in the viewer zone', async () => {
+    const client: ReviewerClient = {
+      ...reviewerClient('redacted'),
+      GetRevisionOutline: () =>
+        Effect.succeed({ ...outlineOf('redacted', false), publishedAt: LATE }),
+    }
+    vi.stubEnv('TZ', 'Europe/Madrid')
+    const built = await Effect.runPromise(
+      reviewerVersion(client, 'report-1', 1),
+    )
+    expect(built.description.version.date).toBe('2026-11-21')
+    vi.stubEnv('TZ', 'UTC')
+    const inUtc = await Effect.runPromise(
+      reviewerVersion(client, 'report-1', 1),
+    )
+    expect(inUtc.description.version.date).toBe('2026-11-20')
+  })
+
+  test('a draft is dated in the viewer zone', async () => {
+    vi.stubEnv('TZ', 'Europe/Madrid')
+    const built = await Effect.runPromise(
+      authorVersion(authorClient(), basics('drafting'), {
+        ...version,
+        at: LATE,
+      }),
+    )
+    expect(built.description.version.date).toBe('2026-11-21')
   })
 })
 

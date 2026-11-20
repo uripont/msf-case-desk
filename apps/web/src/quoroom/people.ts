@@ -146,7 +146,11 @@ export const Message = defineMessageUnion({
   SelectedPersonUnit: { value: Schema.String },
   ToggledPersonCapability: { capability: DeploymentCapability },
   SubmittedPerson: {},
-  SucceededAddPerson: { account: AccountRow, link: Schema.Option(GivenLink) },
+  SucceededAddPerson: {
+    account: AccountRow,
+    link: Schema.Option(GivenLink),
+    missed: Schema.Array(NewGrant),
+  },
   FailedAddPerson: { failure: Failure },
   ClickedIssueReset: { accountId: Schema.String, name: Schema.String },
   SucceededIssueReset: { name: Schema.String, link: GivenLink },
@@ -245,24 +249,38 @@ export const AddPerson = Command.define('AddPerson', {
           capability: first.capability,
           ...unitField(first.unit),
         })
-        const granted = yield* Effect.forEach(rest, grant =>
-          client.GrantCapability({
-            email,
-            capability: grant.capability,
-            ...unitField(grant.unit),
-          }),
+        // NOTE: a grant that fails is kept in `missed`, so the link from the
+        // first grant is still given and the others can be added again.
+        const outcomes = yield* Effect.forEach(rest, grant =>
+          client
+            .GrantCapability({
+              email,
+              capability: grant.capability,
+              ...unitField(grant.unit),
+            })
+            .pipe(
+              Effect.map(({ account }) => ({ grant, account })),
+              Effect.catch(() =>
+                Effect.succeed({ grant, account: undefined }),
+              ),
+            ),
         )
         return {
-          account: Option.match(Array.last(granted), {
-            onNone: () => created.account,
-            onSome: last => last.account,
-          }),
+          account: Array.reduce(
+            outcomes,
+            created.account,
+            (latest, outcome) => outcome.account ?? latest,
+          ),
           link: maybeGivenLinkOf(created.link),
+          missed: Array.map(
+            Array.filter(outcomes, outcome => outcome.account === undefined),
+            outcome => outcome.grant,
+          ),
         }
       }),
     ).pipe(
-      Effect.map(({ account, link }) =>
-        Message.SucceededAddPerson({ account, link }),
+      Effect.map(({ account, link, missed }) =>
+        Message.SucceededAddPerson({ account, link, missed }),
       ),
       Effect.catch(error =>
         Effect.succeed(Message.FailedAddPerson({ failure: failureOf(error) })),
@@ -405,6 +423,19 @@ const linkOf = (
 ): Option.Option<IssuedLink> =>
   Option.some(issuedLinkOf(model.origin, name, link))
 
+const grantLabel = (model: Model, grant: NewGrant): string =>
+  Option.match(grant.unit, {
+    onNone: () =>
+      grant.capability === 'author'
+        ? 'Reports in a unit'
+        : capabilityLabel(grant.capability),
+    onSome: unitId =>
+      Option.match(Array.findFirst(model.units, unit => unit.id === unitId), {
+        onNone: () => 'Reports in a unit',
+        onSome: unit => `Reports in ${unit.name}`,
+      }),
+  })
+
 const clearedNotices = (model: Model): Model =>
   modifyFields(model, {
     maybeNotice: () => Option.none(),
@@ -538,7 +569,7 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
     SubmittedPerson: () => submitPerson(model),
-    SucceededAddPerson: ({ account, link }) => ({
+    SucceededAddPerson: ({ account, link, missed }) => ({
       model: modifyFields(clearedNotices(model), {
         accounts: accounts => replaceAccount(accounts, account),
         personEmail: () => '',
@@ -549,11 +580,15 @@ export const update = (model: Model, message: Message) =>
         maybeLink: () =>
           Option.flatMap(link, given => linkOf(model, account.name, given)),
         maybeNotice: () =>
-          Option.isNone(link)
+          Array.isReadonlyArrayNonEmpty(missed)
             ? Option.some(
-                `${account.name} already had an account, so no link was made. They now have what you chose.`,
+                `Not given to ${account.name} yet: ${Array.map(missed, grant => grantLabel(model, grant)).join(', ')}. Tick them in the list to add them again.`,
               )
-            : Option.none(),
+            : Option.isNone(link)
+              ? Option.some(
+                  `${account.name} already had an account, so no link was made. They now have what you chose.`,
+                )
+              : Option.none(),
       }),
     }),
     FailedAddPerson: ({ failure }) => ({

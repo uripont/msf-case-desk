@@ -433,14 +433,17 @@ export const update = (
     CancelledRetire: () => ({
       model: modifyFields(model, { maybeConfirmRetire: () => Option.none() }),
     }),
-    ConfirmedRetire: ({ templateId }) => ({
-      model: modifyFields(model, {
-        maybeConfirmRetire: () => Option.none(),
-        maybeBusy: () => Option.some(templateId),
-        maybeActionFailure: () => Option.none(),
-      }),
-      commands: [RetireTemplate({ templateId })],
-    }),
+    ConfirmedRetire: ({ templateId }) =>
+      Option.isSome(model.maybeBusy)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              maybeConfirmRetire: () => Option.none(),
+              maybeBusy: () => Option.some(templateId),
+              maybeActionFailure: () => Option.none(),
+            }),
+            commands: [RetireTemplate({ templateId })],
+          },
     SucceededRetire: ({ summary }) => ({
       model: modifyFields(model, {
         templates: templates => upsert(templates, summary),
@@ -489,14 +492,17 @@ export const update = (
     CancelledDiscard: () => ({
       model: modifyFields(model, { maybeConfirmDiscard: () => Option.none() }),
     }),
-    ConfirmedDiscard: ({ templateId, version }) => ({
-      model: modifyFields(model, {
-        maybeConfirmDiscard: () => Option.none(),
-        maybeBusy: () => Option.some(templateId),
-        maybeActionFailure: () => Option.none(),
-      }),
-      commands: [DiscardTemplateDraft({ templateId, version })],
-    }),
+    ConfirmedDiscard: ({ templateId, version }) =>
+      Option.isSome(model.maybeBusy)
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              maybeConfirmDiscard: () => Option.none(),
+              maybeBusy: () => Option.some(templateId),
+              maybeActionFailure: () => Option.none(),
+            }),
+            commands: [DiscardTemplateDraft({ templateId, version })],
+          },
     SucceededDiscard: () => ({
       model: modifyFields(model, {
         maybeBusy: () => Option.none(),

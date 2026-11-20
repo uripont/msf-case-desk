@@ -764,7 +764,7 @@ const reviewersPanel = (model: Model, h: HtmlBuilder<Message>) =>
       ),
     ],
     Option.some(
-      'The name and number are the ones you typed. A reviewer who has no account yet gets a one-time link, which you hand over.',
+      'The name and e-mail are the ones you typed. A reviewer who has no account yet gets a one-time link, which you hand over.',
     ),
   )
 

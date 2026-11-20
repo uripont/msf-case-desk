@@ -236,6 +236,7 @@ describe('people scene', () => {
               expiresAt: 5_000,
             }),
           ),
+          missed: [],
         }),
       ),
       expect(role('heading', { name: 'One-time link' })).toExist(),

@@ -614,11 +614,7 @@ export const LoadReport = Command.define('LoadReport', {
         const drafting = yield* client
           .ListDrafting({ reportId })
           .pipe(Effect.catch(() => Effect.succeed([])))
-        const history = yield* client
-          .GetHistory({ reportId })
-          .pipe(
-            Effect.catch(() => Effect.succeed({ drafts: [], revisions: [] })),
-          )
+        const history = yield* client.GetHistory({ reportId })
         const nowMs = yield* Clock.currentTimeMillis
         const units = yield* client.ListUnits()
         const unitMembers = yield* client

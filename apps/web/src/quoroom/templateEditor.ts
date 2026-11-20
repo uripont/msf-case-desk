@@ -2812,7 +2812,7 @@ const saveText = (state: SaveState): string =>
     Saved: () => 'Draft saved.',
     Failed: ({ failure }) => failureText(failure),
     Stale: () =>
-      'This draft was changed by someone else since you opened it, so your changes are not saved. Reload to see their version; your changes here are lost.',
+      'The draft was changed in another tab or by someone else since you opened it, so your changes are not saved. Reload to see their version; your changes here are lost.',
   })
 
 const summaryOf = (record: { state: string; version: number }): string =>
@@ -3025,7 +3025,7 @@ const loaded = (h: H, model: Model): Html => {
           : h.p(
               [h.Class('text-lg text-msf-ink')],
               [
-                'This version is published, so it cannot be edited. Preview it, or start a new version to change it.',
+                `This version is ${record?.state === 'retired' ? 'retired' : 'published'}, so it cannot be edited. Preview it, or start a new version to change it.`,
               ],
             ),
     ],

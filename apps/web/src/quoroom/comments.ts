@@ -100,10 +100,7 @@ export const LoadComments = Command.define('LoadComments', {
           Array.map(history.revisions, revision =>
             client
               .ListRevisionComments({ reportId, revision: revision.number })
-              .pipe(
-                Effect.catch(() => Effect.succeed([])),
-                Effect.map(comments => ({ revision, comments })),
-              ),
+              .pipe(Effect.map(comments => ({ revision, comments }))),
           ),
         )
         return { detail, template: version.template, groups }

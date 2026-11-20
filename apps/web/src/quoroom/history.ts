@@ -182,9 +182,7 @@ export const LoadHistory = Command.define('LoadHistory', {
         const draft = maybeDraft.value
         const outline = yield* client.GetDraftOutline({ reportId, draft })
         const people = yield* client.GetPeople({ reportId, draft })
-        const comments = yield* client
-          .ListDraftComments({ reportId, draft })
-          .pipe(Effect.catch(() => Effect.succeed([])))
+        const comments = yield* client.ListDraftComments({ reportId, draft })
         const sections = topLevelSections(version.template)
         const first = Array.findFirst(sections, section =>
           Array.some(outline.sections, ref => ref.sectionId === section.id),

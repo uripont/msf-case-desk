@@ -445,15 +445,16 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
                     : `${model.unread} not read yet.`,
                 ],
               ),
-              model.unread === 0
-                ? h.empty
-                : actionButton(
+              // NOTE: It marks only the loaded items, so it needs one to show.
+              Array.some(model.items, isUnread)
+                ? actionButton(
                     h,
                     'Mark all as read',
                     'Mark all notifications as read',
                     Message.ClickedMarkAllRead(),
                     model.isMarking,
-                  ),
+                  )
+                : h.empty,
               h.ul(
                 [
                   h.AriaLabel('Notifications'),

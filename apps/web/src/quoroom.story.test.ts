@@ -261,6 +261,7 @@ describe('link tokens in Messages', () => {
       People.Message.SucceededAddPerson({
         account: KNOWN,
         link: Option.some(given),
+        missed: [],
       }),
       Unit.Message.SucceededInviteToUnit({
         name: 'Second Author',
@@ -359,6 +360,7 @@ describe('the People screen', () => {
             reviewerIn: [],
           },
           link: Option.some(givenLinkOf(activationLink)),
+          missed: [],
         }),
       ),
       model(next => {
@@ -380,11 +382,57 @@ describe('the People screen', () => {
         People.Message.SucceededAddPerson({
           account: KNOWN,
           link: Option.none(),
+          missed: [],
         }),
       ),
     ]).model
     expect(Option.isNone(granted.people.maybeLink)).toBe(true)
     expect(Option.isSome(granted.people.maybeNotice)).toBe(true)
+  })
+
+  test('a grant that fails keeps the link and says what to add again', () => {
+    story(
+      update,
+      given(peopleLoaded),
+      message(
+        peopleMessage(
+          People.Message.UpdatedPersonEmail({ value: 'new@case-desk.test' }),
+        ),
+      ),
+      message(
+        peopleMessage(People.Message.UpdatedPersonName({ value: 'New Author' })),
+      ),
+      message(
+        peopleMessage(
+          People.Message.SelectedPersonUnit({ value: SYNTHETIC_UNIT.id }),
+        ),
+      ),
+      message(peopleMessage(People.Message.SubmittedPerson())),
+      Command.resolve(
+        People.AddPerson,
+        People.Message.SucceededAddPerson({
+          account: {
+            id: 'account-10',
+            email: 'new@case-desk.test',
+            name: 'New Author',
+            active: true,
+            grants: [{ capability: 'author', unit: SYNTHETIC_UNIT.id }],
+            reviewerIn: [],
+          },
+          link: Option.some(givenLinkOf(activationLink)),
+          missed: [{ capability: 'theme', unit: Option.none() }],
+        }),
+      ),
+      model(next => {
+        expect(Option.isSome(next.people.maybeLink)).toBe(true)
+        expect(Option.getOrElse(next.people.maybeNotice, () => '')).toBe(
+          'Not given to New Author yet: Theme. Tick them in the list to add them again.',
+        )
+        expect(JSON.stringify(next)).not.toContain(
+          Redacted.value(SYNTHETIC_TOKEN),
+        )
+      }),
+    )
   })
 
   test('a toggle grants what is not held and revokes what is', () => {

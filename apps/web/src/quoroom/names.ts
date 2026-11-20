@@ -167,7 +167,12 @@ export const Message = defineMessageUnion({
     saveCounter: Schema.Int,
     contents: Schema.Record(Schema.String, SectionContent),
   },
-  FailedMarkImage: { scope: PageScope, failure: Failure },
+  // NOTE: The mark is saved even when the read fails, so keep its counter.
+  FailedMarkImage: {
+    scope: PageScope,
+    saveCounter: Schema.Int,
+    failure: Failure,
+  },
 })
 export type Message = typeof Message.Type
 
@@ -321,40 +326,52 @@ export const MarkImage = Command.define('MarkImage', {
   messages: [Message.SucceededMarkImage, Message.FailedMarkImage],
   execute: ({ scope, imageId, safe, saveCounter, sectionIds }) =>
     withQuoroom(client =>
-      Effect.gen(function* () {
-        const marked = yield* client.MarkImageSafe({
-          reportId: scope.reportId,
-          imageId,
-          safe,
-          saveCounter,
-        })
-        const sections = yield* Effect.forEach(
-          sectionIds,
-          sectionId =>
-            client.GetWorkingCopySection({
-              reportId: scope.reportId,
-              sectionId,
-            }),
-          { concurrency: 4 },
-        )
-        return {
-          saveCounter: marked.saveCounter,
-          contents: Object.fromEntries(
-            sections.map(section => [section.sectionId, section.content]),
-          ),
-        }
+      client.MarkImageSafe({
+        reportId: scope.reportId,
+        imageId,
+        safe,
+        saveCounter,
       }),
     ).pipe(
-      Effect.map(({ saveCounter: next, contents }) =>
-        Message.SucceededMarkImage({
-          scope,
-          saveCounter: next,
-          contents,
-        }),
+      Effect.flatMap(marked =>
+        withQuoroom(client =>
+          Effect.forEach(
+            sectionIds,
+            sectionId =>
+              client.GetWorkingCopySection({
+                reportId: scope.reportId,
+                sectionId,
+              }),
+            { concurrency: 4 },
+          ),
+        ).pipe(
+          Effect.map(sections =>
+            Message.SucceededMarkImage({
+              scope,
+              saveCounter: marked.saveCounter,
+              contents: Object.fromEntries(
+                sections.map(section => [section.sectionId, section.content]),
+              ),
+            }),
+          ),
+          Effect.catch(error =>
+            Effect.succeed(
+              Message.FailedMarkImage({
+                scope,
+                saveCounter: marked.saveCounter,
+                failure: failureOf(error),
+              }),
+            ),
+          ),
+        ),
       ),
       Effect.catch(error =>
         Effect.succeed(
-          Message.FailedMarkImage({ scope, failure: failureOf(error) }),
+          Message.FailedMarkImage({
+            scope,
+            saveCounter,
+            failure: failureOf(error),
+          }),
         ),
       ),
     ),
@@ -795,8 +812,9 @@ const updateCurrent = (
         }),
       ),
     }),
-    FailedMarkImage: ({ failure }) => ({
+    FailedMarkImage: ({ saveCounter, failure }) => ({
       model: modifyFields(model, {
+        saveCounter: () => saveCounter,
         maybeBusyImage: () => Option.none(),
         maybeImageFailure: () => Option.some(failure),
       }),
