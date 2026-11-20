@@ -392,11 +392,11 @@ export const reviewerHandlers: Pick<
         published.draftNumber,
         view,
       )
+      if (draft === null) return yield* Effect.fail(new NotFound())
       // NOTE: the labels (never names or aliases) of the people of the
       // revision, so a people item prints a label and never an ID, in the
       // reviewer's PDF too.
-      const labelled =
-        draft === null ? [] : yield* readPeople(draft.people)
+      const labelled = yield* readPeople(draft.people)
       const clock = yield* QuoroomClock
       yield* db.recordEvent({
         reportId,
@@ -413,11 +413,11 @@ export const reviewerHandlers: Pick<
         caseReference:
           view === 'original'
             ? loaded.record.caseFile.reference
-            : (draft?.caseReferenceRedacted ?? ''),
+            : draft.caseReferenceRedacted,
         caseTitle:
           view === 'original'
             ? loaded.record.caseFile.title
-            : (draft?.caseTitleRedacted ?? ''),
+            : draft.caseTitleRedacted,
         templateId: loaded.record.templateId,
         templateVersion: loaded.record.templateVersion,
         view: roleViewOf(allowed.view),

@@ -173,8 +173,8 @@ export const templateHandlers: Pick<
       }
       const out = []
       const published = summariesOf(yield* db.listTemplates())
-        .slice(0, MAX_TEMPLATES)
         .filter(summary => summary.publishedVersion !== undefined)
+        .slice(0, MAX_TEMPLATES)
       // NOTE: all the published versions in one read.
       const stored = new Map(
         (yield* db.getTemplateVersions(

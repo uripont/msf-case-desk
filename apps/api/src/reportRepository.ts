@@ -1938,6 +1938,7 @@ const ops: Impl = {
           SELECT ?, ?, d.number, 0, d.people, ?, ? FROM drafts d
           WHERE d.report_id = ? AND d.number = ?
           AND EXISTS (SELECT 1 FROM report_members WHERE report_id = ? AND user_id = ?)
+          ON CONFLICT (report_id, user_id) DO NOTHING
           RETURNING *`,
         values: [
           input.reportId,
